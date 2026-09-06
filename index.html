@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>車をだせ！</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --red:#d94436;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  #app{max-width:480px;margin:0 auto;padding:10px 10px 40px}
+  header{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:2px 2px 10px}
+  #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+  #counts{font-size:14px;color:var(--sub);white-space:nowrap}
+  #counts b{color:var(--ink);font-weight:700}
+
+  #stage{position:relative;display:flex;align-items:stretch}
+  #board{
+    position:relative;flex:1;aspect-ratio:1/1;
+    background:var(--panel);border:2px solid var(--frame);border-radius:10px;
+    background-image:
+      repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px calc(100% / 6)),
+      repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px calc(100% / 6));
+    overflow:visible;touch-action:none;
+  }
+  #exit{position:relative;width:22px;flex:0 0 22px}
+  #exitMark{
+    position:absolute;left:2px;width:18px;top:33.333%;height:16.666%;
+    display:flex;align-items:center;justify-content:center;
+    color:var(--red);font-size:15px;line-height:1;
+  }
+
+  .car{
+    position:absolute;border-radius:8px;touch-action:none;cursor:grab;
+    transition:left .13s ease, top .13s ease;
+    box-shadow:inset 0 -3px 0 rgba(0,0,0,.14), 0 1px 2px rgba(0,0,0,.12);
+  }
+  .car.dragging{transition:none;z-index:6;filter:brightness(1.06);cursor:grabbing}
+  .car.red{background:var(--red)}
+  .car.exiting{transition:left .35s ease-in;z-index:7}
+
+  #buttons{display:flex;gap:8px;padding:12px 0 4px}
+  button{
+    font:inherit;font-size:15px;padding:11px 14px;border:1px solid var(--frame);
+    border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button:active{background:#eeece7}
+  button:disabled{opacity:.4;cursor:default}
+  #buttons button{flex:1}
+
+  #clear{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:10px;
+    background:rgba(245,244,241,.93);border-radius:10px;z-index:20;
+  }
+  #clear[hidden]{display:none}
+  #clearTitle{font-size:26px;font-weight:700}
+  #clearSub{font-size:15px;color:var(--sub)}
+  #next{font-size:17px;padding:12px 28px}
+
+  #levels{padding-top:18px}
+  .tier{margin-bottom:10px}
+  .tierName{font-size:13px;color:var(--sub);padding:2px 2px 4px}
+  .tierRow{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
+  .lv{
+    padding:0;height:34px;font-size:13px;border-radius:7px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .lv.done{background:#e9f1e6;border-color:#bcd3b4}
+  .lv.cur{border-color:var(--ink);font-weight:700}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div id="title">入門 1</div>
+    <div id="counts">手数 <b id="moves">0</b> ／ 最短 <b id="best">3</b></div>
+  </header>
+
+  <div id="stage">
+    <div id="board"></div>
+    <div id="exit"><div id="exitMark">▶</div></div>
+    <div id="clear" hidden>
+      <div id="clearTitle">クリア！</div>
+      <div id="clearSub"></div>
+      <button id="next">つぎへ</button>
+    </div>
+  </div>
+
+  <div id="buttons">
+    <button id="undo">もどす</button>
+    <button id="reset">はじめから</button>
+  </div>
+
+  <section id="levels"></section>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.CarEscape として公開する）
+   ===================================================================== */
+
+/* LEVELS-BEGIN  tools/gen_levels.py の出力をそのまま貼る。手で書き換えない */
+var LEVELS = [
+  {"board":"BBoCCoDDoEoooAAEooFGooHHFGIIIoFGoJJo","min":3,"tier":"入門"},
+  {"board":"BCCoDDBooEEoFAAGooFHoGoIoHJKoIooJKoo","min":3,"tier":"入門"},
+  {"board":"BCooDoBCooDoBoAAEoFGHIEoFGHIEoFooJJJ","min":3,"tier":"入門"},
+  {"board":"oBCDooEBCDooEAADoFEGGooFoooooooooooo","min":3,"tier":"入門"},
+  {"board":"BBCCooooDDDoooAAEFGHHHEFGIIJJFGoKKKo","min":4,"tier":"入門"},
+  {"board":"BoooooBoCCDDoEAAFGoEooFGooHHHoIIIoJJ","min":4,"tier":"入門"},
+  {"board":"oBBoooCCooDDAAEoFoooEoFoGGGooooooooo","min":4,"tier":"入門"},
+  {"board":"BCCDDDBoEooFooEAAFoGoooHoGIJKHoGIJKH","min":5,"tier":"入門"},
+  {"board":"BoCCoDBoooEDBFAAEDGFoHEoGoIHooGoIJJo","min":5,"tier":"入門"},
+  {"board":"oBCCDEoBooDEooAADEooFFFoGGGoooHHoIIo","min":5,"tier":"入門"},
+  {"board":"oBBCooDDoCooAAoCEoFFGGEoooHooIooHJJI","min":6,"tier":"初級"},
+  {"board":"oooBBCDEEooCDoFAACDoFGHHoIFGoooIJJoo","min":6,"tier":"初級"},
+  {"board":"BooCCCBooDEoBAADEFGHHHoFGIIJJFooKKoo","min":7,"tier":"初級"},
+  {"board":"oBBBooooCDEFAACDEFoGoHEFoGoHoooooIII","min":7,"tier":"初級"},
+  {"board":"BBCDDoEECoFoAACoFooGGooHIIJJJHKKKooo","min":8,"tier":"初級"},
+  {"board":"oBoCCooBDooEAADoFEoGGoFEooHoIIooHooo","min":8,"tier":"初級"},
+  {"board":"BBCCoooDDoEoAAooEoFGGoEoFoHoIIooHJJo","min":9,"tier":"初級"},
+  {"board":"ooBooCooBooCAABooCoooDDDoEEoooooFFFo","min":9,"tier":"初級"},
+  {"board":"BoCoooBoCDEoAACDEooooFFGHHIIIGoooooG","min":10,"tier":"初級"},
+  {"board":"oBBCooDooCooDEoAAFoEGGHFoEoIHFoooIJJ","min":10,"tier":"初級"},
+  {"board":"BBCoDDooCoEoFAAoEGFHHIJGFooIJoooooKK","min":11,"tier":"中級"},
+  {"board":"BCCoDoBEooDoFEAADoFoGoHHFIGoJJoIKKoo","min":11,"tier":"中級"},
+  {"board":"ooBBBoCooDDoCoAAEFoGGGEFooHoEFooHIIo","min":12,"tier":"中級"},
+  {"board":"ooBBBoooCDEFAACDEFGoHoEoGoHooIooHJJI","min":12,"tier":"中級"},
+  {"board":"BBBCDooEECDoooAADFGGHooFIoHoooIJJoKK","min":13,"tier":"中級"},
+  {"board":"BCCoDoBEooDoFEAADoFoGoHHFoGoooooIIJJ","min":14,"tier":"中級"},
+  {"board":"BBBoCDEFooCDEFAACGoooooGHIJKKoHIJooo","min":15,"tier":"中級"},
+  {"board":"BCCoDoBEooDoFEAADoFoGoHHFIGooooIJJKK","min":16,"tier":"中級"},
+  {"board":"oooBCoDDDBCEooAACEooFoGGHoFoIIHJJoKK","min":17,"tier":"中級"},
+  {"board":"BCCoDoBEooDoBEAADooFGHIIoFGHoooFJJKK","min":18,"tier":"中級"},
+  {"board":"BBBoCDoEooCDoEAACFoGoHHFoGIJJoooIKKK","min":19,"tier":"上級"},
+  {"board":"BBBCDEoooCDEoFAADEoFGoHHIFGoooIoJJKK","min":20,"tier":"上級"},
+  {"board":"oooBCDEEEBCDoFAACDoFGoHHIFGoooIoJJKK","min":21,"tier":"上級"},
+  {"board":"BBBCDoEFFCDGEoAADGooHooGooHIJJKKKIoo","min":22,"tier":"上級"},
+  {"board":"BBBCDEoooCDEFoAADoFoooGGooHIJJooHIoo","min":23,"tier":"上級"},
+  {"board":"oooBCoDDDBCEooAACEooFoooGoFHIIGJJHKK","min":24,"tier":"上級"},
+  {"board":"oooBCDEEEBCDFoAACoFoooGGooHIJJooHIoo","min":25,"tier":"上級"},
+  {"board":"BBBCDEFFFCDEooAADoooooGGHoIJKKHoIJoo","min":26,"tier":"上級"},
+  {"board":"oooBCoDDDBCEooAACEooFoGGHoFIJJHooIKK","min":27,"tier":"上級"},
+  {"board":"BBBCDoEEECDoFoAADoFoooGGooHIJJooHIKK","min":28,"tier":"上級"}
+];
+/* LEVELS-END */
+
+var CarEscape = (function () {
+  var W = 6;        // 盤の一辺
+  var EXIT_Y = 2;   // 出口の行（上から3行目）
+
+  /* 36文字の盤面記法 -> 車の配列
+     o=空 / A=赤い車 / B〜=他の車。同じ文字が横に並べば横向き、縦なら縦向き */
+  function parse(board) {
+    var cells = {}, order = [], i, ch;
+    for (i = 0; i < W * W; i++) {
+      ch = board.charAt(i);
+      if (ch === 'o' || ch === '' || ch === '.') continue;
+      if (!cells[ch]) { cells[ch] = []; order.push(ch); }
+      cells[ch].push(i);
+    }
+    var red = null, others = [];
+    for (i = 0; i < order.length; i++) {
+      ch = order[i];
+      var list = cells[ch];
+      var first = list[0];
+      var dir = (list.length > 1 && list[1] - first === 1) ? 'h' : 'v';
+      var car = {
+        ch: ch, len: list.length, dir: dir,
+        x: first % W, y: Math.floor(first / W)
+      };
+      if (ch === 'A') red = car; else others.push(car);
+    }
+    return red ? [red].concat(others) : others;
+  }
+
+  function cloneState(state) {
+    var out = [], i;
+    for (i = 0; i < state.length; i++) {
+      var c = state[i];
+      out.push({ ch: c.ch, len: c.len, dir: c.dir, x: c.x, y: c.y });
+    }
+    return out;
+  }
+
+  function toBoard(state) {
+    var g = [], i, j;
+    for (i = 0; i < W * W; i++) g.push('o');
+    for (i = 0; i < state.length; i++) {
+      var c = state[i];
+      for (j = 0; j < c.len; j++) {
+        g[c.dir === 'h' ? c.y * W + c.x + j : (c.y + j) * W + c.x] = c.ch;
+      }
+    }
+    return g.join('');
+  }
+
+  function occupancy(state) {
+    var g = [], i, j;
+    for (i = 0; i < W * W; i++) g.push(-1);
+    for (i = 0; i < state.length; i++) {
+      var c = state[i];
+      for (j = 0; j < c.len; j++) {
+        g[c.dir === 'h' ? c.y * W + c.x + j : (c.y + j) * W + c.x] = i;
+      }
+    }
+    return g;
+  }
+
+  /* id の車を delta マス（横なら右が+、縦なら下が+）動かせるか */
+  function canMove(state, id, delta) {
+    if (!state || id < 0 || id >= state.length) return false;
+    delta = delta | 0;
+    if (delta === 0) return false;
+    var c = state[id];
+    var g = occupancy(state);
+    var step = delta > 0 ? 1 : -1;
+    var n = delta > 0 ? delta : -delta;
+    for (var k = 1; k <= n; k++) {
+      var nx, ny;
+      if (c.dir === 'h') {
+        ny = c.y;
+        nx = step > 0 ? c.x + c.len - 1 + k : c.x - k;
+      } else {
+        nx = c.x;
+        ny = step > 0 ? c.y + c.len - 1 + k : c.y - k;
+      }
+      if (nx < 0 || nx >= W || ny < 0 || ny >= W) return false;
+      var who = g[ny * W + nx];
+      if (who !== -1 && who !== id) return false;
+    }
+    return true;
+  }
+
+  /* その方向へ何マス滑れるか（sign: +1 / -1） */
+  function maxSlide(state, id, sign) {
+    var n = 0;
+    while (canMove(state, id, (n + 1) * (sign > 0 ? 1 : -1))) n++;
+    return n;
+  }
+
+  /* 動かした新しい状態を返す（元の state は変えない）。動かせなければ null */
+  function applyMove(state, id, delta) {
+    if (!canMove(state, id, delta)) return null;
+    var ns = cloneState(state);
+    if (ns[id].dir === 'h') ns[id].x += delta; else ns[id].y += delta;
+    return ns;
+  }
+
+  /* 赤い車が右端まで来ていればクリア（そこから盤外へ抜ける） */
+  function isSolved(state) {
+    if (!state || !state.length) return false;
+    var red = state[0];
+    if (red.ch !== 'A') {
+      for (var i = 0; i < state.length; i++) if (state[i].ch === 'A') { red = state[i]; break; }
+    }
+    return red.ch === 'A' && red.dir === 'h' && red.x + red.len === W;
+  }
+
+  /* 最短手数を幅優先で求める。1手＝1台を任意距離。解けなければ -1 */
+  function solve(board) {
+    var cars = (typeof board === 'string') ? parse(board) : cloneState(board);
+    var n = cars.length;
+    if (!n) return -1;
+    var len = [], dir = [], fix = [], lim = [], start = [], i;
+    for (i = 0; i < n; i++) {
+      len.push(cars[i].len);
+      dir.push(cars[i].dir === 'h' ? 0 : 1);
+      fix.push(cars[i].dir === 'h' ? cars[i].y : cars[i].x);
+      lim.push(W - cars[i].len);
+      start.push(cars[i].dir === 'h' ? cars[i].x : cars[i].y);
+    }
+    var goal = W - len[0];
+    if (start[0] === goal) return 0;
+
+    var seen = Object.create(null);
+    seen[start.join(',')] = 1;
+    var queue = [start], depth = [0], head = 0;
+
+    while (head < queue.length) {
+      var st = queue[head], d = depth[head];
+      head++;
+      var nd = d + 1;
+      var g = [], j, k;
+      for (j = 0; j < W * W; j++) g.push(-1);
+      for (i = 0; i < n; i++) {
+        for (k = 0; k < len[i]; k++) {
+          g[dir[i] === 0 ? fix[i] * W + st[i] + k : (st[i] + k) * W + fix[i]] = i;
+        }
+      }
+      for (i = 0; i < n; i++) {
+        var p, cell, ns, key;
+        /* 左／上へ */
+        p = st[i];
+        while (p > 0) {
+          cell = dir[i] === 0 ? fix[i] * W + (p - 1) : (p - 1) * W + fix[i];
+          if (g[cell] !== -1) break;
+          p--;
+          if (i === 0 && p === goal) return nd;
+          ns = st.slice(); ns[i] = p; key = ns.join(',');
+          if (!seen[key]) { seen[key] = 1; queue.push(ns); depth.push(nd); }
+        }
+        /* 右／下へ */
+        p = st[i];
+        while (p < lim[i]) {
+          cell = dir[i] === 0 ? fix[i] * W + (p + len[i]) : (p + len[i]) * W + fix[i];
+          if (g[cell] !== -1) break;
+          p++;
+          if (i === 0 && p === goal) return nd;
+          ns = st.slice(); ns[i] = p; key = ns.join(',');
+          if (!seen[key]) { seen[key] = 1; queue.push(ns); depth.push(nd); }
+        }
+      }
+    }
+    return -1;
+  }
+
+  return {
+    W: W, EXIT_Y: EXIT_Y, LEVELS: LEVELS,
+    parse: parse, cloneState: cloneState, toBoard: toBoard,
+    occupancy: occupancy, canMove: canMove, maxSlide: maxSlide,
+    applyMove: applyMove, isSolved: isSolved, solve: solve
+  };
+})();
+
+if (typeof window !== 'undefined') window.CarEscape = CarEscape;
+if (typeof globalThis !== 'undefined') globalThis.CarEscape = CarEscape;
+
+/* =====================================================================
+   画面
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var W = CarEscape.W;
+  var COLORS = ['#5b7fa6','#7a9a5b','#c08a3e','#8a6ea8','#4f9a92','#a5735b',
+                '#6c7b8b','#9a8d4f','#7d6b9a','#5f8f6a','#a76b7b','#6f8fa8'];
+  var KEY = 'car-escape';
+
+  var elTitle = document.getElementById('title');
+  var elMoves = document.getElementById('moves');
+  var elBest  = document.getElementById('best');
+  var elBoard = document.getElementById('board');
+  var elClear = document.getElementById('clear');
+  var elClearSub = document.getElementById('clearSub');
+  var elNext  = document.getElementById('next');
+  var elUndo  = document.getElementById('undo');
+  var elReset = document.getElementById('reset');
+  var elLevels = document.getElementById('levels');
+
+  /* 段階名と何本目か（例「初級 3」） */
+  var LABELS = (function () {
+    var out = [], count = {};
+    for (var i = 0; i < LEVELS.length; i++) {
+      var t = LEVELS[i].tier;
+      count[t] = (count[t] || 0) + 1;
+      out.push({ tier: t, no: count[t], text: t + ' ' + count[t] });
+    }
+    return out;
+  })();
+
+  var save = { cleared: {}, last: 0 };
+  function loadSave() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (o && typeof o === 'object') {
+        if (o.cleared && typeof o.cleared === 'object') save.cleared = o.cleared;
+        if (typeof o.last === 'number' && o.last >= 0 && o.last < LEVELS.length) save.last = o.last;
+      }
+    } catch (e) { /* 保存が使えなくても遊べる */ }
+  }
+  function storeSave() {
+    try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
+  }
+
+  var levelIndex = 0;
+  var state = null;
+  var moves = 0;
+  var history = [];
+  var finished = false;
+  var els = [];
+
+  function pct(v) { return (v * 100 / W) + '%'; }
+
+  function buildBoard() {
+    elBoard.innerHTML = '';
+    els = [];
+    for (var i = 0; i < state.length; i++) {
+      var c = state[i];
+      var d = document.createElement('div');
+      d.className = 'car' + (c.ch === 'A' ? ' red' : '');
+      d.dataset.id = String(i);
+      if (c.ch !== 'A') d.style.background = COLORS[(i - 1) % COLORS.length];
+      elBoard.appendChild(d);
+      els.push(d);
+      d.addEventListener('pointerdown', onDown);
+      d.addEventListener('pointermove', onMove);
+      d.addEventListener('pointerup', onUp);
+      d.addEventListener('pointercancel', onUp);
+    }
+    place();
+  }
+
+  function place() {
+    var gap = 3;
+    for (var i = 0; i < state.length; i++) {
+      var c = state[i], d = els[i];
+      d.style.left = 'calc(' + pct(c.x) + ' + ' + gap + 'px)';
+      d.style.top  = 'calc(' + pct(c.y) + ' + ' + gap + 'px)';
+      d.style.width  = 'calc(' + pct(c.dir === 'h' ? c.len : 1) + ' - ' + (gap * 2) + 'px)';
+      d.style.height = 'calc(' + pct(c.dir === 'v' ? c.len : 1) + ' - ' + (gap * 2) + 'px)';
+    }
+  }
+
+  function loadLevel(i) {
+    levelIndex = i;
+    state = CarEscape.parse(LEVELS[i].board);
+    moves = 0;
+    history = [];
+    finished = false;
+    elClear.hidden = true;
+    elTitle.textContent = LABELS[i].text;
+    elBest.textContent = String(LEVELS[i].min);
+    elMoves.textContent = '0';
+    elUndo.disabled = true;
+    buildBoard();
+    renderLevelList();
+    save.last = i;
+    storeSave();
+  }
+
+  /* ---- ドラッグ ---- */
+  var drag = null;
+
+  function cellSize() { return elBoard.getBoundingClientRect().width / W; }
+
+  function onDown(e) {
+    if (finished) return;
+    var id = parseInt(this.dataset.id, 10);
+    var c = state[id];
+    var cell = cellSize();
+    drag = {
+      id: id, el: this, dir: c.dir, cell: cell, off: 0,
+      sx: e.clientX, sy: e.clientY,
+      min: -CarEscape.maxSlide(state, id, -1) * cell,
+      max:  CarEscape.maxSlide(state, id, 1) * cell
+    };
+    this.classList.add('dragging');
+    try { this.setPointerCapture(e.pointerId); } catch (err) {}
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (!drag || drag.el !== this) return;
+    var d = drag.dir === 'h' ? e.clientX - drag.sx : e.clientY - drag.sy;
+    if (d < drag.min) d = drag.min;
+    if (d > drag.max) d = drag.max;
+    drag.off = d;
+    this.style.transform = drag.dir === 'h'
+      ? 'translateX(' + d + 'px)' : 'translateY(' + d + 'px)';
+    e.preventDefault();
+  }
+
+  function onUp(e) {
+    if (!drag || drag.el !== this) return;
+    var id = drag.id, delta = Math.round(drag.off / drag.cell);
+    this.classList.remove('dragging');
+    this.style.transform = '';
+    drag = null;
+    if (delta !== 0 && CarEscape.canMove(state, id, delta)) doMove(id, delta);
+  }
+
+  function doMove(id, delta) {
+    history.push(CarEscape.cloneState(state));
+    state = CarEscape.applyMove(state, id, delta);
+    moves++;
+    elMoves.textContent = String(moves);
+    elUndo.disabled = false;
+    place();
+    if (CarEscape.isSolved(state)) driveOut();
+  }
+
+  /* 赤い車が右端まで来たら、そのまま盤外へ滑り出す */
+  function driveOut() {
+    finished = true;
+    var red = els[0];
+    red.classList.add('exiting');
+    red.style.left = 'calc(100% + 26px)';
+    setTimeout(showClear, 360);
+  }
+
+  function showClear() {
+    var min = LEVELS[levelIndex].min;
+    save.cleared[String(levelIndex)] = 1;
+    storeSave();
+    renderLevelList();
+    elClearSub.textContent = moves + '手（最短 ' + min + '）' + (moves <= min ? ' ★' : '');
+    elNext.hidden = (levelIndex >= LEVELS.length - 1);
+    elClear.hidden = false;
+  }
+
+  /* ---- ボタン ---- */
+  elUndo.addEventListener('click', function () {
+    if (finished || !history.length) return;
+    state = history.pop();
+    moves = Math.max(0, moves - 1);
+    elMoves.textContent = String(moves);
+    elUndo.disabled = !history.length;
+    place();
+  });
+  elReset.addEventListener('click', function () { loadLevel(levelIndex); });
+  elNext.addEventListener('click', function () {
+    if (levelIndex < LEVELS.length - 1) loadLevel(levelIndex + 1);
+  });
+
+  /* ---- レベル一覧 ---- */
+  function renderLevelList() {
+    if (!elLevels.childNodes.length) {
+      var tiers = [], seen = {};
+      for (var i = 0; i < LABELS.length; i++) {
+        if (!seen[LABELS[i].tier]) { seen[LABELS[i].tier] = []; tiers.push(LABELS[i].tier); }
+        seen[LABELS[i].tier].push(i);
+      }
+      for (var t = 0; t < tiers.length; t++) {
+        var box = document.createElement('div');
+        box.className = 'tier';
+        var name = document.createElement('div');
+        name.className = 'tierName';
+        name.textContent = tiers[t];
+        box.appendChild(name);
+        var row = document.createElement('div');
+        row.className = 'tierRow';
+        var idxs = seen[tiers[t]];
+        for (var k = 0; k < idxs.length; k++) {
+          var b = document.createElement('button');
+          b.className = 'lv';
+          b.dataset.idx = String(idxs[k]);
+          b.addEventListener('click', function () {
+            loadLevel(parseInt(this.dataset.idx, 10));
+            window.scrollTo(0, 0);
+          });
+          row.appendChild(b);
+        }
+        box.appendChild(row);
+        elLevels.appendChild(box);
+      }
+    }
+    var btns = elLevels.querySelectorAll('.lv');
+    for (var j = 0; j < btns.length; j++) {
+      var idx = parseInt(btns[j].dataset.idx, 10);
+      btns[j].textContent = LABELS[idx].no + (save.cleared[String(idx)] ? '✓' : '');
+      btns[j].className = 'lv'
+        + (save.cleared[String(idx)] ? ' done' : '')
+        + (idx === levelIndex ? ' cur' : '');
+    }
+  }
+
+  loadSave();
+  loadLevel(save.last);
+})();
+</script>
+</body>
+</html>

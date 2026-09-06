@@ -1,0 +1,202 @@
+[
+ {
+  "board": "BBoCCoDDoEoooAAEooFGooHHFGIIIoFGoJJo",
+  "min": 3,
+  "tier": "入門"
+ },
+ {
+  "board": "BCCoDDBooEEoFAAGooFHoGoIoHJKoIooJKoo",
+  "min": 3,
+  "tier": "入門"
+ },
+ {
+  "board": "BCooDoBCooDoBoAAEoFGHIEoFGHIEoFooJJJ",
+  "min": 3,
+  "tier": "入門"
+ },
+ {
+  "board": "oBCDooEBCDooEAADoFEGGooFoooooooooooo",
+  "min": 3,
+  "tier": "入門"
+ },
+ {
+  "board": "BBCCooooDDDoooAAEFGHHHEFGIIJJFGoKKKo",
+  "min": 4,
+  "tier": "入門"
+ },
+ {
+  "board": "BoooooBoCCDDoEAAFGoEooFGooHHHoIIIoJJ",
+  "min": 4,
+  "tier": "入門"
+ },
+ {
+  "board": "oBBoooCCooDDAAEoFoooEoFoGGGooooooooo",
+  "min": 4,
+  "tier": "入門"
+ },
+ {
+  "board": "BCCDDDBoEooFooEAAFoGoooHoGIJKHoGIJKH",
+  "min": 5,
+  "tier": "入門"
+ },
+ {
+  "board": "BoCCoDBoooEDBFAAEDGFoHEoGoIHooGoIJJo",
+  "min": 5,
+  "tier": "入門"
+ },
+ {
+  "board": "oBCCDEoBooDEooAADEooFFFoGGGoooHHoIIo",
+  "min": 5,
+  "tier": "入門"
+ },
+ {
+  "board": "oBBCooDDoCooAAoCEoFFGGEoooHooIooHJJI",
+  "min": 6,
+  "tier": "初級"
+ },
+ {
+  "board": "oooBBCDEEooCDoFAACDoFGHHoIFGoooIJJoo",
+  "min": 6,
+  "tier": "初級"
+ },
+ {
+  "board": "BooCCCBooDEoBAADEFGHHHoFGIIJJFooKKoo",
+  "min": 7,
+  "tier": "初級"
+ },
+ {
+  "board": "oBBBooooCDEFAACDEFoGoHEFoGoHoooooIII",
+  "min": 7,
+  "tier": "初級"
+ },
+ {
+  "board": "BBCDDoEECoFoAACoFooGGooHIIJJJHKKKooo",
+  "min": 8,
+  "tier": "初級"
+ },
+ {
+  "board": "oBoCCooBDooEAADoFEoGGoFEooHoIIooHooo",
+  "min": 8,
+  "tier": "初級"
+ },
+ {
+  "board": "BBCCoooDDoEoAAooEoFGGoEoFoHoIIooHJJo",
+  "min": 9,
+  "tier": "初級"
+ },
+ {
+  "board": "ooBooCooBooCAABooCoooDDDoEEoooooFFFo",
+  "min": 9,
+  "tier": "初級"
+ },
+ {
+  "board": "BoCoooBoCDEoAACDEooooFFGHHIIIGoooooG",
+  "min": 10,
+  "tier": "初級"
+ },
+ {
+  "board": "oBBCooDooCooDEoAAFoEGGHFoEoIHFoooIJJ",
+  "min": 10,
+  "tier": "初級"
+ },
+ {
+  "board": "BBCoDDooCoEoFAAoEGFHHIJGFooIJoooooKK",
+  "min": 11,
+  "tier": "中級"
+ },
+ {
+  "board": "BCCoDoBEooDoFEAADoFoGoHHFIGoJJoIKKoo",
+  "min": 11,
+  "tier": "中級"
+ },
+ {
+  "board": "ooBBBoCooDDoCoAAEFoGGGEFooHoEFooHIIo",
+  "min": 12,
+  "tier": "中級"
+ },
+ {
+  "board": "ooBBBoooCDEFAACDEFGoHoEoGoHooIooHJJI",
+  "min": 12,
+  "tier": "中級"
+ },
+ {
+  "board": "BBBCDooEECDoooAADFGGHooFIoHoooIJJoKK",
+  "min": 13,
+  "tier": "中級"
+ },
+ {
+  "board": "BCCoDoBEooDoFEAADoFoGoHHFoGoooooIIJJ",
+  "min": 14,
+  "tier": "中級"
+ },
+ {
+  "board": "BBBoCDEFooCDEFAACGoooooGHIJKKoHIJooo",
+  "min": 15,
+  "tier": "中級"
+ },
+ {
+  "board": "BCCoDoBEooDoFEAADoFoGoHHFIGooooIJJKK",
+  "min": 16,
+  "tier": "中級"
+ },
+ {
+  "board": "oooBCoDDDBCEooAACEooFoGGHoFoIIHJJoKK",
+  "min": 17,
+  "tier": "中級"
+ },
+ {
+  "board": "BCCoDoBEooDoBEAADooFGHIIoFGHoooFJJKK",
+  "min": 18,
+  "tier": "中級"
+ },
+ {
+  "board": "BBBoCDoEooCDoEAACFoGoHHFoGIJJoooIKKK",
+  "min": 19,
+  "tier": "上級"
+ },
+ {
+  "board": "BBBCDEoooCDEoFAADEoFGoHHIFGoooIoJJKK",
+  "min": 20,
+  "tier": "上級"
+ },
+ {
+  "board": "oooBCDEEEBCDoFAACDoFGoHHIFGoooIoJJKK",
+  "min": 21,
+  "tier": "上級"
+ },
+ {
+  "board": "BBBCDoEFFCDGEoAADGooHooGooHIJJKKKIoo",
+  "min": 22,
+  "tier": "上級"
+ },
+ {
+  "board": "BBBCDEoooCDEFoAADoFoooGGooHIJJooHIoo",
+  "min": 23,
+  "tier": "上級"
+ },
+ {
+  "board": "oooBCoDDDBCEooAACEooFoooGoFHIIGJJHKK",
+  "min": 24,
+  "tier": "上級"
+ },
+ {
+  "board": "oooBCDEEEBCDFoAACoFoooGGooHIJJooHIoo",
+  "min": 25,
+  "tier": "上級"
+ },
+ {
+  "board": "BBBCDEFFFCDEooAADoooooGGHoIJKKHoIJoo",
+  "min": 26,
+  "tier": "上級"
+ },
+ {
+  "board": "oooBCoDDDBCEooAACEooFoGGHoFIJJHooIKK",
+  "min": 27,
+  "tier": "上級"
+ },
+ {
+  "board": "BBBCDoEEECDoFoAADoFoooGGooHIJJooHIKK",
+  "min": 28,
+  "tier": "上級"
+ }
+]
