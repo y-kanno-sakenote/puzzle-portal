@@ -72,7 +72,7 @@ def cells_of(car, p):
     ch, x, y, L, d = car
     if d == "h":
         return [(p + i, y) for i in range(L)]
-    return [(x, y + i) for i in range(L)]
+    return [(x, p + i) for i in range(L)]
 
 
 def solve(cars):
@@ -151,7 +151,7 @@ def main():
         flag = "OK " if row["ok"] else "NG "
         print("%s #%02d min impl=%2d qa=%2d tier impl=%s qa=%s cars=%2d %s %s" % (
             flag, k, l["min"], m, l["tier"], row["qa_tier"], len(cars), l["board"],
-            ("; ".join(errs) if errs else "")))
+            ("; ".join(errs) if errs else "")), flush=True)
     print("boards=%d dup=%d all_ok=%s" % (len(boards), dup, ok_all))
     if out_paths:
         json.dump(results, open(out_paths, "w", encoding="utf-8"), ensure_ascii=False)
