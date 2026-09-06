@@ -42,7 +42,7 @@
 
   .car{
     position:absolute;border-radius:8px;touch-action:none;cursor:grab;
-    transition:left .13s ease, top .13s ease;
+    transition:left .13s ease, top .13s ease, transform .13s ease;
     box-shadow:inset 0 -3px 0 rgba(0,0,0,.14), 0 1px 2px rgba(0,0,0,.12);
   }
   .car.dragging{transition:none;z-index:6;filter:brightness(1.06);cursor:grabbing}
@@ -412,14 +412,17 @@ if (typeof document !== 'undefined') (function () {
     place();
   }
 
+  var GAP = 3;
+  function setPos(d, x, y) {
+    d.style.left = 'calc(' + pct(x) + ' + ' + GAP + 'px)';
+    d.style.top  = 'calc(' + pct(y) + ' + ' + GAP + 'px)';
+  }
   function place() {
-    var gap = 3;
     for (var i = 0; i < state.length; i++) {
       var c = state[i], d = els[i];
-      d.style.left = 'calc(' + pct(c.x) + ' + ' + gap + 'px)';
-      d.style.top  = 'calc(' + pct(c.y) + ' + ' + gap + 'px)';
-      d.style.width  = 'calc(' + pct(c.dir === 'h' ? c.len : 1) + ' - ' + (gap * 2) + 'px)';
-      d.style.height = 'calc(' + pct(c.dir === 'v' ? c.len : 1) + ' - ' + (gap * 2) + 'px)';
+      setPos(d, c.x, c.y);
+      d.style.width  = 'calc(' + pct(c.dir === 'h' ? c.len : 1) + ' - ' + (GAP * 2) + 'px)';
+      d.style.height = 'calc(' + pct(c.dir === 'v' ? c.len : 1) + ' - ' + (GAP * 2) + 'px)';
     }
   }
 
@@ -443,7 +446,7 @@ if (typeof document !== 'undefined') (function () {
   /* ---- ドラッグ ---- */
   var drag = null;
 
-  function cellSize() { return elBoard.getBoundingClientRect().width / W; }
+  function cellSize() { return elBoard.clientWidth / W; } /* 枠線を含めない */
 
   function onDown(e) {
     if (finished) return;
@@ -474,11 +477,24 @@ if (typeof document !== 'undefined') (function () {
 
   function onUp(e) {
     if (!drag || drag.el !== this) return;
-    var id = drag.id, delta = Math.round(drag.off / drag.cell);
-    this.classList.remove('dragging');
-    this.style.transform = '';
+    var id = drag.id, dir = drag.dir, cell = drag.cell, off = drag.off;
+    var delta = Math.round(off / cell);
     drag = null;
-    if (delta !== 0 && CarEscape.canMove(state, id, delta)) doMove(id, delta);
+    this.classList.remove('dragging');
+    if (delta !== 0 && CarEscape.canMove(state, id, delta)) {
+      /* 離した位置を起点に、残りの距離だけ滑らせる（元の位置へ戻さない） */
+      var c = state[id];
+      var rem = off - delta * cell;
+      this.style.transition = 'none';
+      setPos(this, c.x + (dir === 'h' ? delta : 0), c.y + (dir === 'v' ? delta : 0));
+      this.style.transform = dir === 'h' ? 'translateX(' + rem + 'px)' : 'translateY(' + rem + 'px)';
+      void this.getBoundingClientRect();
+      this.style.transition = '';
+      this.style.transform = '';
+      doMove(id, delta);
+    } else {
+      this.style.transform = '';
+    }
   }
 
   function doMove(id, delta) {
