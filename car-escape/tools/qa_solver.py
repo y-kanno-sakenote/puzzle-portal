@@ -125,7 +125,7 @@ def main():
     out_paths = None
     if "--paths" in sys.argv:
         out_paths = sys.argv[sys.argv.index("--paths") + 1]
-    tiers = [("入門", 3, 5), ("初級", 6, 10), ("中級", 11, 18), ("上級", 19, 10**9)]
+    tiers = [("入門", 3, 5), ("初級", 6, 10), ("中級", 11, 18), ("上級", 19, 31), ("達人", 32, 10**9)]
 
     def tier_of(m):
         for name, lo, hi in tiers:
