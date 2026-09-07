@@ -6,6 +6,7 @@
 ## 収録
 - `car-escape/` 車をだせ！（ラッシュアワー型・6×6）— 正典は `car-escape/CLAUDE.md`
 - `hakoiri-musume/` 箱入り娘（4×5・娘2×2を下の出口へ）— 正典は `hakoiri-musume/CLAUDE.md`
+- `slide-robots/` すべりロボ（ハイパーロボット型・12×12・宣言してから滑らせる）— 正典は `slide-robots/CLAUDE.md`
 
 ## 憲法（変えない原則）
 - 入口は一覧と進み具合だけ。ランキング・ログイン・広告・共通ライブラリを足さない
