@@ -19,7 +19,13 @@
   }
   #app{max-width:420px;margin:0 auto;padding:10px 10px 40px}
   header{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:2px 2px 10px}
+  #titleWrap{display:flex;align-items:center;gap:6px}
   #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+  #helpBtn{
+    width:24px;height:24px;margin:0;padding:0;border-radius:50%;
+    font-size:13px;font-weight:700;line-height:1;vertical-align:2px;
+    display:inline-flex;align-items:center;justify-content:center;
+  }
   #callOut{font-size:15px;color:var(--sub);white-space:nowrap}
   #callOut b{color:var(--ink);font-weight:700;font-size:17px}
 
@@ -87,6 +93,14 @@
     background:rgba(245,244,241,.94);border-radius:10px;z-index:20;
   }
   #clear[hidden]{display:none}
+
+  #helpPanel{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:rgba(245,244,241,.96);border-radius:10px;z-index:25;
+    cursor:pointer;padding:20px;
+  }
+  #helpPanel[hidden]{display:none}
+  #helpText{font-size:15px;line-height:2;text-align:center;color:var(--ink)}
   #clearTitle{font-size:26px;font-weight:700}
   #clearVerdict{font-size:16px;min-height:1.5em}
   #clearStats{font-size:15px;color:var(--sub)}
@@ -107,12 +121,19 @@
 <body>
 <div id="app">
   <header>
-    <div id="title">すべりロボ</div>
+    <div id="titleWrap"><span id="title">入門 1</span><button id="helpBtn" type="button" aria-label="あそびかた">？</button></div>
     <div id="callOut"></div>
   </header>
 
   <div id="stage">
     <div id="board"></div>
+    <div id="helpPanel" hidden>
+      <div id="helpText">
+        ロボットは壁か仲間にぶつかるまで滑る<br>
+        先に何手で行けるか宣言する<br>
+        同じ色を的に止めればクリア
+      </div>
+    </div>
     <div id="clear" hidden>
       <div id="clearTitle">クリア！</div>
       <div id="clearVerdict"></div>
@@ -376,6 +397,8 @@ if (typeof document !== 'undefined') (function () {
   var elUndo = document.getElementById('undo');
   var elReset = document.getElementById('reset');
   var elLevels = document.getElementById('levels');
+  var elHelpPanel = document.getElementById('helpPanel');
+  var elHelpBtn = document.getElementById('helpBtn');
 
   /* 段階名と何本目か（クリアするまで見せない） */
   var LABELS = (function () {
@@ -388,7 +411,7 @@ if (typeof document !== 'undefined') (function () {
     return out;
   })();
 
-  var save = { cleared: {}, last: 0 };
+  var save = { cleared: {}, last: 0, seen: 0 };
   function loadSave() {
     try {
       var raw = localStorage.getItem(KEY);
@@ -397,6 +420,7 @@ if (typeof document !== 'undefined') (function () {
       if (o && typeof o === 'object') {
         if (o.cleared && typeof o.cleared === 'object') save.cleared = o.cleared;
         if (Number.isInteger(o.last) && o.last >= 0 && o.last < LEVELS.length) save.last = o.last;
+        if (o.seen) save.seen = 1;
       }
     } catch (e) { /* 保存が使えなくても遊べる */ }
   }
@@ -670,8 +694,18 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
+  /* ---- あそびかた（初回だけ自動、以降は？ボタン） ---- */
+  function showHelp() { elHelpPanel.hidden = false; }
+  function hideHelp() {
+    elHelpPanel.hidden = true;
+    if (!save.seen) { save.seen = 1; storeSave(); }
+  }
+  elHelpPanel.addEventListener('click', hideHelp);
+  elHelpBtn.addEventListener('click', showHelp);
+
   loadSave();
   loadLevel(save.last);
+  if (!save.seen) showHelp();
 })();
 </script>
 </body>
