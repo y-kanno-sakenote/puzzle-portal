@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>すべりロボ</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#e6e4de; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --wall:#4a463f; --block:#8f8a80;
+    --R:#d24234; --B:#3f6fb0; --Y:#d3a017; --G:#4c8d55;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  #app{max-width:420px;margin:0 auto;padding:10px 10px 40px}
+  header{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:2px 2px 10px}
+  #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+  #callOut{font-size:15px;color:var(--sub);white-space:nowrap}
+  #callOut b{color:var(--ink);font-weight:700;font-size:17px}
+
+  #stage{position:relative}
+  #board{
+    /* content-box にして枠線を外へ出す＝マスが正方形になる */
+    box-sizing:content-box;position:relative;
+    width:calc(100% - 6px);max-width:400px;aspect-ratio:1/1;margin:0 auto;
+    background:var(--panel);border:3px solid var(--sub);border-radius:8px;
+    background-image:
+      repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px calc(100% / 12)),
+      repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px calc(100% / 12));
+    overflow:hidden;touch-action:none;
+  }
+  .wallH,.wallV{position:absolute;background:var(--wall);border-radius:2px;z-index:3}
+  .wallH{height:3px}
+  .wallV{width:3px}
+  #block{position:absolute;background:var(--block);border-radius:6px;z-index:2}
+
+  .target{
+    position:absolute;z-index:1;border:3px solid currentColor;border-radius:8px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:13px;opacity:.55;
+  }
+  .target.Y{opacity:.85} /* 黄は明るく溶けるので濃く */
+  .robot{
+    position:absolute;z-index:5;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-size:14px;line-height:1;color:#fff;
+    box-shadow:inset 0 -2px 0 rgba(0,0,0,.18), 0 1px 2px rgba(0,0,0,.2);
+    touch-action:none;cursor:grab;opacity:.4;pointer-events:none;
+    transition:left .15s ease, top .15s ease, transform .12s ease;
+  }
+  #board.live .robot{opacity:1;pointer-events:auto}
+  .robot.dragging{z-index:7;transform:scale(1.12);cursor:grabbing}
+  .robot.R{background:var(--R)} .robot.B{background:var(--B)}
+  .robot.Y{background:var(--Y);color:#2b2b2b} .robot.G{background:var(--G)}
+  .target.R{color:var(--R)} .target.B{color:var(--B)}
+  .target.Y{color:var(--Y)} .target.G{color:var(--G)}
+  #ghost{
+    position:absolute;z-index:4;border-radius:50%;border:2px dashed currentColor;
+    opacity:.6;pointer-events:none;
+  }
+  #ghost[hidden]{display:none}
+
+  #call{padding:12px 0 2px}
+  #callAsk{font-size:15px;color:var(--sub);padding:0 2px 6px}
+  #callGrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+  #callGrid button{padding:0;height:42px;font-size:16px}
+  #call[hidden]{display:none}
+
+  #buttons{display:flex;gap:8px;padding:12px 0 4px}
+  button{
+    font:inherit;font-size:15px;padding:11px 14px;border:1px solid var(--frame);
+    border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button:active{background:#eeece7}
+  button:disabled{opacity:.4;cursor:default}
+  #buttons button{flex:1}
+
+  #clear{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:8px;
+    background:rgba(245,244,241,.94);border-radius:10px;z-index:20;
+  }
+  #clear[hidden]{display:none}
+  #clearTitle{font-size:26px;font-weight:700}
+  #clearVerdict{font-size:16px;min-height:1.5em}
+  #clearStats{font-size:15px;color:var(--sub)}
+  #clearStats b{color:var(--ink);font-weight:700}
+  #next{font-size:17px;padding:12px 28px;margin-top:6px}
+
+  #levels{padding-top:18px}
+  .tier{margin-bottom:10px}
+  .tierName{font-size:13px;color:var(--sub);padding:2px 2px 4px}
+  .tierRow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .lv{
+    padding:0;height:40px;font-size:14px;border-radius:7px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .lv.cur{border-color:var(--ink);font-weight:700}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div id="title">すべりロボ</div>
+    <div id="callOut"></div>
+  </header>
+
+  <div id="stage">
+    <div id="board"></div>
+    <div id="clear" hidden>
+      <div id="clearTitle">クリア！</div>
+      <div id="clearVerdict"></div>
+      <div id="clearStats"></div>
+      <button id="next">つぎへ</button>
+    </div>
+  </div>
+
+  <section id="call">
+    <div id="callAsk">何手で行ける？</div>
+    <div id="callGrid"></div>
+  </section>
+
+  <div id="buttons">
+    <button id="undo">もどす</button>
+    <button id="reset">はじめから</button>
+  </div>
+
+  <section id="levels"></section>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.SlideRobots として公開する）
+   ===================================================================== */
+
+/* LEVELS-BEGIN  tools/gen_levels.py の出力をそのまま貼る。手で書き換えない */
+var LEVELS = [
+  {"w":12,"walls":"939511139113c403800682c291002c01001280000102c00684000440140383802ff80382802c2ff80046c00101168017940040012c03a90290000102800000680682c446ec56c546","robots":[[10,1,"R"],[9,9,"B"],[6,8,"Y"],[5,9,"G"]],"target":[9,8,"B"],"min":3,"tier":"入門","needsOthers":false},
+  {"w":12,"walls":"939391111513800004042946c42c03a90017910500000003c02904406ac290002ff8105280042ffc029286a90139004281000000029686800682c00381000100106ac44446c46c56","robots":[[4,9,"R"],[1,8,"B"],[10,1,"Y"],[2,7,"G"]],"target":[3,7,"R"],"min":3,"tier":"入門","needsOthers":false},
+  {"w":12,"walls":"939111391113828000680002c682c29002c2950010004016a904044290078003aff80003c0002ff80002d400013c00029502c0010002a9001000000280002c02ac02c446c546c546","robots":[[5,2,"R"],[7,11,"B"],[2,2,"Y"],[7,3,"G"]],"target":[1,9,"B"],"min":3,"tier":"入門","needsOthers":false},
+  {"w":12,"walls":"939139515113ac00283a906a81004000001282c290680406c4100450038391402ff8000282902ff82c0280000110010280002c006806c2c001401003901000380682c4446c46c546","robots":[[9,3,"R"],[8,10,"B"],[3,11,"Y"],[9,8,"G"]],"target":[6,10,"Y"],"min":3,"tier":"入門","needsOthers":false},
+  {"w":12,"walls":"911391111393800000000682802c00004102c0050002904696838440001385002ff86802a9042ff81006800381102c0380002c000102c0680104004290100029283ac6c444446ec6","robots":[[5,4,"R"],[7,9,"B"],[6,9,"Y"],[6,0,"G"]],"target":[9,7,"B"],"min":3,"tier":"入門","needsOthers":false},
+  {"w":12,"walls":"9139115113938004003802c2800380400012c680029006829102c4400502ac043ff82902c1292ff8400690000110380380406840000680385038004380003800003ac6c446c46c46","robots":[[8,7,"R"],[0,6,"B"],[7,4,"Y"],[6,0,"G"]],"target":[1,5,"B"],"min":4,"tier":"入門","needsOthers":false},
+  {"w":12,"walls":"91393b91111380004280040282c290002902801002c00002c2c2c4500002d4143ff804029103aff80382ac000110400285068000380683812c0402c3800281038012c446c6c44446","robots":[[9,1,"R"],[8,8,"B"],[5,2,"Y"],[4,10,"G"]],"target":[1,7,"B"],"min":4,"tier":"入門","needsOthers":false},
+  {"w":12,"walls":"939111111393800040000002800290000682868002c00102c50404500682d503aff8410291002ff838028000011000028680404002c681003a90001382c000000282c45446c446c6","robots":[[0,10,"R"],[4,6,"B"],[5,3,"Y"],[7,2,"G"]],"target":[6,3,"Y"],"min":4,"tier":"入門","needsOthers":false},
+  {"w":12,"walls":"915393911113803a82c00002840042902c02a9029000010280000446ac06c4042ff901439103aff84292840041129002838290400006c4400038000393928002c06ac6c6c4445456","robots":[[1,7,"R"],[1,6,"B"],[6,4,"Y"],[1,10,"G"]],"target":[4,8,"R"],"min":4,"tier":"入門","needsOthers":false},
+  {"w":12,"walls":"95113b911393a90006840046800029292c13c00000004142d4686c42929291103ff8004280002ff8003a80000112c002802c00681002c40100106802910002c012c2c4446c546c56","robots":[[10,7,"R"],[4,3,"B"],[0,8,"Y"],[0,1,"G"]],"target":[6,8,"B"],"min":4,"tier":"入門","needsOthers":false},
+  {"w":12,"walls":"911113b91113802c0028000284010402c006a90029001003c02c0440068290012ff80102c4006ff80042d1029110003a92c000068046841406850017a90381290003c6c44446c446","robots":[[9,1,"R"],[6,9,"B"],[7,6,"Y"],[6,11,"G"]],"target":[5,3,"R"],"min":5,"tier":"初級","needsOthers":false},
+  {"w":12,"walls":"913911151393868000292c02810000000142ac00002c0296812c04410003c0412ff8000292902ffc0006c002c1138003940010000002a90068000042802810000292c46c44444446","robots":[[6,10,"R"],[1,9,"B"],[8,10,"Y"],[4,3,"G"]],"target":[10,3,"G"],"min":5,"tier":"初級","needsOthers":false},
+  {"w":12,"walls":"911139111513840000002906a90002c0004380040010029280290440000680002ffac00384042ff81006a92901168683800000014102c40002c290029106803a82c2c445446eec56","robots":[[9,9,"R"],[4,1,"B"],[0,1,"Y"],[11,8,"G"]],"target":[3,4,"B"],"min":5,"tier":"初級","needsOthers":false},
+  {"w":12,"walls":"91139111111380002c002c46c068010005139012c000290282c014404042c4142ffa92969103aff800038680011680028104004102c280038292c012ac2800001002c56c44444446","robots":[[10,3,"R"],[3,1,"B"],[9,9,"Y"],[2,9,"G"]],"target":[9,1,"B"],"min":5,"tier":"初級","needsOthers":false},
+  {"w":12,"walls":"913913911113802802800042c002c0000292906812c00046c0140450005790292ff8001384002ffac06a838001101012c4400004004293900029003a802868000002c46c544446c6","robots":[[6,11,"R"],[8,9,"B"],[0,6,"Y"],[1,4,"G"]],"target":[6,3,"B"],"min":5,"tier":"初級","needsOthers":false},
+  {"w":12,"walls":"91113b9113938000002c0282806840010042805290000292829004468006c0002ff9000390402ff80402829001100382c00000680002902c04106842ac290380103ac56c6c46c446","robots":[[8,10,"R"],[9,4,"B"],[7,5,"Y"],[3,8,"G"]],"target":[2,4,"G"],"min":6,"tier":"初級","needsOthers":false},
+  {"w":12,"walls":"939391111113800282c00682ac0000100142810002c00292c6806c50004291003ff8003ac6806ffac0029100391052c2800000029012800406800406802929000383c6c46ec44446","robots":[[9,0,"R"],[3,0,"B"],[6,4,"Y"],[5,3,"G"]],"target":[5,9,"Y"],"min":6,"tier":"初級","needsOthers":false},
+  {"w":12,"walls":"911139139393840068000002a90050000002800292c02c02806804500102c0102ff84002d4042ff838069129011000078040000680478038400100138280382c006ac6c46c454456","robots":[[11,1,"R"],[4,8,"B"],[1,1,"Y"],[3,5,"G"]],"target":[4,10,"G"],"min":6,"tier":"初級","needsOthers":false},
+  {"w":12,"walls":"913911111513c2c0000029469010400400138042900380028038044002c280002ff80052ac042ff80296812901168003c00040010002900038400002802800382c02c46c4446c546","robots":[[2,1,"R"],[2,4,"B"],[10,11,"Y"],[0,9,"G"]],"target":[9,10,"R"],"min":6,"tier":"初級","needsOthers":false},
+  {"w":12,"walls":"91113911391382c00040404280104292903a800038004002c0680440380290102ff8006a80002ff84012c40681129002910140000046c2c03ac000139010001282c2c46c4446c456","robots":[[6,2,"R"],[4,1,"B"],[11,6,"Y"],[4,11,"G"]],"target":[2,4,"R"],"min":6,"tier":"初級","needsOthers":false},
+  {"w":12,"walls":"93b91151111380000292c00684000000100383868002c0028005044010468003aff80053c4002ff8003a93800110680280400000100282906ac00002800010100282c446c44446c6","robots":[[0,1,"R"],[8,7,"B"],[5,3,"Y"],[3,5,"G"]],"target":[8,3,"B"],"min":7,"tier":"中級","needsOthers":true},
+  {"w":12,"walls":"953911513953c382c2900292900014000402842c03ac0382838104410002c406aff8404691012ffa9013c4000110400291000000386a82c002c04012801000129002c4446c6c4446","robots":[[0,7,"R"],[4,6,"B"],[3,6,"Y"],[4,9,"G"]],"target":[1,4,"G"],"min":7,"tier":"中級","needsOthers":true},
+  {"w":12,"walls":"91111113b913ac000002a802810068068402c0681001038290106c40040284003ff82902c3842ff80002d42901100046938000002c138002c0000146800010000293c4446c46c446","robots":[[11,3,"R"],[5,9,"B"],[4,3,"Y"],[6,0,"G"]],"target":[9,5,"G"],"min":7,"tier":"中級","needsOthers":true},
+  {"w":12,"walls":"953b95151113a902a9038006800000000403840006800382a9000540000280002ff8404280002ffa903a802c01104002800500029046c42904000293910029068002c6ec44456c46","robots":[[9,11,"R"],[0,1,"B"],[4,11,"Y"],[4,4,"G"]],"target":[5,1,"B"],"min":7,"tier":"中級","needsOthers":true},
+  {"w":12,"walls":"91111153b91382c002902802801068000402c4685004290295103c690002a9002ff8004280006ffac03a800291101006ac0000680403c10004100382900683802802c445446c6c46","robots":[[11,2,"R"],[11,11,"B"],[7,8,"Y"],[2,9,"G"]],"target":[7,4,"G"],"min":7,"tier":"中級","needsOthers":true},
+  {"w":12,"walls":"93939111151382c000002902c03800684002900400129046c0290440001394002ff802c2a906aff800128001413c0006c40290010683950000000102838282c002c2c446ec544456","robots":[[4,2,"R"],[8,5,"B"],[1,11,"Y"],[9,1,"G"]],"target":[3,4,"Y"],"min":8,"tier":"中級","needsOthers":true},
+  {"w":12,"walls":"91113bb91113802c02c0000280050410006a868383ac0056c50004410017d1002ff80683902c2ff84102c0010152900292c000380046801040400293800038380282c4444446c6c6","robots":[[6,8,"R"],[10,6,"B"],[5,4,"Y"],[10,7,"G"]],"target":[6,10,"G"],"min":8,"tier":"中級","needsOthers":true},
+  {"w":12,"walls":"91513b911113c290002c0002d4000041404691040292929380038440000280002ffac0028006aff81006ac014116868381429005010282904029000680029002ac03c46c4446c546","robots":[[1,11,"R"],[8,7,"B"],[2,9,"Y"],[7,0,"G"]],"target":[9,7,"G"],"min":8,"tier":"中級","needsOthers":true},
+  {"w":12,"walls":"939111151113802c0003800280012c000046804001000293803804404046c0002ff83813d4002ffc0042912c01138292ac0500000002812900400042800000380292c444444446c6","robots":[[9,7,"R"],[6,0,"B"],[4,6,"Y"],[11,9,"G"]],"target":[3,9,"B"],"min":8,"tier":"中級","needsOthers":true},
+  {"w":12,"walls":"911139111113c0682842c046905002901057803ac0000013840014400002c3802ff8004290006ff86a92800039501002800000380002ac004002c04281003800103ac444446c6c46","robots":[[6,8,"R"],[7,2,"B"],[2,4,"Y"],[2,11,"G"]],"target":[8,6,"Y"],"min":8,"tier":"中級","needsOthers":true},
+  {"w":12,"walls":"91111139391380400002c04280380680103ac0004102c00290003c40500280002ff8384684002ff84293a90001103802c402c000404693c010003813801002c02ac2c6c444546c56","robots":[[6,3,"R"],[3,11,"B"],[4,8,"Y"],[2,1,"G"]],"target":[8,3,"G"],"min":9,"tier":"上級","needsOthers":true},
+  {"w":12,"walls":"9513911111138382800000028000000002c6c40680684013d5010452900293842ff802c684292ff80413838001102902c40000680002912c0050000280012a92c282c4446c4456c6","robots":[[11,2,"R"],[1,8,"B"],[0,0,"Y"],[2,2,"G"]],"target":[10,2,"B"],"min":9,"tier":"上級","needsOthers":true},
+  {"w":12,"walls":"939511139113c429004006c691000038051382c00000038280100440000282c02ff8006a80102ff868128002c150140282c050382902801038000402802828000382c46c6c446c46","robots":[[9,0,"R"],[0,5,"B"],[3,6,"Y"],[10,7,"G"]],"target":[6,8,"G"],"min":9,"tier":"上級","needsOthers":true},
+  {"w":12,"walls":"911111113b9380400686868280384141290680003a900003800404400042ac292ffac292c5002ff810029100013c0006c0000041040396ac02900382810100280002c444446c4446","robots":[[2,5,"R"],[2,10,"B"],[9,2,"Y"],[2,1,"G"]],"target":[3,9,"Y"],"min":10,"tier":"上級","needsOthers":true},
+  {"w":12,"walls":"9139111391138002c002868280681040410280500292900282906c40006a80403ffac01282902ff85006c000011038039000000002c2c44068680016939010100283c444444446c6","robots":[[2,9,"R"],[6,3,"B"],[3,2,"Y"],[6,7,"G"]],"target":[10,8,"Y"],"min":10,"tier":"上級","needsOthers":true},
+  {"w":12,"walls":"93b911111153800400004296802906829003800001004006c4040440380391292ff8000280006ff8006a82c039100012c01000002c0690682c068103801001010682c46c6c444546","robots":[[0,7,"R"],[6,7,"B"],[11,2,"Y"],[10,5,"G"]],"target":[10,6,"R"],"min":10,"tier":"上級","needsOthers":true},
+  {"w":12,"walls":"9393b91115138282842c0382800003810002802c00000686ac010440414781402ffa9293c2906ff8004290029110003ac00000000002d068004040069010003a9003c46c444446c6","robots":[[8,6,"R"],[4,4,"B"],[11,11,"Y"],[2,3,"G"]],"target":[10,5,"G"],"min":11,"tier":"上級","needsOthers":true},
+  {"w":12,"walls":"91511393b913803802c00002840000102c06a92c2c2c0143c00105410292d0042ff8000290292ffac00280000110106aac2c0040001281010038044682ac02802913c6c546c44446","robots":[[1,9,"R"],[3,8,"B"],[7,0,"Y"],[10,1,"G"]],"target":[1,8,"G"],"min":11,"tier":"上級","needsOthers":true},
+  {"w":12,"walls":"91111153b913800002900002c2c00400000290100384040280000469038286802ff80042c12c2ffc003a968141138406c502904029479100003800138682c0280682c54456eec546","robots":[[1,10,"R"],[2,6,"B"],[11,8,"Y"],[5,8,"G"]],"target":[3,6,"R"],"min":12,"tier":"上級","needsOthers":true},
+  {"w":12,"walls":"911113939153800068028292806810004042c0102c029292902c0540000680012ff80003ac006ff80046c1403912c013929002c0100280000014004282c006a9003ac4544546c6c6","robots":[[10,11,"R"],[2,11,"B"],[6,8,"Y"],[3,11,"G"]],"target":[10,3,"G"],"min":12,"tier":"上級","needsOthers":true}
+];
+/* LEVELS-END */
+
+var SlideRobots = (function () {
+  var W = 12;                     // 盤の幅（＝高さ）
+  var DIRS = ['N', 'E', 'S', 'W'];
+  var BIT = [1, 2, 4, 8];         // N=1, E=2, S=4, W=8
+  var DX = [0, 1, 0, -1];
+  var DY = [-1, 0, 1, 0];
+
+  function dirIndex(d) {
+    if (typeof d === 'number') return (d >= 0 && d <= 3) ? (d | 0) : -1;
+    var i = DIRS.indexOf(String(d).toUpperCase());
+    return i;
+  }
+  function cellOf(x, y) { return y * W + x; }
+  function xy(cell) { return { x: cell % W, y: Math.floor(cell / W) }; }
+
+  /* レベル1件 -> state。state は使い回さず、applyMove は新しい state を返す */
+  function parse(level) {
+    var walls = [], i;
+    for (i = 0; i < W * W; i++) {
+      var v = parseInt(level.walls.charAt(i), 16);
+      walls.push(isNaN(v) ? 0 : v);
+    }
+    var robots = [], colors = [];
+    for (i = 0; i < level.robots.length; i++) {
+      robots.push(cellOf(level.robots[i][0], level.robots[i][1]));
+      colors.push(level.robots[i][2]);
+    }
+    var t = level.target;
+    return {
+      w: W, walls: walls, robots: robots, colors: colors,
+      target: cellOf(t[0], t[1]), targetColor: t[2],
+      targetIdx: colors.indexOf(t[2]),
+      min: level.min | 0
+    };
+  }
+
+  function cloneState(s) {
+    return {
+      w: s.w, walls: s.walls, robots: s.robots.slice(), colors: s.colors,
+      target: s.target, targetColor: s.targetColor, targetIdx: s.targetIdx, min: s.min
+    };
+  }
+
+  /* robotIdx の体を dir へ「壁か他の体に当たるまで」滑らせた先のマス。
+     1マスも動けない（＝手にならない）なら null */
+  function slide(state, robotIdx, dir) {
+    var d = dirIndex(dir);
+    if (d < 0 || !state || !state.robots) return null;
+    var pos = state.robots[robotIdx];
+    if (typeof pos !== 'number' || pos < 0 || pos >= W * W) return null; /* 盤外は動かさない（無限ループ防止） */
+    var walls = state.walls, robots = state.robots;
+    var cur = pos, step = DY[d] * W + DX[d], k, nx, hit;
+    for (;;) {
+      if (walls[cur] & BIT[d]) break;
+      nx = cur + step;
+      hit = false;
+      for (k = 0; k < robots.length; k++) if (robots[k] === nx) { hit = true; break; }
+      if (hit) break;
+      cur = nx;
+    }
+    return cur === pos ? null : cur;
+  }
+
+  /* 動かした新しい state。動けなければ null（元の state は変えない） */
+  function applyMove(state, robotIdx, dir) {
+    var to = slide(state, robotIdx, dir);
+    if (to === null) return null;
+    var ns = cloneState(state);
+    ns.robots[robotIdx] = to;
+    return ns;
+  }
+
+  function isSolved(state) {
+    if (!state || !state.robots) return false;
+    return state.robots[state.targetIdx] === state.target;
+  }
+
+  /* 最短手数を幅優先で求める。解けなければ -1。
+     状態＝4体の位置（的の色の体は区別し、他は順不同に正規化）
+     opts.path を真にすると {min, path:[[マス, 向き], ...]} を返す */
+  function solve(level, opts) {
+    opts = opts || {};
+    var state = (level && typeof level.walls === 'string') ? parse(level) : level;
+    var cap = opts.depthCap || 12;
+    var goal = state.target;
+    var tIdx = state.targetIdx;
+    var start = [state.robots[tIdx]];
+    var k;
+    for (k = 0; k < state.robots.length; k++) if (k !== tIdx) start.push(state.robots[k]);
+    if (start[0] === goal) return opts.path ? { min: 0, path: [] } : 0;
+    var walls = state.walls;
+
+    function key(a) { return ((a[0] * 144 + a[1]) * 144 + a[2]) * 144 + a[3]; }
+    function norm(a) {
+      var o = [a[1], a[2], a[3]];
+      o.sort(function (p, q) { return p - q; });
+      return [a[0], o[0], o[1], o[2]];
+    }
+    function slideRaw(st, i) {
+      /* st の i 番目を各方向へ滑らせた先（動けない向きは -1） */
+      var out = [-1, -1, -1, -1], pos = st[i], d, cur, step, nx, j, hit;
+      for (d = 0; d < 4; d++) {
+        cur = pos; step = DY[d] * W + DX[d];
+        for (;;) {
+          if (walls[cur] & BIT[d]) break;
+          nx = cur + step;
+          hit = false;
+          for (j = 0; j < 4; j++) if (st[j] === nx) { hit = true; break; }
+          if (hit) break;
+          cur = nx;
+        }
+        if (cur !== pos) out[d] = cur;
+      }
+      return out;
+    }
+
+    var s0 = norm(start);
+    var seen = new Map();
+    var nodes = [];      // path 用: {st, prev, cell, dir}
+    seen.set(key(s0), 0);
+    nodes.push({ st: s0, prev: -1, cell: -1, dir: -1 });
+    var frontier = [0], depth = 0;
+
+    function unwind(ni, cell, dir) {
+      var out = [[cell, DIRS[dir]]];
+      while (ni > 0) { out.unshift([nodes[ni].cell, DIRS[nodes[ni].dir]]); ni = nodes[ni].prev; }
+      return out;
+    }
+
+    while (frontier.length && depth < cap) {
+      depth++;
+      var next = [];
+      for (var f = 0; f < frontier.length; f++) {
+        var ni = frontier[f], st = nodes[ni].st;
+        for (var i = 0; i < 4; i++) {
+          var dest = slideRaw(st, i);
+          for (var d = 0; d < 4; d++) {
+            if (dest[d] < 0) continue;
+            if (i === 0 && dest[d] === goal) {
+              return opts.path ? { min: depth, path: unwind(ni, st[0], d) } : depth;
+            }
+            var ns = st.slice();
+            ns[i] = dest[d];
+            ns = norm(ns);
+            var kk = key(ns);
+            if (seen.has(kk)) continue;
+            seen.set(kk, 1);
+            nodes.push({ st: ns, prev: ni, cell: st[i], dir: d });
+            next.push(nodes.length - 1);
+          }
+        }
+      }
+      frontier = next;
+    }
+    return opts.path ? { min: -1, path: null } : -1;
+  }
+
+  return {
+    W: W, DIRS: DIRS, LEVELS: LEVELS,
+    cellOf: cellOf, xy: xy, dirIndex: dirIndex,
+    parse: parse, cloneState: cloneState,
+    slide: slide, applyMove: applyMove, isSolved: isSolved, solve: solve
+  };
+})();
+
+if (typeof window !== 'undefined') window.SlideRobots = SlideRobots;
+if (typeof globalThis !== 'undefined') globalThis.SlideRobots = SlideRobots;
+
+/* =====================================================================
+   画面
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var W = SlideRobots.W;
+  var KEY = 'slide-robots';
+  var SYMBOL = { R: '●', B: '▲', Y: '■', G: '◆' };  /* ● ▲ ■ ◆ */
+  var GAP = 2;
+  var AXIS_LOCK = 6;      /* これだけ指が動いたら向きを決める（px） */
+
+  var elBoard = document.getElementById('board');
+  var elCall = document.getElementById('call');
+  var elCallGrid = document.getElementById('callGrid');
+  var elCallOut = document.getElementById('callOut');
+  var elTitle = document.getElementById('title');
+  var elClear = document.getElementById('clear');
+  var elClearTitle = document.getElementById('clearTitle');
+  var elClearVerdict = document.getElementById('clearVerdict');
+  var elClearStats = document.getElementById('clearStats');
+  var elNext = document.getElementById('next');
+  var elUndo = document.getElementById('undo');
+  var elReset = document.getElementById('reset');
+  var elLevels = document.getElementById('levels');
+
+  /* 段階名と何本目か（クリアするまで見せない） */
+  var LABELS = (function () {
+    var out = [], count = {}, i, t;
+    for (i = 0; i < LEVELS.length; i++) {
+      t = LEVELS[i].tier;
+      count[t] = (count[t] || 0) + 1;
+      out.push({ tier: t, no: count[t], text: t + ' ' + count[t] });
+    }
+    return out;
+  })();
+
+  var save = { cleared: {}, last: 0 };
+  function loadSave() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (o && typeof o === 'object') {
+        if (o.cleared && typeof o.cleared === 'object') save.cleared = o.cleared;
+        if (Number.isInteger(o.last) && o.last >= 0 && o.last < LEVELS.length) save.last = o.last;
+      }
+    } catch (e) { /* 保存が使えなくても遊べる */ }
+  }
+  function storeSave() {
+    try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
+  }
+
+  var levelIndex = 0;
+  var state = null;
+  var moves = 0;
+  var call = 0;           /* 宣言した手数。0 = まだ宣言していない */
+  var history = [];
+  var finished = false;
+  var els = [];           /* ロボットの div */
+  var elGhost = null;
+
+  function pc(v) { return (v * 100 / W) + '%'; }
+  function setBox(d, x, y, w, h) {
+    d.style.left = 'calc(' + pc(x) + ' + ' + GAP + 'px)';
+    d.style.top = 'calc(' + pc(y) + ' + ' + GAP + 'px)';
+    d.style.width = 'calc(' + pc(w) + ' - ' + (GAP * 2) + 'px)';
+    d.style.height = 'calc(' + pc(h) + ' - ' + (GAP * 2) + 'px)';
+  }
+  function cellSize() { return elBoard.clientWidth / W; }   /* 枠線を含めない */
+
+  function place(animIdx, dist) {
+    for (var i = 0; i < state.robots.length; i++) {
+      var p = SlideRobots.xy(state.robots[i]);
+      var d = els[i];
+      if (animIdx === i && dist) {
+        d.style.transitionDuration = Math.min(.25, .09 + dist * .02) + 's';
+      } else {
+        d.style.transitionDuration = '';
+      }
+      d.style.left = 'calc(' + pc(p.x) + ' + ' + GAP + 'px)';
+      d.style.top = 'calc(' + pc(p.y) + ' + ' + GAP + 'px)';
+    }
+  }
+
+  function buildBoard() {
+    elBoard.innerHTML = '';
+    els = [];
+    var i, x, y, d;
+
+    /* 中央の塊 */
+    var blk = document.createElement('div');
+    blk.id = 'block';
+    blk.style.left = pc(W / 2 - 1); blk.style.top = pc(W / 2 - 1);
+    blk.style.width = pc(2); blk.style.height = pc(2);
+    elBoard.appendChild(blk);
+
+    /* 壁（マスの辺に太い線）。内側の辺だけ描く（外周は盤の枠線） */
+    for (i = 0; i < W * W; i++) {
+      x = i % W; y = Math.floor(i / W);
+      if ((state.walls[i] & 1) && y > 0) {                 /* 北 */
+        d = document.createElement('div');
+        d.className = 'wallH';
+        d.style.left = pc(x); d.style.width = pc(1);
+        d.style.top = 'calc(' + pc(y) + ' - 1.5px)';
+        elBoard.appendChild(d);
+      }
+      if ((state.walls[i] & 8) && x > 0) {                 /* 西 */
+        d = document.createElement('div');
+        d.className = 'wallV';
+        d.style.top = pc(y); d.style.height = pc(1);
+        d.style.left = 'calc(' + pc(x) + ' - 1.5px)';
+        elBoard.appendChild(d);
+      }
+    }
+
+    /* 的 */
+    var tp = SlideRobots.xy(state.target);
+    var tgt = document.createElement('div');
+    tgt.className = 'target ' + state.targetColor;
+    tgt.textContent = SYMBOL[state.targetColor];
+    setBox(tgt, tp.x, tp.y, 1, 1);
+    elBoard.appendChild(tgt);
+
+    /* 止まる先の目印 */
+    elGhost = document.createElement('div');
+    elGhost.id = 'ghost';
+    elGhost.hidden = true;
+    elBoard.appendChild(elGhost);
+
+    /* ロボット */
+    for (i = 0; i < state.robots.length; i++) {
+      var c = state.colors[i];
+      var r = document.createElement('div');
+      r.className = 'robot ' + c;
+      r.textContent = SYMBOL[c];
+      r.dataset.id = String(i);
+      setBox(r, 0, 0, 1, 1);
+      elBoard.appendChild(r);
+      els.push(r);
+      r.addEventListener('pointerdown', onDown);
+      r.addEventListener('pointermove', onMove);
+      r.addEventListener('pointerup', onUp);
+      r.addEventListener('pointercancel', onUp);
+    }
+    place();
+  }
+
+  function loadLevel(i) {
+    levelIndex = i;
+    state = SlideRobots.parse(LEVELS[i]);
+    moves = 0;
+    call = 0;
+    history = [];
+    finished = false;
+    drag = null;
+    elClear.hidden = true;
+    elCall.hidden = false;
+    elTitle.textContent = LABELS[i].text;
+    elCallOut.textContent = '';
+    elBoard.classList.remove('live');
+    elUndo.disabled = true;
+    buildBoard();
+    renderLevelList();
+    save.last = i;
+    storeSave();
+  }
+
+  /* ---- 宣言（選ぶまでロボットは動かない） ---- */
+  (function buildCallGrid() {
+    for (var n = 1; n <= 12; n++) {
+      var b = document.createElement('button');
+      b.textContent = String(n);
+      b.dataset.n = String(n);
+      b.addEventListener('click', function () {
+        if (call) return;
+        call = parseInt(this.dataset.n, 10);
+        showCounts();
+        elCall.hidden = true;
+        elBoard.classList.add('live');
+      });
+      elCallGrid.appendChild(b);
+    }
+  })();
+
+  /* ---- ドラッグ（指の動き出しで向きを決め、離すと止まるマスまで滑る） ---- */
+  var drag = null;
+
+  function showGhost(idx, to) {
+    var p = SlideRobots.xy(to);
+    elGhost.className = '';
+    elGhost.style.color = getComputedStyle(els[idx]).backgroundColor;
+    setBox(elGhost, p.x, p.y, 1, 1);
+    elGhost.hidden = false;
+  }
+  function hideGhost() { if (elGhost) elGhost.hidden = true; }
+
+  function onDown(e) {
+    if (finished || !call) return;
+    drag = { id: parseInt(this.dataset.id, 10), el: this, sx: e.clientX, sy: e.clientY, dir: null, to: null };
+    this.classList.add('dragging');
+    try { this.setPointerCapture(e.pointerId); } catch (err) {}
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (!drag || drag.el !== this) return;
+    e.preventDefault();
+    var dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
+    if (Math.abs(dx) < AXIS_LOCK && Math.abs(dy) < AXIS_LOCK) {
+      drag.dir = null; drag.to = null; hideGhost();
+      return;
+    }
+    var dir = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 'E' : 'W') : (dy > 0 ? 'S' : 'N');
+    if (dir === drag.dir) return;
+    drag.dir = dir;
+    drag.to = SlideRobots.slide(state, drag.id, dir);
+    if (drag.to === null) hideGhost(); else showGhost(drag.id, drag.to);
+  }
+
+  function onUp(e) {
+    if (!drag || drag.el !== this) return;
+    var id = drag.id, dir = drag.dir, to = drag.to;
+    drag = null;
+    this.classList.remove('dragging');
+    hideGhost();
+    if (dir && to !== null && to !== undefined) doMove(id, dir, to);
+  }
+
+  function showCounts() {
+    elCallOut.innerHTML = '手数 <b>' + moves + '</b> ／ 宣言 <b>' + call + '</b>';
+  }
+  function doMove(id, dir, to) {
+    var from = state.robots[id];
+    var dist = Math.abs(to - from) >= W ? Math.abs(to - from) / W : Math.abs(to - from);
+    history.push(state);
+    state = SlideRobots.applyMove(state, id, dir);
+    moves++;
+    showCounts();
+    elUndo.disabled = false;
+    place(id, dist);
+    if (SlideRobots.isSolved(state)) {
+      finished = true;
+      elUndo.disabled = true;
+      setTimeout(showClear, 320);
+    }
+  }
+
+  function showClear() {
+    var lv = LEVELS[levelIndex], min = lv.min;
+    save.cleared[String(levelIndex)] = 1;
+    storeSave();
+    renderLevelList();
+    elClearTitle.textContent = (moves === min) ? '★ 最短！' : 'クリア！';
+    elClearVerdict.textContent = (moves <= call) ? '見立て通り' : '宣言より ' + (moves - call) + ' 手多い';
+    elClearStats.innerHTML =
+      '手数 <b>' + moves + '</b> ／ 宣言 <b>' + call + '</b> ／ 最短 <b>' + min + '</b>';
+    var last = (levelIndex >= LEVELS.length - 1);
+    elNext.hidden = last;
+    if (last) elClearVerdict.textContent += '（これで最後）';
+    elClear.hidden = false;
+  }
+
+  /* ---- ボタン ---- */
+  elUndo.addEventListener('click', function () {
+    if (finished || !history.length) return;
+    state = history.pop();
+    moves = Math.max(0, moves - 1);
+    showCounts();
+    elUndo.disabled = !history.length;
+    hideGhost();
+    place();
+  });
+  elReset.addEventListener('click', function () { loadLevel(levelIndex); });
+  elNext.addEventListener('click', function () {
+    if (levelIndex < LEVELS.length - 1) loadLevel(levelIndex + 1);
+  });
+
+  /* ---- レベル一覧 ---- */
+  function renderLevelList() {
+    if (!elLevels.childNodes.length) {
+      var tiers = [], seen = {}, i, t, k;
+      for (i = 0; i < LABELS.length; i++) {
+        if (!seen[LABELS[i].tier]) { seen[LABELS[i].tier] = []; tiers.push(LABELS[i].tier); }
+        seen[LABELS[i].tier].push(i);
+      }
+      for (t = 0; t < tiers.length; t++) {
+        var box = document.createElement('div');
+        box.className = 'tier';
+        var name = document.createElement('div');
+        name.className = 'tierName';
+        name.textContent = tiers[t];
+        box.appendChild(name);
+        var row = document.createElement('div');
+        row.className = 'tierRow';
+        var idxs = seen[tiers[t]];
+        for (k = 0; k < idxs.length; k++) {
+          var b = document.createElement('button');
+          b.className = 'lv';
+          b.dataset.idx = String(idxs[k]);
+          b.addEventListener('click', function () {
+            loadLevel(parseInt(this.dataset.idx, 10));
+            window.scrollTo(0, 0);
+          });
+          row.appendChild(b);
+        }
+        box.appendChild(row);
+        elLevels.appendChild(box);
+      }
+    }
+    var btns = elLevels.querySelectorAll('.lv');
+    for (var j = 0; j < btns.length; j++) {
+      var idx = parseInt(btns[j].dataset.idx, 10);
+      btns[j].textContent = LABELS[idx].no + (save.cleared[String(idx)] ? '✓' : '');
+      btns[j].className = 'lv'
+        + (idx === levelIndex ? ' cur' : '');
+    }
+  }
+
+  loadSave();
+  loadLevel(save.last);
+})();
+</script>
+</body>
+</html>
