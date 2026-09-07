@@ -1,0 +1,4 @@
+.DS_Store
+*.log
+memo/
+tools/__pycache__/
