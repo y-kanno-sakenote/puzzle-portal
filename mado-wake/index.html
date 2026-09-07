@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>窓わけ</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#e3e1db; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --edge:#3a3833;
+    --red:#c0392b; --blue:#2f5f9e; --yellow:#c9971a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  #app{max-width:420px;margin:0 auto;padding:10px 10px 40px}
+  header{display:flex;align-items:baseline;gap:8px;padding:2px 2px 8px}
+  #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+
+  #rules{padding:0 2px 10px;font-size:13.5px;line-height:1.6}
+  #rules .base{color:var(--sub)}
+  #rules .r{color:var(--ink)}
+
+  #stage{position:relative}
+  #board{
+    --n:6;
+    --cs:calc(min(100vw - 20px, 400px) / var(--n));
+    position:relative;
+    width:100%;max-width:400px;margin:0 auto;aspect-ratio:1/1;
+    display:grid;grid-template-columns:repeat(var(--n),1fr);grid-template-rows:repeat(var(--n),1fr);
+    background:var(--panel);border:3px solid var(--edge);border-radius:4px;
+    overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;
+  }
+  .cell{
+    position:relative;display:flex;align-items:center;justify-content:center;
+    border-right:1px solid var(--line);border-bottom:1px solid var(--line);
+    -webkit-tap-highlight-color:transparent;
+  }
+  .cell.re{border-right:0}
+  .cell.be{border-bottom:0}
+  .sym{font-size:calc(var(--cs) * .46);line-height:1;font-weight:600}
+  .dot{
+    width:calc(var(--cs) * .42);height:calc(var(--cs) * .42);border-radius:50%;
+    box-shadow:inset 0 0 0 2px rgba(0,0,0,.28);
+  }
+  #edges{position:absolute;inset:0;pointer-events:none;z-index:5}
+  #edges i{position:absolute;background:var(--edge);border-radius:2px}
+
+  #buttons{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:8px;padding:12px 0 0}
+  button{
+    font:inherit;font-size:15px;padding:12px 6px;border:1px solid var(--frame);
+    border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button:active{background:#eeece7}
+  #done{background:var(--ink);color:var(--panel);border-color:var(--ink);font-weight:700}
+  #done:active{background:#4a4843}
+
+  #msg{height:22px;padding:8px 2px 0;font-size:14px;color:var(--sub);text-align:center}
+
+  #clear{
+    position:absolute;left:0;right:0;top:0;height:100%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+    background:rgba(245,244,241,.93);border-radius:4px;z-index:20;
+  }
+  #clear[hidden]{display:none}
+  #clearTitle{font-size:26px;font-weight:700}
+  #next{font-size:17px;padding:12px 28px}
+
+  #levels{padding-top:18px}
+  .tier{margin-bottom:10px}
+  .tierName{font-size:13px;color:var(--sub);padding:2px 2px 4px}
+  .tierRow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .lv{padding:0;height:40px;font-size:14px;border-radius:7px;
+      display:flex;align-items:center;justify-content:center}
+  .lv.cur{border-color:var(--ink);font-weight:700}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><div id="title">入門 1</div></header>
+
+  <div id="rules"></div>
+
+  <div id="stage">
+    <div id="board"><div id="edges"></div></div>
+    <div id="clear" hidden>
+      <div id="clearTitle">クリア！</div>
+      <button id="next">つぎへ</button>
+    </div>
+  </div>
+
+  <div id="buttons">
+    <button id="done">できた</button>
+    <button id="undo">もどす</button>
+    <button id="reset">はじめから</button>
+  </div>
+  <div id="msg"></div>
+
+  <section id="levels"></section>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.MadoWake として公開する）
+   ===================================================================== */
+
+/* PUZZLES-BEGIN  tools/gen_puzzles.py の出力をそのまま貼る。手で書き換えない */
+var PUZZLES = [
+  {"n":5,"cells":"3YR.4.BYBY..23.2....RB32.","rules":["size","color"],"solution":"aabbcadefcddefcgdhfcghhii","tier":"入門","nodes":92},
+  {"n":5,"cells":"*.*..23**..5..**.*5.*23.3","rules":["star","size"],"solution":"abccdabbddeeedfeegdfhhggf","tier":"入門","nodes":208},
+  {"n":5,"cells":"5.....5....4222........2.","rules":["size","rect"],"solution":"aaaaabbbbbccdefccdefggghh","tier":"入門","nodes":215},
+  {"n":5,"cells":"2*......*2.*.5*5.53*3**..","rules":["star","size"],"solution":"aabbbccdbeccdbecfdggffddg","tier":"入門","nodes":234},
+  {"n":5,"cells":"..Y.B24Y.4R3B2Y.5..R.Y.B2","rules":["size","color"],"solution":"abbccabbccddeffdeeeghhheg","tier":"入門","nodes":254},
+  {"n":5,"cells":".Y3.4.B5R.Y.2...52R....B4","rules":["size","color"],"solution":"abbbcaaaccdaeecddffgddggg","tier":"入門","nodes":295},
+  {"n":5,"cells":"..3.4...2..4...2..2.2.4..","rules":["size","rect"],"solution":"aaabcddebcddefcggefchheii","tier":"入門","nodes":433},
+  {"n":5,"cells":".R5Y...B.R.R4B2.B..Y5..34","rules":["size","color"],"solution":"aaabbcaddecaddeccfffcgggf","tier":"入門","nodes":488},
+  {"n":5,"cells":"B.2....2..4B642Y....R.RY3","rules":["size","color"],"solution":"abbccaddceaafceggffhfffhh","tier":"入門","nodes":548},
+  {"n":5,"cells":".Y5.B.2R54.B.R..Y..Y.4.2.","rules":["size","color"],"solution":"aaabbacddbacddbeedffeeggf","tier":"入門","nodes":632},
+  {"n":6,"cells":".4....3..4...42.....2.34.....22..3..","rules":["size","rect"],"solution":"aaaabcdefgbcdefgbcdehgicjehgikjlllik","tier":"初級","nodes":749},
+  {"n":6,"cells":"**.5...4*..*..*3*2**.*......*.3**2.*","rules":["star","size","rect"],"solution":"abbbbbaccccdaefghdiefghjikfgljikmmlj","tier":"初級","nodes":1616},
+  {"n":6,"cells":".3..3Y*.***54*..3*.444RB.*B*..*R.3*.","rules":["star","size","color"],"solution":"aabbccadbecfgddeefghdiifghjjifghhjif","tier":"初級","nodes":1658},
+  {"n":6,"cells":"5Y4R.Y......RB.R.63..YY..Y5..R4.Y45.","rules":["size","color"],"solution":"aabbccaaabccdeebccdeeffgdhefgghhhfgg","tier":"初級","nodes":1932},
+  {"n":6,"cells":"3*...4...3*.**.*3*2...*.*.*2.**.5*3.","rules":["star","size","rect"],"solution":"abbbcdaefgcdaefgcdhefgidhefjikllfjik","tier":"初級","nodes":2842},
+  {"n":6,"cells":".*24..*.**.*......2*34......*4.***.*","rules":["star","size","rect"],"solution":"abbccdaeeccdaeefghiijfghkkjfghkkjfgh","tier":"初級","nodes":2935},
+  {"n":6,"cells":"4**5*2YY......444.*..YR*.R*.*3B*4R.*","rules":["star","size","color"],"solution":"aabbccaadbbbeedfggeedfggehdffiehhhii","tier":"初級","nodes":3500},
+  {"n":6,"cells":".*..*2...**..*.2.*.****2**52......**","rules":["star","size","rect"],"solution":"aaaabbccdeffccdeghiidjghkldjgmkldnnm","tier":"初級","nodes":4010},
+  {"n":6,"cells":"...55..*...*.RY*..B**.*3.443.*..*5*3","rules":["star","size","color"],"solution":"abbbccaadbcceadbcfeedggfhedgifhhhhii","tier":"初級","nodes":4134},
+  {"n":6,"cells":"*BY.6*34*R*..B.BBB*.7.*B*..Y.535R*.Y","rules":["star","size","color"],"solution":"aabcddabbccdeebeddeeeefdgghfffghhhhf","tier":"初級","nodes":4939},
+  {"n":7,"cells":"....2....6B.6.R...B...656.2...Y6R.Y........4..B3.","rules":["size","color","rect"],"solution":"aaabbccaaaddcceefddcceefddggeefhhhijjfhhhijjfkkki","tier":"中級","nodes":28726},
+  {"n":7,"cells":"3.*3Y*.RB*.R5**..44..*4B*4*RY*..Y7..*6R.**4BR.B.2","rules":["star","size","color"],"solution":"abbcccdabeeeddafggehdffgghhdfiiihjjkkiijjlkkijjjl","tier":"中級","nodes":32398},
+  {"n":7,"cells":"B*.Y6R.3R*..5R..*B6.**BR.*.Y*3*B...*.4..3..32***2","rules":["star","size","color"],"solution":"aabbbccadbbbccddeeefcdghefffgghefffihhejjfiikkjll","tier":"中級","nodes":41628},
+  {"n":7,"cells":"......**6..*6.*..*2...*.5.*.....*...5*.**4...*.5.","rules":["star","size","rect"],"solution":"aaabcccaaabdeefghbdeefghbieefghbijjfghkkjjfglllll","tier":"中級","nodes":50180},
+  {"n":7,"cells":"..Y.5R..3..2.6.6..Y...RRY4...B.5..Y.RR.5.R...6..2","rules":["size","color","rect"],"solution":"aaaaabbcccddbbeeeffbbeeeffghiiiiighjjjjjgkllllllk","tier":"中級","nodes":51256},
+  {"n":7,"cells":"...6...6RB..55...Y.....4.....Y..2...6...22.234.2.","rules":["size","color","rect"],"solution":"aabccdeaabccdeaabccdeffbghdeffighdeffigjjklligmmk","tier":"中級","nodes":53937},
+  {"n":7,"cells":"..*...*2*..432..*.*..*....*52......*.*.2..*.*2***","rules":["star","size","rect"],"solution":"aaaaaabccddefbggddefhggddefhijjjekhijjjlkhmmnnlkh","tier":"中級","nodes":57682},
+  {"n":7,"cells":"*..R..*YYY*3.6*R4B.5.*3.*.2*.BYBY*B.R*4*B5.3.*.*R","rules":["star","size","color"],"solution":"aaabbbbaaaccbbddecffghdeefighhejfighkkjfgghkjjlll","tier":"中級","nodes":58737},
+  {"n":7,"cells":".BBB6.**6R.Y.Y.Y.*B**Y6*33R..B*4Y..*B.5*BBR.*.4..","rules":["star","size","color"],"solution":"aaaabbbaaccbbbddceefgddceffgdhhhiggdhjjiggjjjiigg","tier":"中級","nodes":59598},
+  {"n":7,"cells":"*3.BB*RBR**434Y....YR3**.6R*.46...*.B*.55B*Y*.Y..","rules":["star","size","color"],"solution":"aabccdeabbccdefbbbgdeffggggehhiiigjhiiikjjhkkkkjj","tier":"中級","nodes":59759},
+  {"n":8,"cells":"......*43.*..3*.*4*..**..*.2*..*.5*.....*..**3*....4.3*.*.....**","rules":["star","size","rect"],"solution":"abbbccccabbbdddeaffffgheijkllgheijkmngheijkmnooopjkmqqqrpjkmsssr","tier":"上級","nodes":63327},
+  {"n":8,"cells":"R*B.Y.5..R6.*.YB.*Y*..8*..635B.Y..*..R*.BR5*.*4.*.5.*5.3.*BY5B.*","rules":["star","size","color"],"solution":"abbbcccdaaabcdcdaaeefdddgggefddhgiiiffhhgiijjfhkglljmmmkllljjmmk","tier":"上級","nodes":107084},
+  {"n":8,"cells":"Y*.RY..B3.B36**.***.R.Y5..5**3.4.BBYBB.*R.64Y.*4*..**R*.B..B7..R","rules":["star","size","color"],"solution":"abbbccddabeeccddafeggccdhffgiijjhffkiljjhhhkklllhmmmknnnmmmmnnnn","tier":"上級","nodes":132144},
+  {"n":8,"cells":"...*..5****..4...6...4**..**4*....*.....*.......2..5*..5.*.*.**.","rules":["star","size","rect"],"solution":"abcccccdabeeeefdabghhifjabghhifjabkkkifjlbkkkifjlmmmmmfjnnooppqq","tier":"上級","nodes":202242},
+  {"n":8,"cells":"..5*.....3**..6...2.......*..*..**..*.***...4....66*..*33..*..*.","rules":["star","size","rect"],"solution":"aaaaabcdeeeffbcdghiffbcdghiffbcdghjjkbcdlhjjkbcdlhjjkmmmlhnnkooo","tier":"上級","nodes":214389},
+  {"n":8,"cells":"4.4....4............4.3.254..BR.....R..3..2.4Y.B4..6.4B..4......","rules":["size","color","rect"],"solution":"aabbbbccaadeffccghdeffijghdeklijmhdeklijmhnekoopmhnekqqpmrrrrqqp","tier":"上級","nodes":308160},
+  {"n":8,"cells":"..3...5..5....2R..B.4.Y6B.3..R....Y.6..B5...B2...32.4Y4.R..3R.R.","rules":["size","color","rect"],"solution":"aaabbbbbcdddddeecfgggghicfjkkkhicfjkkklicmjnnolipmqnnolipmqrrrli","tier":"上級","nodes":369403},
+  {"n":8,"cells":"..**6.*.*..2*..*6.....5*.22*.....**..*...**..*..*2.22.4.2.****2.","rules":["star","size","rect"],"solution":"abbcdefgabbcdefgabbhdefiajkhdefiajkhdefialmhdnniolmpqnniorrpqssi","tier":"上級","nodes":370154},
+  {"n":8,"cells":"6..6.......B.Y4..R4.344...Y.......R...Y2...42...44.4...42R...Y4.","rules":["size","color","rect"],"solution":"aabbbcddaabbbcddaaeefcgghieefcgghijjfkllhijjmknnhioomknnppooqqqq","tier":"上級","nodes":376977},
+  {"n":8,"cells":"..6YR.Y4Y.*.*.Y.B.B.8.***YR*4..R63*R.*6RR7R..B5R..YY*6*..**.3RY.","rules":["star","size","color"],"solution":"aaaabbccadabbbcedddbbbcedfggghhedffghheeiiijjhkeiijjlhkkiijjllkk","tier":"上級","nodes":383869}
+];
+/* PUZZLES-END */
+
+var MadoWake = (function () {
+  var IDCHARS = 'abcdefghijklmnopqrstuvwxyz';
+  var COLORS = 'RBY';
+  var RULE_TEXT = {
+    star:   'どの領域も★をちょうど1つ含む',
+    size:   '数字のマスは、その領域のマス数（数字は領域に1つまで）',
+    nosame: 'マス数が同じ領域は辺で接しない',
+    color:  '一つの領域に違う色の●は入らない',
+    rect:   'どの領域も長方形'
+  };
+
+  var NBC = {};
+  function nb(n) {
+    if (NBC[n]) return NBC[n];
+    var out = [], i, r, c, l;
+    for (i = 0; i < n * n; i++) {
+      r = Math.floor(i / n); c = i % n; l = [];
+      if (r > 0) l.push(i - n);
+      if (c > 0) l.push(i - 1);
+      if (c < n - 1) l.push(i + 1);
+      if (r < n - 1) l.push(i + n);
+      out.push(l);
+    }
+    NBC[n] = out;
+    return out;
+  }
+
+  /* 問題を扱いやすい形にほどく */
+  function parse(p) {
+    var n = p.n, i;
+    var cells = [], sol = [];
+    for (i = 0; i < n * n; i++) {
+      cells.push(p.cells.charAt(i));
+      sol.push(IDCHARS.indexOf(p.solution.charAt(i)));
+    }
+    return {
+      n: n, N: n * n, cells: cells, rules: p.rules.slice(),
+      solution: sol, tier: p.tier, nodes: p.nodes,
+      text: p.rules.map(function (r) { return RULE_TEXT[r]; })
+    };
+  }
+
+  /* 領域番号の付け方を出現順にそろえる（id の付け方の違いを消す） */
+  function canon(part) {
+    var m = {}, out = [], k = 0, i, v;
+    for (i = 0; i < part.length; i++) {
+      v = part[i];
+      if (!(v in m)) { m[v] = k++; }
+      out.push(m[v]);
+    }
+    return out;
+  }
+
+  /* 分け方が同じか（id の付け方は無関係） */
+  function samePartition(a, b) {
+    if (!a || !b || a.length !== b.length) return false;
+    var x = canon(a), y = canon(b), i;
+    for (i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+    return true;
+  }
+
+  /* つながりごとに分け直す（同じ番号でも離れていれば別の領域にする） */
+  function split(part, n) {
+    var N = n * n, NBR = nb(n), out = [], i, k = 0;
+    for (i = 0; i < N; i++) out.push(-1);
+    for (i = 0; i < N; i++) {
+      if (out[i] !== -1) continue;
+      var stack = [i], id = k++;
+      out[i] = id;
+      while (stack.length) {
+        var v = stack.pop(), ns = NBR[v], j;
+        for (j = 0; j < ns.length; j++) {
+          var w = ns[j];
+          if (out[w] === -1 && part[w] === part[v]) { out[w] = id; stack.push(w); }
+        }
+      }
+    }
+    return out;
+  }
+
+  /* ルールを満たすか。違反したルール名の配列を返す。
+     構造（全マス割当・つながり・2マス以上）が壊れていれば "region" */
+  function checkRules(p, part) {
+    var q = (p && p.cells && typeof p.cells === 'string') ? parse(p) : p;
+    var n = q.n, N = q.N, cells = q.cells, NBR = nb(n), bad = [], i, j, k;
+    if (!part || part.length !== N) return ['region'];
+    var groups = {}, keys = [];
+    for (i = 0; i < N; i++) {
+      var g = part[i];
+      if (g === null || g === undefined) return ['region'];
+      if (!groups[g]) { groups[g] = []; keys.push(g); }
+      groups[g].push(i);
+    }
+    var structural = false;
+    for (k = 0; k < keys.length; k++) {
+      var gg = groups[keys[k]];
+      if (gg.length < 2) { structural = true; break; }
+      var seen = {}, stack = [gg[0]], cnt = 1, inset = {};
+      for (i = 0; i < gg.length; i++) inset[gg[i]] = 1;
+      seen[gg[0]] = 1;
+      while (stack.length) {
+        var v = stack.pop(), ns = NBR[v];
+        for (j = 0; j < ns.length; j++) {
+          if (inset[ns[j]] && !seen[ns[j]]) { seen[ns[j]] = 1; cnt++; stack.push(ns[j]); }
+        }
+      }
+      if (cnt !== gg.length) { structural = true; break; }
+    }
+    if (structural) bad.push('region');
+
+    for (var ri = 0; ri < q.rules.length; ri++) {
+      var rule = q.rules[ri], ng = false;
+      if (rule === 'star') {
+        for (k = 0; k < keys.length && !ng; k++) {
+          var s = 0, g2 = groups[keys[k]];
+          for (i = 0; i < g2.length; i++) if (cells[g2[i]] === '*') s++;
+          if (s !== 1) ng = true;
+        }
+      } else if (rule === 'size') {
+        for (k = 0; k < keys.length && !ng; k++) {
+          var g3 = groups[keys[k]], d = 0, dn = 0;
+          for (i = 0; i < g3.length; i++) {
+            var ch = cells[g3[i]];
+            if (ch >= '2' && ch <= '9') { dn++; d = ch.charCodeAt(0) - 48; }
+          }
+          if (dn > 1 || (dn === 1 && d !== g3.length)) ng = true;
+        }
+      } else if (rule === 'color') {
+        for (k = 0; k < keys.length && !ng; k++) {
+          var g4 = groups[keys[k]], cc = '';
+          for (i = 0; i < g4.length; i++) {
+            var c4 = cells[g4[i]];
+            if (COLORS.indexOf(c4) >= 0) {
+              if (cc && cc !== c4) { ng = true; break; }
+              cc = c4;
+            }
+          }
+        }
+      } else if (rule === 'rect') {
+        for (k = 0; k < keys.length && !ng; k++) {
+          var g5 = groups[keys[k]], r0 = 99, r1 = -1, c0 = 99, c1 = -1;
+          for (i = 0; i < g5.length; i++) {
+            var rr = Math.floor(g5[i] / n), ccx = g5[i] % n;
+            if (rr < r0) r0 = rr; if (rr > r1) r1 = rr;
+            if (ccx < c0) c0 = ccx; if (ccx > c1) c1 = ccx;
+          }
+          if ((r1 - r0 + 1) * (c1 - c0 + 1) !== g5.length) ng = true;
+        }
+      } else if (rule === 'nosame') {
+        for (i = 0; i < N && !ng; i++) {
+          var ns2 = NBR[i];
+          for (j = 0; j < ns2.length; j++) {
+            var w2 = ns2[j];
+            if (part[w2] !== part[i] && groups[part[w2]].length === groups[part[i]].length) {
+              ng = true; break;
+            }
+          }
+        }
+      }
+      if (ng) bad.push(rule);
+    }
+    return bad;
+  }
+
+  /* 制約ソルバー（tools/gen_puzzles.py と同じ手順）
+     未割当のいちばん小さいマスを起点に領域を開き、隣接する未割当マスを
+     1つずつ加える。2マス以上でルールを満たしたら閉じて次の領域へ。
+     戻り値 {count, nodes}。nodes が limit を超えたら count は -1 */
+  function search(p, limit, maxNodes) {
+    var q = (p && typeof p.cells === 'string') ? parse(p) : p;
+    var n = q.n, N = q.N, NBR = nb(n), cells = q.cells;
+    limit = limit || 2;
+    maxNodes = maxNodes || 20000000;
+    var rStar = q.rules.indexOf('star') >= 0, rSize = q.rules.indexOf('size') >= 0,
+        rNosame = q.rules.indexOf('nosame') >= 0, rColor = q.rules.indexOf('color') >= 0,
+        rRect = q.rules.indexOf('rect') >= 0;
+    var star = [], digit = [], col = [], i;
+    for (i = 0; i < N; i++) {
+      var ch = cells[i];
+      star.push(ch === '*');
+      digit.push((ch >= '2' && ch <= '9') ? (ch.charCodeAt(0) - 48) : 0);
+      col.push(COLORS.indexOf(ch) >= 0 ? ch : '');
+    }
+    var owner = [], closedSize = [];
+    for (i = 0; i < N; i++) owner.push(-1);
+    var count = 0, nodes = 0, over = false;
+
+    function remainingOk() {
+      var seen = [], j, k;
+      for (j = 0; j < N; j++) seen.push(false);
+      for (j = 0; j < N; j++) {
+        if (owner[j] !== -1 || seen[j]) continue;
+        var stack = [j], comp = [j];
+        seen[j] = true;
+        while (stack.length) {
+          var v = stack.pop(), ns = NBR[v];
+          for (k = 0; k < ns.length; k++) {
+            var w = ns[k];
+            if (owner[w] === -1 && !seen[w]) { seen[w] = true; stack.push(w); comp.push(w); }
+          }
+        }
+        var sz = comp.length;
+        if (sz < 2) return false;
+        if (rStar) {
+          var s = 0;
+          for (k = 0; k < sz; k++) if (star[comp[k]]) s++;
+          if (s === 0 || 2 * s > sz) return false;
+        }
+        if (rSize) {
+          var tot = 0;
+          for (k = 0; k < sz; k++) {
+            var d = digit[comp[k]];
+            if (d) { if (d > sz) return false; tot += d; }
+          }
+          if (tot > sz) return false;
+        }
+      }
+      return true;
+    }
+
+    function grow(reg, cands, forb, rid, nst, dig, ccol) {
+      nodes++;
+      if (nodes > maxNodes) { over = true; return; }
+      var i2, j2, v, ok;
+      if (reg.length >= 2) {
+        ok = true;
+        if (rStar && nst !== 1) ok = false;
+        if (ok && rSize && dig && dig !== reg.length) ok = false;
+        if (ok && rRect) {
+          var r0 = 99, r1 = -1, c0 = 99, c1 = -1;
+          for (i2 = 0; i2 < reg.length; i2++) {
+            var rr = Math.floor(reg[i2] / n), cc = reg[i2] % n;
+            if (rr < r0) r0 = rr; if (rr > r1) r1 = rr;
+            if (cc < c0) c0 = cc; if (cc > c1) c1 = cc;
+          }
+          if ((r1 - r0 + 1) * (c1 - c0 + 1) !== reg.length) ok = false;
+        }
+        if (ok && rNosame) {
+          var sz2 = reg.length, adj = {};
+          for (i2 = 0; i2 < reg.length; i2++) {
+            var ns3 = NBR[reg[i2]];
+            for (j2 = 0; j2 < ns3.length; j2++) {
+              var o = owner[ns3[j2]];
+              if (o !== -1 && o !== rid) adj[o] = 1;
+            }
+          }
+          for (var key in adj) if (closedSize[key] === sz2) { ok = false; break; }
+        }
+        if (ok) {
+          closedSize[rid] = reg.length;
+          if (remainingOk()) solve();
+          closedSize.length = rid;
+          if (count >= limit || over) return;
+        }
+      }
+      for (i2 = 0; i2 < cands.length; i2++) {
+        v = cands[i2];
+        var nst2 = nst + (star[v] ? 1 : 0);
+        if (rStar && nst2 > 1) continue;
+        var dig2 = dig;
+        if (digit[v] && rSize) {
+          if (dig) continue;
+          dig2 = digit[v];
+        }
+        if (rSize && dig2 && reg.length + 1 > dig2) continue;
+        var ccol2 = ccol;
+        if (rColor && col[v]) {
+          if (ccol && ccol !== col[v]) continue;
+          ccol2 = col[v];
+        }
+        var forb2 = {}, kf;
+        for (kf in forb) forb2[kf] = 1;
+        for (j2 = 0; j2 < i2; j2++) forb2[cands[j2]] = 1;
+        if (rRect) {
+          var br0 = Math.floor(v / n), br1 = br0, bc0 = v % n, bc1 = bc0;
+          for (j2 = 0; j2 < reg.length; j2++) {
+            var r3 = Math.floor(reg[j2] / n), c3 = reg[j2] % n;
+            if (r3 < br0) br0 = r3; if (r3 > br1) br1 = r3;
+            if (c3 < bc0) bc0 = c3; if (c3 > bc1) bc1 = c3;
+          }
+          var bad2 = false;
+          for (var rr2 = br0; rr2 <= br1 && !bad2; rr2++) {
+            for (var cc2 = bc0; cc2 <= bc1; cc2++) {
+              var o2 = owner[rr2 * n + cc2];
+              if (o2 !== -1 && o2 !== rid) { bad2 = true; break; }
+            }
+          }
+          if (bad2) continue;
+        }
+        owner[v] = rid;
+        reg.push(v);
+        var seen2 = {};
+        for (j2 = 0; j2 < cands.length; j2++) seen2[cands[j2]] = 1;
+        for (kf in forb2) seen2[kf] = 1;
+        var newc = cands.slice(i2 + 1), ns4 = NBR[v];
+        for (j2 = 0; j2 < ns4.length; j2++) {
+          var w4 = ns4[j2];
+          if (owner[w4] === -1 && !seen2[w4]) { seen2[w4] = 1; newc.push(w4); }
+        }
+        grow(reg, newc, forb2, rid, nst2, dig2, ccol2);
+        reg.pop();
+        owner[v] = -1;
+        if (count >= limit || over) return;
+      }
+    }
+
+    function solve() {
+      var s = -1, j;
+      for (j = 0; j < N; j++) if (owner[j] === -1) { s = j; break; }
+      if (s < 0) { count++; return; }
+      var rid = closedSize.length;
+      owner[s] = rid;
+      var cands = [], ns = NBR[s];
+      for (j = 0; j < ns.length; j++) if (owner[ns[j]] === -1) cands.push(ns[j]);
+      grow([s], cands, {}, rid, star[s] ? 1 : 0, digit[s], col[s]);
+      owner[s] = -1;
+    }
+
+    solve();
+    return { count: over ? -1 : count, nodes: nodes };
+  }
+
+  /* 解の個数（limit 個まで） */
+  function countSolutions(p, limit, maxNodes) {
+    return search(p, limit, maxNodes).count;
+  }
+
+  return {
+    PUZZLES: PUZZLES, RULE_TEXT: RULE_TEXT, IDCHARS: IDCHARS,
+    nb: nb, parse: parse, canon: canon, split: split,
+    samePartition: samePartition, checkRules: checkRules,
+    countSolutions: countSolutions, search: search
+  };
+})();
+
+if (typeof window !== 'undefined') window.MadoWake = MadoWake;
+if (typeof globalThis !== 'undefined') globalThis.MadoWake = MadoWake;
+</script>
+
+<script>
+/* =====================================================================
+   画面
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var KEY = 'mado-wake';
+  var ALPH = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_';
+  /* 領域の飾り色。●の赤・青・黄と紛れないよう、その3色系統を避けた10色 */
+  var FILL = ['#dcead9','#d7e8e0','#d3e6e6','#e0deee','#e6dcee',
+              '#eedbe8','#ece2d3','#e6ead2','#e2e5df','#e8e6e1'];
+  var DOT = { R: 'var(--red)', B: 'var(--blue)', Y: 'var(--yellow)' };
+
+  var elTitle  = document.getElementById('title');
+  var elRules  = document.getElementById('rules');
+  var elBoard  = document.getElementById('board');
+  var elEdges  = document.getElementById('edges');
+  var elDone   = document.getElementById('done');
+  var elUndo   = document.getElementById('undo');
+  var elReset  = document.getElementById('reset');
+  var elClear  = document.getElementById('clear');
+  var elNext   = document.getElementById('next');
+  var elMsg    = document.getElementById('msg');
+  var elLevels = document.getElementById('levels');
+
+  var LABELS = (function () {
+    var out = [], count = {}, i;
+    for (i = 0; i < PUZZLES.length; i++) {
+      var t = PUZZLES[i].tier;
+      count[t] = (count[t] || 0) + 1;
+      out.push({ tier: t, no: count[t], text: t + ' ' + count[t] });
+    }
+    return out;
+  })();
+
+  /* ---- 保存 ---- */
+  var save = { cleared: {}, last: 0, grid: {} };
+  function loadSave() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (!o || typeof o !== 'object') return;
+      if (o.cleared && typeof o.cleared === 'object') save.cleared = o.cleared;
+      if (Number.isInteger(o.last) && o.last >= 0 && o.last < PUZZLES.length) save.last = o.last;
+      if (o.grid && typeof o.grid === 'object') save.grid = o.grid;
+    } catch (e) { save = { cleared: {}, last: 0, grid: {} }; }
+  }
+  function storeSave() {
+    try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
+  }
+  function encode(part) {
+    var c = MadoWake.canon(part), s = '', i;
+    for (i = 0; i < c.length; i++) {
+      if (c[i] >= ALPH.length) return '';
+      s += ALPH.charAt(c[i]);
+    }
+    return s;
+  }
+  function decode(s, N) {
+    if (typeof s !== 'string' || s.length !== N) return null;
+    var out = [], i, k;
+    for (i = 0; i < N; i++) {
+      k = ALPH.indexOf(s.charAt(i));
+      if (k < 0) return null;
+      out.push(k);
+    }
+    return out;
+  }
+
+  /* ---- 状態 ---- */
+  var index = 0, p = null, part = [], history = [], finished = false;
+  var cells = [], msgTimer = null;
+  var dragging = false, moved = false, startCell = -1, lastCell = -1, baseId = 0;
+
+  function message(t) {
+    elMsg.textContent = t;
+    if (msgTimer) { clearTimeout(msgTimer); msgTimer = null; }
+  }
+
+  function freshId() {
+    var m = -1, i;
+    for (i = 0; i < part.length; i++) if (part[i] > m) m = part[i];
+    return m + 1;
+  }
+  function sizeOf(i) {
+    var d = MadoWake.split(part, p.n), c = 0, k;
+    for (k = 0; k < d.length; k++) if (d[k] === d[i]) c++;
+    return c;
+  }
+
+  /* ---- 盤を組み立てる ---- */
+  function buildBoard() {
+    var n = p.n, i;
+    elBoard.style.setProperty('--n', String(n));
+    while (elBoard.firstChild) elBoard.removeChild(elBoard.firstChild);
+    elBoard.appendChild(elEdges);
+    cells = [];
+    for (i = 0; i < p.N; i++) {
+      var d = document.createElement('div');
+      var cn = 'cell';
+      if (i % n === n - 1) cn += ' re';
+      if (Math.floor(i / n) === n - 1) cn += ' be';
+      d.className = cn;
+      d.dataset.i = String(i);
+      var ch = p.cells[i];
+      if (ch === '*') {
+        var s = document.createElement('span');
+        s.className = 'sym'; s.textContent = '★';
+        d.appendChild(s);
+      } else if (ch >= '2' && ch <= '9') {
+        var s2 = document.createElement('span');
+        s2.className = 'sym'; s2.textContent = ch;
+        d.appendChild(s2);
+      } else if (DOT[ch]) {
+        var s3 = document.createElement('span');
+        s3.className = 'dot'; s3.style.background = DOT[ch];
+        d.appendChild(s3);
+      }
+      elBoard.appendChild(d);
+      cells.push(d);
+    }
+  }
+
+  /* ---- 描く ---- */
+  function render() {
+    var n = p.n, N = p.N, NBR = MadoWake.nb(n);
+    var disp = MadoWake.split(part, n);
+    var sizes = {}, i, j;
+    for (i = 0; i < N; i++) sizes[disp[i]] = (sizes[disp[i]] || 0) + 1;
+
+    /* 隣り合う領域が同じ色にならないよう貪欲に色を割り当てる（飾り） */
+    var colorOf = {}, order = [];
+    for (i = 0; i < N; i++) if (!(disp[i] in colorOf)) { colorOf[disp[i]] = -1; order.push(disp[i]); }
+    for (i = 0; i < order.length; i++) {
+      var g = order[i];
+      if (sizes[g] < 2) continue;         /* 1マスの領域は無色（未完成の印） */
+      var used = {};
+      for (j = 0; j < N; j++) {
+        if (disp[j] !== g) continue;
+        var ns = NBR[j], k;
+        for (k = 0; k < ns.length; k++) {
+          var o = disp[ns[k]];
+          if (o !== g && colorOf[o] >= 0) used[colorOf[o]] = 1;
+        }
+      }
+      var c = 0;
+      while (c < FILL.length - 1 && used[c]) c++;
+      colorOf[g] = c;
+    }
+    for (i = 0; i < N; i++) {
+      var ci = colorOf[disp[i]];
+      cells[i].style.background = (ci >= 0) ? FILL[ci] : 'var(--panel)';
+    }
+
+    /* 領域のさかいめに線を引く */
+    var html = '', u = 100 / n;
+    for (i = 0; i < N; i++) {
+      var r = Math.floor(i / n), c2 = i % n;
+      if (c2 < n - 1 && disp[i] !== disp[i + 1]) {
+        html += '<i style="left:' + ((c2 + 1) * u) + '%;top:' + (r * u) +
+                '%;width:3px;height:' + u + '%;margin-left:-1.5px"></i>';
+      }
+      if (r < n - 1 && disp[i] !== disp[i + n]) {
+        html += '<i style="left:' + (c2 * u) + '%;top:' + ((r + 1) * u) +
+                '%;height:3px;width:' + u + '%;margin-top:-1.5px"></i>';
+      }
+    }
+    elEdges.innerHTML = html;
+  }
+
+  /* ---- 操作 ---- */
+  function snapshot() { history.push(part.slice()); if (history.length > 200) history.shift(); }
+  function persist() {
+    save.grid[String(index)] = encode(part);
+    storeSave();
+  }
+
+  function cellAt(x, y) {
+    var el = document.elementFromPoint(x, y);
+    if (!el) return -1;
+    while (el && el !== elBoard && !(el.classList && el.classList.contains('cell'))) el = el.parentNode;
+    if (!el || el === elBoard || !el.dataset) return -1;
+    var i = parseInt(el.dataset.i, 10);
+    return Number.isInteger(i) ? i : -1;
+  }
+
+  /* なぞった道すじのマスを起点の領域にまとめる（指が飛んでも間を埋める） */
+  function joinPath(a, b) {
+    var n = p.n, r = Math.floor(a / n), c = a % n;
+    var rb = Math.floor(b / n), cb = b % n;
+    while (r !== rb) { r += (rb > r) ? 1 : -1; part[r * n + c] = baseId; }
+    while (c !== cb) { c += (cb > c) ? 1 : -1; part[r * n + c] = baseId; }
+  }
+
+  elBoard.addEventListener('pointerdown', function (e) {
+    if (finished) return;
+    var i = cellAt(e.clientX, e.clientY);
+    if (i < 0) return;
+    e.preventDefault();
+    try { elBoard.setPointerCapture(e.pointerId); } catch (err) {}
+    dragging = true; moved = false; startCell = i; lastCell = i;
+    baseId = part[i];
+    snapshot();
+  });
+  elBoard.addEventListener('pointermove', function (e) {
+    if (!dragging) return;
+    var i = cellAt(e.clientX, e.clientY);
+    if (i < 0 || i === lastCell) return;
+    joinPath(lastCell, i);
+    lastCell = i; moved = true;
+    render();
+  });
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    if (moved) {
+      part = MadoWake.split(part, p.n);
+      render(); persist(); message('');
+    } else if (sizeOf(startCell) >= 2) {
+      /* タップ: そのマスだけ切り離す */
+      part[startCell] = freshId();
+      part = MadoWake.split(part, p.n);
+      render(); persist(); message('');
+    } else {
+      history.pop();
+    }
+  }
+  elBoard.addEventListener('pointerup', endDrag);
+  elBoard.addEventListener('pointercancel', endDrag);
+
+  elDone.addEventListener('click', function () {
+    if (finished) return;
+    if (MadoWake.samePartition(part, p.solution)) {
+      finished = true;
+      save.cleared[String(index)] = 1;
+      storeSave();
+      renderLevelList();
+      elNext.hidden = (index >= PUZZLES.length - 1);
+      elClear.hidden = false;
+      message('');
+    } else {
+      message('どこか違う');
+    }
+  });
+  elUndo.addEventListener('click', function () {
+    if (finished || !history.length) return;
+    part = history.pop();
+    render(); persist(); message('');
+  });
+  elReset.addEventListener('click', function () {
+    if (finished) return;
+    snapshot();
+    part = [];
+    for (var i = 0; i < p.N; i++) part.push(i);
+    render(); persist(); message('');
+  });
+  elNext.addEventListener('click', function () {
+    if (index < PUZZLES.length - 1) { loadLevel(index + 1); window.scrollTo(0, 0); }
+  });
+
+  /* ---- 出題 ---- */
+  function loadLevel(i) {
+    index = i;
+    p = MadoWake.parse(PUZZLES[i]);
+    part = [];
+    for (var k = 0; k < p.N; k++) part.push(k);
+    var saved = decode(save.grid[String(i)], p.N);
+    if (saved) part = MadoWake.split(saved, p.n);
+    history = [];
+    finished = false;
+    elClear.hidden = true;
+    elTitle.textContent = LABELS[i].text;
+    var html = '<div class="base">全部のマスを2マス以上の領域に分ける</div>';
+    for (var r = 0; r < p.text.length; r++) html += '<div class="r">・' + p.text[r] + '</div>';
+    elRules.innerHTML = html;
+    message('');
+    buildBoard();
+    render();
+    renderLevelList();
+    save.last = i;
+    storeSave();
+  }
+
+  /* ---- レベル一覧 ---- */
+  function renderLevelList() {
+    if (!elLevels.childNodes.length) {
+      var tiers = [], seen = {}, i;
+      for (i = 0; i < LABELS.length; i++) {
+        if (!seen[LABELS[i].tier]) { seen[LABELS[i].tier] = []; tiers.push(LABELS[i].tier); }
+        seen[LABELS[i].tier].push(i);
+      }
+      for (var t = 0; t < tiers.length; t++) {
+        var box = document.createElement('div');
+        box.className = 'tier';
+        var name = document.createElement('div');
+        name.className = 'tierName';
+        name.textContent = tiers[t];
+        box.appendChild(name);
+        var row = document.createElement('div');
+        row.className = 'tierRow';
+        var idxs = seen[tiers[t]];
+        for (var k = 0; k < idxs.length; k++) {
+          var b = document.createElement('button');
+          b.className = 'lv';
+          b.dataset.idx = String(idxs[k]);
+          b.addEventListener('click', function () {
+            loadLevel(parseInt(this.dataset.idx, 10));
+            window.scrollTo(0, 0);
+          });
+          row.appendChild(b);
+        }
+        box.appendChild(row);
+        elLevels.appendChild(box);
+      }
+    }
+    var btns = elLevels.querySelectorAll('.lv');
+    for (var j = 0; j < btns.length; j++) {
+      var idx = parseInt(btns[j].dataset.idx, 10);
+      btns[j].textContent = LABELS[idx].no + (save.cleared[String(idx)] ? ' ✓' : '');
+      btns[j].className = 'lv' + (idx === index ? ' cur' : '');
+    }
+  }
+
+  loadSave();
+  loadLevel(save.last);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,470 @@
+[
+ {
+  "n": 5,
+  "cells": "3YR.4.BYBY..23.2....RB32.",
+  "rules": [
+   "size",
+   "color"
+  ],
+  "solution": "aabbcadefcddefcgdhfcghhii",
+  "tier": "入門",
+  "nodes": 92
+ },
+ {
+  "n": 5,
+  "cells": "*.*..23**..5..**.*5.*23.3",
+  "rules": [
+   "star",
+   "size"
+  ],
+  "solution": "abccdabbddeeedfeegdfhhggf",
+  "tier": "入門",
+  "nodes": 208
+ },
+ {
+  "n": 5,
+  "cells": "5.....5....4222........2.",
+  "rules": [
+   "size",
+   "rect"
+  ],
+  "solution": "aaaaabbbbbccdefccdefggghh",
+  "tier": "入門",
+  "nodes": 215
+ },
+ {
+  "n": 5,
+  "cells": "2*......*2.*.5*5.53*3**..",
+  "rules": [
+   "star",
+   "size"
+  ],
+  "solution": "aabbbccdbeccdbecfdggffddg",
+  "tier": "入門",
+  "nodes": 234
+ },
+ {
+  "n": 5,
+  "cells": "..Y.B24Y.4R3B2Y.5..R.Y.B2",
+  "rules": [
+   "size",
+   "color"
+  ],
+  "solution": "abbccabbccddeffdeeeghhheg",
+  "tier": "入門",
+  "nodes": 254
+ },
+ {
+  "n": 5,
+  "cells": ".Y3.4.B5R.Y.2...52R....B4",
+  "rules": [
+   "size",
+   "color"
+  ],
+  "solution": "abbbcaaaccdaeecddffgddggg",
+  "tier": "入門",
+  "nodes": 295
+ },
+ {
+  "n": 5,
+  "cells": "..3.4...2..4...2..2.2.4..",
+  "rules": [
+   "size",
+   "rect"
+  ],
+  "solution": "aaabcddebcddefcggefchheii",
+  "tier": "入門",
+  "nodes": 433
+ },
+ {
+  "n": 5,
+  "cells": ".R5Y...B.R.R4B2.B..Y5..34",
+  "rules": [
+   "size",
+   "color"
+  ],
+  "solution": "aaabbcaddecaddeccfffcgggf",
+  "tier": "入門",
+  "nodes": 488
+ },
+ {
+  "n": 5,
+  "cells": "B.2....2..4B642Y....R.RY3",
+  "rules": [
+   "size",
+   "color"
+  ],
+  "solution": "abbccaddceaafceggffhfffhh",
+  "tier": "入門",
+  "nodes": 548
+ },
+ {
+  "n": 5,
+  "cells": ".Y5.B.2R54.B.R..Y..Y.4.2.",
+  "rules": [
+   "size",
+   "color"
+  ],
+  "solution": "aaabbacddbacddbeedffeeggf",
+  "tier": "入門",
+  "nodes": 632
+ },
+ {
+  "n": 6,
+  "cells": ".4....3..4...42.....2.34.....22..3..",
+  "rules": [
+   "size",
+   "rect"
+  ],
+  "solution": "aaaabcdefgbcdefgbcdehgicjehgikjlllik",
+  "tier": "初級",
+  "nodes": 749
+ },
+ {
+  "n": 6,
+  "cells": "**.5...4*..*..*3*2**.*......*.3**2.*",
+  "rules": [
+   "star",
+   "size",
+   "rect"
+  ],
+  "solution": "abbbbbaccccdaefghdiefghjikfgljikmmlj",
+  "tier": "初級",
+  "nodes": 1616
+ },
+ {
+  "n": 6,
+  "cells": ".3..3Y*.***54*..3*.444RB.*B*..*R.3*.",
+  "rules": [
+   "star",
+   "size",
+   "color"
+  ],
+  "solution": "aabbccadbecfgddeefghdiifghjjifghhjif",
+  "tier": "初級",
+  "nodes": 1658
+ },
+ {
+  "n": 6,
+  "cells": "5Y4R.Y......RB.R.63..YY..Y5..R4.Y45.",
+  "rules": [
+   "size",
+   "color"
+  ],
+  "solution": "aabbccaaabccdeebccdeeffgdhefgghhhfgg",
+  "tier": "初級",
+  "nodes": 1932
+ },
+ {
+  "n": 6,
+  "cells": "3*...4...3*.**.*3*2...*.*.*2.**.5*3.",
+  "rules": [
+   "star",
+   "size",
+   "rect"
+  ],
+  "solution": "abbbcdaefgcdaefgcdhefgidhefjikllfjik",
+  "tier": "初級",
+  "nodes": 2842
+ },
+ {
+  "n": 6,
+  "cells": ".*24..*.**.*......2*34......*4.***.*",
+  "rules": [
+   "star",
+   "size",
+   "rect"
+  ],
+  "solution": "abbccdaeeccdaeefghiijfghkkjfghkkjfgh",
+  "tier": "初級",
+  "nodes": 2935
+ },
+ {
+  "n": 6,
+  "cells": "4**5*2YY......444.*..YR*.R*.*3B*4R.*",
+  "rules": [
+   "star",
+   "size",
+   "color"
+  ],
+  "solution": "aabbccaadbbbeedfggeedfggehdffiehhhii",
+  "tier": "初級",
+  "nodes": 3500
+ },
+ {
+  "n": 6,
+  "cells": ".*..*2...**..*.2.*.****2**52......**",
+  "rules": [
+   "star",
+   "size",
+   "rect"
+  ],
+  "solution": "aaaabbccdeffccdeghiidjghkldjgmkldnnm",
+  "tier": "初級",
+  "nodes": 4010
+ },
+ {
+  "n": 6,
+  "cells": "...55..*...*.RY*..B**.*3.443.*..*5*3",
+  "rules": [
+   "star",
+   "size",
+   "color"
+  ],
+  "solution": "abbbccaadbcceadbcfeedggfhedgifhhhhii",
+  "tier": "初級",
+  "nodes": 4134
+ },
+ {
+  "n": 6,
+  "cells": "*BY.6*34*R*..B.BBB*.7.*B*..Y.535R*.Y",
+  "rules": [
+   "star",
+   "size",
+   "color"
+  ],
+  "solution": "aabcddabbccdeebeddeeeefdgghfffghhhhf",
+  "tier": "初級",
+  "nodes": 4939
+ },
+ {
+  "n": 7,
+  "cells": "....2....6B.6.R...B...656.2...Y6R.Y........4..B3.",
+  "rules": [
+   "size",
+   "color",
+   "rect"
+  ],
+  "solution": "aaabbccaaaddcceefddcceefddggeefhhhijjfhhhijjfkkki",
+  "tier": "中級",
+  "nodes": 28726
+ },
+ {
+  "n": 7,
+  "cells": "3.*3Y*.RB*.R5**..44..*4B*4*RY*..Y7..*6R.**4BR.B.2",
+  "rules": [
+   "star",
+   "size",
+   "color"
+  ],
+  "solution": "abbcccdabeeeddafggehdffgghhdfiiihjjkkiijjlkkijjjl",
+  "tier": "中級",
+  "nodes": 32398
+ },
+ {
+  "n": 7,
+  "cells": "B*.Y6R.3R*..5R..*B6.**BR.*.Y*3*B...*.4..3..32***2",
+  "rules": [
+   "star",
+   "size",
+   "color"
+  ],
+  "solution": "aabbbccadbbbccddeeefcdghefffgghefffihhejjfiikkjll",
+  "tier": "中級",
+  "nodes": 41628
+ },
+ {
+  "n": 7,
+  "cells": "......**6..*6.*..*2...*.5.*.....*...5*.**4...*.5.",
+  "rules": [
+   "star",
+   "size",
+   "rect"
+  ],
+  "solution": "aaabcccaaabdeefghbdeefghbieefghbijjfghkkjjfglllll",
+  "tier": "中級",
+  "nodes": 50180
+ },
+ {
+  "n": 7,
+  "cells": "..Y.5R..3..2.6.6..Y...RRY4...B.5..Y.RR.5.R...6..2",
+  "rules": [
+   "size",
+   "color",
+   "rect"
+  ],
+  "solution": "aaaaabbcccddbbeeeffbbeeeffghiiiiighjjjjjgkllllllk",
+  "tier": "中級",
+  "nodes": 51256
+ },
+ {
+  "n": 7,
+  "cells": "...6...6RB..55...Y.....4.....Y..2...6...22.234.2.",
+  "rules": [
+   "size",
+   "color",
+   "rect"
+  ],
+  "solution": "aabccdeaabccdeaabccdeffbghdeffighdeffigjjklligmmk",
+  "tier": "中級",
+  "nodes": 53937
+ },
+ {
+  "n": 7,
+  "cells": "..*...*2*..432..*.*..*....*52......*.*.2..*.*2***",
+  "rules": [
+   "star",
+   "size",
+   "rect"
+  ],
+  "solution": "aaaaaabccddefbggddefhggddefhijjjekhijjjlkhmmnnlkh",
+  "tier": "中級",
+  "nodes": 57682
+ },
+ {
+  "n": 7,
+  "cells": "*..R..*YYY*3.6*R4B.5.*3.*.2*.BYBY*B.R*4*B5.3.*.*R",
+  "rules": [
+   "star",
+   "size",
+   "color"
+  ],
+  "solution": "aaabbbbaaaccbbddecffghdeefighhejfighkkjfgghkjjlll",
+  "tier": "中級",
+  "nodes": 58737
+ },
+ {
+  "n": 7,
+  "cells": ".BBB6.**6R.Y.Y.Y.*B**Y6*33R..B*4Y..*B.5*BBR.*.4..",
+  "rules": [
+   "star",
+   "size",
+   "color"
+  ],
+  "solution": "aaaabbbaaccbbbddceefgddceffgdhhhiggdhjjiggjjjiigg",
+  "tier": "中級",
+  "nodes": 59598
+ },
+ {
+  "n": 7,
+  "cells": "*3.BB*RBR**434Y....YR3**.6R*.46...*.B*.55B*Y*.Y..",
+  "rules": [
+   "star",
+   "size",
+   "color"
+  ],
+  "solution": "aabccdeabbccdefbbbgdeffggggehhiiigjhiiikjjhkkkkjj",
+  "tier": "中級",
+  "nodes": 59759
+ },
+ {
+  "n": 8,
+  "cells": "......*43.*..3*.*4*..**..*.2*..*.5*.....*..**3*....4.3*.*.....**",
+  "rules": [
+   "star",
+   "size",
+   "rect"
+  ],
+  "solution": "abbbccccabbbdddeaffffgheijkllgheijkmngheijkmnooopjkmqqqrpjkmsssr",
+  "tier": "上級",
+  "nodes": 63327
+ },
+ {
+  "n": 8,
+  "cells": "R*B.Y.5..R6.*.YB.*Y*..8*..635B.Y..*..R*.BR5*.*4.*.5.*5.3.*BY5B.*",
+  "rules": [
+   "star",
+   "size",
+   "color"
+  ],
+  "solution": "abbbcccdaaabcdcdaaeefdddgggefddhgiiiffhhgiijjfhkglljmmmkllljjmmk",
+  "tier": "上級",
+  "nodes": 107084
+ },
+ {
+  "n": 8,
+  "cells": "Y*.RY..B3.B36**.***.R.Y5..5**3.4.BBYBB.*R.64Y.*4*..**R*.B..B7..R",
+  "rules": [
+   "star",
+   "size",
+   "color"
+  ],
+  "solution": "abbbccddabeeccddafeggccdhffgiijjhffkiljjhhhkklllhmmmknnnmmmmnnnn",
+  "tier": "上級",
+  "nodes": 132144
+ },
+ {
+  "n": 8,
+  "cells": "...*..5****..4...6...4**..**4*....*.....*.......2..5*..5.*.*.**.",
+  "rules": [
+   "star",
+   "size",
+   "rect"
+  ],
+  "solution": "abcccccdabeeeefdabghhifjabghhifjabkkkifjlbkkkifjlmmmmmfjnnooppqq",
+  "tier": "上級",
+  "nodes": 202242
+ },
+ {
+  "n": 8,
+  "cells": "..5*.....3**..6...2.......*..*..**..*.***...4....66*..*33..*..*.",
+  "rules": [
+   "star",
+   "size",
+   "rect"
+  ],
+  "solution": "aaaaabcdeeeffbcdghiffbcdghiffbcdghjjkbcdlhjjkbcdlhjjkmmmlhnnkooo",
+  "tier": "上級",
+  "nodes": 214389
+ },
+ {
+  "n": 8,
+  "cells": "4.4....4............4.3.254..BR.....R..3..2.4Y.B4..6.4B..4......",
+  "rules": [
+   "size",
+   "color",
+   "rect"
+  ],
+  "solution": "aabbbbccaadeffccghdeffijghdeklijmhdeklijmhnekoopmhnekqqpmrrrrqqp",
+  "tier": "上級",
+  "nodes": 308160
+ },
+ {
+  "n": 8,
+  "cells": "..3...5..5....2R..B.4.Y6B.3..R....Y.6..B5...B2...32.4Y4.R..3R.R.",
+  "rules": [
+   "size",
+   "color",
+   "rect"
+  ],
+  "solution": "aaabbbbbcdddddeecfgggghicfjkkkhicfjkkklicmjnnolipmqnnolipmqrrrli",
+  "tier": "上級",
+  "nodes": 369403
+ },
+ {
+  "n": 8,
+  "cells": "..**6.*.*..2*..*6.....5*.22*.....**..*...**..*..*2.22.4.2.****2.",
+  "rules": [
+   "star",
+   "size",
+   "rect"
+  ],
+  "solution": "abbcdefgabbcdefgabbhdefiajkhdefiajkhdefialmhdnniolmpqnniorrpqssi",
+  "tier": "上級",
+  "nodes": 370154
+ },
+ {
+  "n": 8,
+  "cells": "6..6.......B.Y4..R4.344...Y.......R...Y2...42...44.4...42R...Y4.",
+  "rules": [
+   "size",
+   "color",
+   "rect"
+  ],
+  "solution": "aabbbcddaabbbcddaaeefcgghieefcgghijjfkllhijjmknnhioomknnppooqqqq",
+  "tier": "上級",
+  "nodes": 376977
+ },
+ {
+  "n": 8,
+  "cells": "..6YR.Y4Y.*.*.Y.B.B.8.***YR*4..R63*R.*6RR7R..B5R..YY*6*..**.3RY.",
+  "rules": [
+   "star",
+   "size",
+   "color"
+  ],
+  "solution": "aaaabbccadabbbcedddbbbcedfggghhedffghheeiiijjhkeiijjlhkkiijjllkk",
+  "tier": "上級",
+  "nodes": 383869
+ }
+]
