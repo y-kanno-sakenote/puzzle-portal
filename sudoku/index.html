@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>数独</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --blue:#3f6fb0;
+    --peer:#edece8; --same:#e3e0d8; --sel:#cbdcee;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  #app{max-width:420px;margin:0 auto;padding:10px 10px 40px}
+  header{display:flex;align-items:baseline;gap:8px;padding:2px 2px 10px}
+  #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+
+  #stage{position:relative}
+  #board{
+    --cs:calc(min(100vw - 20px, 400px) / 9);
+    width:100%;max-width:400px;margin:0 auto;aspect-ratio:1/1;
+    display:grid;grid-template-columns:repeat(9,1fr);grid-template-rows:repeat(9,1fr);
+    background:var(--panel);border:2px solid var(--sub);border-radius:6px;
+    overflow:hidden;touch-action:manipulation;
+  }
+  .cell{
+    position:relative;border-right:1px solid var(--line);border-bottom:1px solid var(--line);
+    -webkit-tap-highlight-color:transparent;cursor:pointer;
+  }
+  .cell.r3{border-right:2px solid var(--sub)}
+  .cell.b3{border-bottom:2px solid var(--sub)}
+  .cell.re{border-right:0}
+  .cell.be{border-bottom:0}
+  .cell.peer{background:var(--peer)}
+  .cell.same{background:var(--same)}
+  .cell.sel{background:var(--sel)}
+  .v{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:calc(var(--cs) * .58);line-height:1;color:var(--blue);
+  }
+  .cell.given .v{color:var(--ink);font-weight:700}
+  .nt{
+    position:absolute;inset:0;display:grid;
+    grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);
+    color:var(--sub);font-size:calc(var(--cs) * .27);line-height:1;
+  }
+  .nt i{display:flex;align-items:center;justify-content:center;font-style:normal}
+
+  #pad{display:grid;grid-template-columns:repeat(9,1fr);gap:4px;padding:12px 0 0}
+  #tools{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 0 0}
+  #buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 0 0}
+  button{
+    font:inherit;font-size:15px;padding:11px 6px;border:1px solid var(--frame);
+    border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button:active{background:#eeece7}
+  button:disabled{opacity:.4;cursor:default}
+  #pad button{padding:12px 0;font-size:19px;font-weight:400}
+  #note.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+
+  #msg{height:22px;padding:8px 2px 0;font-size:14px;color:var(--sub);text-align:center}
+
+  #clear{
+    position:absolute;left:0;right:0;top:0;height:100%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+    background:rgba(245,244,241,.93);border-radius:6px;z-index:20;
+  }
+  #clear[hidden]{display:none}
+  #clearTitle{font-size:26px;font-weight:700}
+  #next{font-size:17px;padding:12px 28px}
+
+  #levels{padding-top:18px}
+  .tier{margin-bottom:10px}
+  .tierName{font-size:13px;color:var(--sub);padding:2px 2px 4px}
+  .tierRow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .lv{padding:0;height:40px;font-size:14px;border-radius:7px;
+      display:flex;align-items:center;justify-content:center}
+  .lv.cur{border-color:var(--ink);font-weight:700}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><div id="title">入門 1</div></header>
+
+  <div id="stage">
+    <div id="board"></div>
+    <div id="clear" hidden>
+      <div id="clearTitle">クリア！</div>
+      <button id="next">つぎへ</button>
+    </div>
+  </div>
+
+  <div id="pad"></div>
+  <div id="tools">
+    <button id="erase">消す</button>
+    <button id="note">メモ</button>
+  </div>
+  <div id="buttons">
+    <button id="undo">もどす</button>
+    <button id="reset">はじめから</button>
+  </div>
+  <div id="msg"></div>
+
+  <section id="levels"></section>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.Sudoku として公開する）
+   ===================================================================== */
+
+/* PUZZLES-BEGIN  tools/gen_puzzles.py の出力をそのまま貼る。手で書き換えない */
+var PUZZLES = [
+  {"puzzle":"723085900415369700008021000000806009069512470100904000000140300001293647004650812","solution":"723485961415369728698721534342876159869512473157934286276148395581293647934657812","tier":"入門","givens":45,"hardest":"裸のシングル"},
+  {"puzzle":"000702000602100835090680071540009687080516090369800052950021040813005906000908000","solution":"138752469672194835495683271541239687287516394369847152956321748813475926724968513","tier":"入門","givens":43,"hardest":"裸のシングル"},
+  {"puzzle":"100200005207069400569403207795000046000748000840000713908605124006190508400002009","solution":"134287695287569431569413287795321846613748952842956713978635124326194578451872369","tier":"入門","givens":43,"hardest":"裸のシングル"},
+  {"puzzle":"000640009021509607900700851002000094408925103630000500295006008706203410100057000","solution":"857641239321589647964732851512368794478925163639174582295416378786293415143857926","tier":"入門","givens":41,"hardest":"裸のシングル"},
+  {"puzzle":"028450790050870106600901000800040617006000400374010005000304008705068020089025360","solution":"128456793953872146647931852892543617516287439374619285261394578735168924489725361","tier":"入門","givens":40,"hardest":"裸のシングル"},
+  {"puzzle":"300900847000418050840007200130000064084050970570000038003100086060783000798004001","solution":"316925847927418653845637219132879564684351972579246138453192786261783495798564321","tier":"入門","givens":39,"hardest":"裸のシングル"},
+  {"puzzle":"380400000620070004409100086003741008740060039100983400960004801800090063000008047","solution":"381426795625879314479135286293741658748562139156983472967354821814297563532618947","tier":"入門","givens":39,"hardest":"裸のシングル"},
+  {"puzzle":"050900300008375410040000059802009103069000870105400902910000080084792600007006090","solution":"751964328298375416643128759872659143469231875135487962916543287584792631327816594","tier":"入門","givens":38,"hardest":"裸のシングル"},
+  {"puzzle":"900007080000506900040908030073010052280675043410080790020704010004301000060800005","solution":"952137684837546921146928537673419852289675143415283796528764319794351268361892475","tier":"入門","givens":37,"hardest":"裸のシングル"},
+  {"puzzle":"200410580000500700070068213045090006020000090300070420918750030002009000056021008","solution":"263417589891532764574968213145293876627845391389176425918754632432689157756321948","tier":"入門","givens":36,"hardest":"裸のシングル"},
+  {"puzzle":"006102008780003150000080006500247600007010500001856007900030000043900071100708400","solution":"356172948784693152219584736538247619627319584491856327972431865843965271165728493","tier":"初級","givens":35,"hardest":"隠れシングル"},
+  {"puzzle":"050748009607000084084002000000807065006030900890406000000600190760000203300579040","solution":"153748629627951384984362571231897465476235918895416732548623197769184253312579846","tier":"初級","givens":35,"hardest":"隠れシングル"},
+  {"puzzle":"200103670004002000960805004810000063400020005530000012700408036000700500041206007","solution":"285143679174962358963875124812597463496321785537684912759418236628739541341256897","tier":"初級","givens":35,"hardest":"隠れシングル"},
+  {"puzzle":"500006007007003009000002560201360000745289631000017205079600000600500900800700006","solution":"523946817167853429498172563281365794745289631936417285379624158614538972852791346","tier":"初級","givens":35,"hardest":"隠れシングル"},
+  {"puzzle":"540006280000000960069800705700010020008070300030080007405007630097000000086500079","solution":"543796281872451963169832745754319826928675314631284597415927638397168452286543179","tier":"初級","givens":33,"hardest":"隠れシングル"},
+  {"puzzle":"010000508900087012500000000000870250007405100059062000000000005190620004806000090","solution":"412396578963587412578241936641879253287435169359162847734918625195623784826754391","tier":"初級","givens":30,"hardest":"隠れシングル"},
+  {"puzzle":"060201007030005000250930000000420600601000204002016000000093065000500090700604010","solution":"869241537134765829257938146983427651671359284542816973428193765316572498795684312","tier":"初級","givens":30,"hardest":"隠れシングル"},
+  {"puzzle":"190002300000000720020083500073050004000060000500090170001820090042000000008900037","solution":"196572348385149726427683519873251964219467853564398172731826495942735681658914237","tier":"初級","givens":29,"hardest":"隠れシングル"},
+  {"puzzle":"009001000083040070026097004200000600000105000005000001700810460040030980000600200","solution":"479381526583246179126597834214973658897165342365428791752819463641732985938654217","tier":"初級","givens":28,"hardest":"隠れシングル"},
+  {"puzzle":"300000068004020503060007000013700000007302800000005430000800040905060300640000002","solution":"329451768174628593568937124813746259457392816296185437732819645985264371641573982","tier":"初級","givens":28,"hardest":"隠れシングル"},
+  {"puzzle":"900180620000004080001000005007502406030070050205401800300000700020600000079013004","solution":"943185627652794381781326945817532496436978152295461873364259718128647539579813264","tier":"中級","givens":31,"hardest":"ロックド候補"},
+  {"puzzle":"000600003730008090000030250005081004060504010100960700028010000040200087500006000","solution":"851629473732458691496137258275381964369574812184962735928713546643295187517846329","tier":"中級","givens":30,"hardest":"ロックド候補"},
+  {"puzzle":"000042003000000000230058010450800100090030070007004096080210069000000000500370000","solution":"675142983148963527239758614456897132892631475317524896784215369923486751561379248","tier":"中級","givens":27,"hardest":"隠れペア"},
+  {"puzzle":"100090405000006200000300908500000180900030004071000003803004000005200000206070009","solution":"168792435359846217427315968534967182982531674671428593893654721715289346246173859","tier":"中級","givens":27,"hardest":"ロックド候補"},
+  {"puzzle":"000603980109800006000050000001700000670000051000005400000080000800009604035201000","solution":"742613985159872346368954172521746839674398251983125467296487513817539624435261798","tier":"中級","givens":26,"hardest":"ロックド候補"},
+  {"puzzle":"000710050000900080013080200080000075009000400720000010002040960030008000060027000","solution":"298713654647952183513486297481269375359871426726534819872345961135698742964127538","tier":"中級","givens":26,"hardest":"ロックド候補"},
+  {"puzzle":"030000200020900400500006000200670001107000000040005000700000050460000370059082004","solution":"936451287821937465574826193285673941197248536643195728712364859468519372359782614","tier":"中級","givens":26,"hardest":"裸のペア"},
+  {"puzzle":"080000000100289000006007008000800709920000035304002000600900500000478003000000040","solution":"782654391135289674496137258561843729928716435374592816643921587259478163817365942","tier":"中級","givens":26,"hardest":"ロックド候補"},
+  {"puzzle":"107000900090000310300106250015003002400000000000600800900500006703000009000008020","solution":"157324968692857314348196257815743692436289175279615843981572436723461589564938721","tier":"中級","givens":26,"hardest":"ロックド候補"},
+  {"puzzle":"700060080000002003083900140000005009030000020400800000072006850600500000010030007","solution":"754361982961482573283957146128745369537619428496823715372196854649578231815234697","tier":"中級","givens":26,"hardest":"裸のペア"},
+  {"puzzle":"090600400407000502000030090850100203001876900709003081070060000502000304003001050","solution":"398652417467918532125437896856194273231876945749523681974365128512789364683241759","tier":"上級","givens":33,"hardest":"それ以上"},
+  {"puzzle":"180530609000900804000000000000450002306000501900016000000000000509007000401095073","solution":"187534629653972814294681735718459362346728591925316487872143956539267148461895273","tier":"上級","givens":28,"hardest":"それ以上"},
+  {"puzzle":"000000000200003098000419030080090070000000059504000200006870025020906800040000000","solution":"439782516271653498658419732182395674367248159594167283916874325725936841843521967","tier":"上級","givens":26,"hardest":"それ以上"},
+  {"puzzle":"001060830050003000300050069060020704500000000002974000000200000600710400007000300","solution":"791462835256893147348157269963521784574386912182974653419238576635719428827645391","tier":"上級","givens":26,"hardest":"それ以上"},
+  {"puzzle":"040800290000000060000035080000020000890060004020007000085040002009200006010350800","solution":"346871295158492367972635481763124958891563724524987613685749132439218576217356849","tier":"上級","givens":26,"hardest":"それ以上"},
+  {"puzzle":"076008020400000080050000970000006030009000012025009600000204700004050001000603000","solution":"176948325493572186852361974781426539649735812325189647568214793934857261217693458","tier":"上級","givens":26,"hardest":"それ以上"},
+  {"puzzle":"070000031000000786000100009004056000096000007301907040000025000007000000930800000","solution":"875692431129543786463178529784256913296431857351987642618725394547319268932864175","tier":"上級","givens":25,"hardest":"それ以上"},
+  {"puzzle":"070100006000200900000065100500780360980500000000000008002647000000003000104000007","solution":"275139486416278953839465172521784369983526714647391528352647891768913245194852637","tier":"上級","givens":25,"hardest":"それ以上"},
+  {"puzzle":"026418070000702000304000000500806003000000008000000010008000004043500100010000060","solution":"926418375185732496374659821591876243467123958832945617658291734243567189719384562","tier":"上級","givens":24,"hardest":"それ以上"},
+  {"puzzle":"080900003540100000020000007090080040002090000100006900000060002060402100000005800","solution":"681974523547123698923658417396587241452391786178246935714869352865432179239715864","tier":"上級","givens":24,"hardest":"それ以上"}
+];
+/* PUZZLES-END */
+
+var Sudoku = (function () {
+  var CELLS = 81, ALL = 0x1FF;
+
+  var ROW = [], COL = [], BOX = [], i, j;
+  for (i = 0; i < CELLS; i++) {
+    ROW.push(Math.floor(i / 9));
+    COL.push(i % 9);
+    BOX.push(Math.floor(i / 27) * 3 + Math.floor((i % 9) / 3));
+  }
+  var ROWCELLS = [], COLCELLS = [], BOXCELLS = [];
+  for (i = 0; i < 9; i++) { ROWCELLS.push([]); COLCELLS.push([]); BOXCELLS.push([]); }
+  for (i = 0; i < CELLS; i++) {
+    ROWCELLS[ROW[i]].push(i); COLCELLS[COL[i]].push(i); BOXCELLS[BOX[i]].push(i);
+  }
+  var UNITS = ROWCELLS.concat(COLCELLS).concat(BOXCELLS);
+  var PEERS = [];
+  for (i = 0; i < CELLS; i++) {
+    var seen = {}, list = [];
+    var src = ROWCELLS[ROW[i]].concat(COLCELLS[COL[i]]).concat(BOXCELLS[BOX[i]]);
+    for (j = 0; j < src.length; j++) {
+      if (src[j] !== i && !seen[src[j]]) { seen[src[j]] = 1; list.push(src[j]); }
+    }
+    list.sort(function (a, b) { return a - b; });
+    PEERS.push(list);
+  }
+
+  /* 技法（強い順に番号）。この番号の最大値で段階が決まる */
+  var TECH = { 1: '裸のシングル', 2: '隠れシングル', 3: 'ロックド候補', 4: '裸のペア', 5: '隠れペア' };
+  var UNSOLVED = 'それ以上';
+
+  function tierOf(name) {
+    if (name === TECH[1]) return '入門';
+    if (name === TECH[2]) return '初級';
+    if (name === UNSOLVED) return '上級';
+    return '中級';
+  }
+
+  function popcount(x) { var n = 0; while (x) { x &= x - 1; n++; } return n; }
+  function bit2digit(b) { var d = 0; while (b) { b >>= 1; d++; } return d; }
+
+  /* 81文字（0=空）-> 数値の配列 */
+  function parse(s) {
+    var g = [], k;
+    for (k = 0; k < CELLS; k++) {
+      var c = (typeof s === 'string') ? s.charAt(k) : '';
+      g.push((c === '0' || c === '.' || c === '') ? 0 : (c.charCodeAt(0) - 48));
+    }
+    return g;
+  }
+  function toStr(g) { var s = '', k; for (k = 0; k < CELLS; k++) s += String(g[k] || 0); return s; }
+
+  /* i に n を置けるか（同じ行・列・ブロックに同じ数字が無いか） */
+  function isValidPlacement(grid, i, n) {
+    if (!(n >= 1 && n <= 9)) return false;
+    var p = PEERS[i], k;
+    for (k = 0; k < p.length; k++) if (grid[p[k]] === n) return false;
+    return true;
+  }
+
+  /* 81マス埋まっていて、行・列・ブロックがすべて1〜9か */
+  function isComplete(grid) {
+    var k, u, unit, seen, b;
+    for (k = 0; k < CELLS; k++) {
+      var v = grid[k];
+      if (!(v >= 1 && v <= 9)) return false;
+    }
+    for (u = 0; u < UNITS.length; u++) {
+      unit = UNITS[u]; seen = 0;
+      for (k = 0; k < unit.length; k++) {
+        b = 1 << (grid[unit[k]] - 1);
+        if (seen & b) return false;
+        seen |= b;
+      }
+    }
+    return true;
+  }
+
+  /* 解を limit 個まで数える（バックトラック・候補の少ないマスから） */
+  function countSolutions(puzzle, limit) {
+    limit = limit || 2;
+    var grid = (typeof puzzle === 'string') ? parse(puzzle) : puzzle.slice();
+    var rows = [0,0,0,0,0,0,0,0,0], cols = [0,0,0,0,0,0,0,0,0], boxes = [0,0,0,0,0,0,0,0,0];
+    var k, b;
+    for (k = 0; k < CELLS; k++) {
+      if (grid[k]) {
+        b = 1 << (grid[k] - 1);
+        if ((rows[ROW[k]] | cols[COL[k]] | boxes[BOX[k]]) & b) return 0;
+        rows[ROW[k]] |= b; cols[COL[k]] |= b; boxes[BOX[k]] |= b;
+      }
+    }
+    var count = 0;
+    function rec() {
+      var best = -1, bestmask = 0, bestn = 10, t, m, n;
+      for (t = 0; t < CELLS; t++) {
+        if (grid[t]) continue;
+        m = ALL & ~(rows[ROW[t]] | cols[COL[t]] | boxes[BOX[t]]);
+        n = popcount(m);
+        if (n === 0) return;
+        if (n < bestn) { bestn = n; best = t; bestmask = m; if (n === 1) break; }
+      }
+      if (best < 0) { count++; return; }
+      var r = ROW[best], c = COL[best], x = BOX[best], mm = bestmask, bb;
+      while (mm) {
+        bb = mm & -mm; mm ^= bb;
+        grid[best] = bit2digit(bb);
+        rows[r] |= bb; cols[c] |= bb; boxes[x] |= bb;
+        rec();
+        rows[r] &= ~bb; cols[c] &= ~bb; boxes[x] &= ~bb;
+        grid[best] = 0;
+        if (count >= limit) return;
+      }
+    }
+    rec();
+    return count;
+  }
+
+  /* ---- 論理ソルバー（生成器 gen_puzzles.py と同じ手順・同じ順番） ----
+     各技法は盤面を一度ぜんぶ走査して見つけたものをまとめて適用する。
+     走査中は盤面を変えないので適用順に依存しない。 */
+
+  function candidates(grid) {
+    var rows = [0,0,0,0,0,0,0,0,0], cols = [0,0,0,0,0,0,0,0,0], boxes = [0,0,0,0,0,0,0,0,0];
+    var k, b, cand = [];
+    for (k = 0; k < CELLS; k++) {
+      if (grid[k]) {
+        b = 1 << (grid[k] - 1);
+        rows[ROW[k]] |= b; cols[COL[k]] |= b; boxes[BOX[k]] |= b;
+      }
+    }
+    for (k = 0; k < CELLS; k++) {
+      cand.push(grid[k] ? 0 : (ALL & ~(rows[ROW[k]] | cols[COL[k]] | boxes[BOX[k]])));
+    }
+    return cand;
+  }
+
+  function place(grid, cand, i, d) {
+    grid[i] = d; cand[i] = 0;
+    var b = ~(1 << (d - 1)), p = PEERS[i], k;
+    for (k = 0; k < p.length; k++) cand[p[k]] &= b;
+  }
+
+  function nakedSingle(grid, cand) {
+    var moves = [], k;
+    for (k = 0; k < CELLS; k++) {
+      if (!grid[k] && popcount(cand[k]) === 1) moves.push([k, bit2digit(cand[k])]);
+    }
+    if (!moves.length) return false;
+    for (k = 0; k < moves.length; k++) if (!grid[moves[k][0]]) place(grid, cand, moves[k][0], moves[k][1]);
+    return true;
+  }
+
+  function hiddenSingle(grid, cand) {
+    var moves = [], u, d, b, k, unit, spots;
+    for (u = 0; u < UNITS.length; u++) {
+      unit = UNITS[u];
+      for (d = 1; d <= 9; d++) {
+        b = 1 << (d - 1); spots = [];
+        for (k = 0; k < unit.length; k++) if (!grid[unit[k]] && (cand[unit[k]] & b)) spots.push(unit[k]);
+        if (spots.length === 1) moves.push([spots[0], d]);
+      }
+    }
+    if (!moves.length) return false;
+    var changed = false;
+    for (k = 0; k < moves.length; k++) {
+      if (!grid[moves[k][0]]) { place(grid, cand, moves[k][0], moves[k][1]); changed = true; }
+    }
+    return changed;
+  }
+
+  function applyElim(cand, elim) {
+    if (!elim.length) return false;
+    for (var k = 0; k < elim.length; k++) cand[elim[k][0]] &= ~elim[k][1];
+    return true;
+  }
+
+  /* ブロックと行列の絡み（pointing と claiming） */
+  function lockedCandidates(grid, cand) {
+    var elim = [], bx, d, b, k, spots, r, c, sameR, sameC, i2;
+    for (bx = 0; bx < 9; bx++) {
+      for (d = 1; d <= 9; d++) {
+        b = 1 << (d - 1); spots = [];
+        for (k = 0; k < 9; k++) { i2 = BOXCELLS[bx][k]; if (!grid[i2] && (cand[i2] & b)) spots.push(i2); }
+        if (spots.length < 2) continue;
+        sameR = true; sameC = true;
+        for (k = 1; k < spots.length; k++) {
+          if (ROW[spots[k]] !== ROW[spots[0]]) sameR = false;
+          if (COL[spots[k]] !== COL[spots[0]]) sameC = false;
+        }
+        if (sameR) {
+          r = ROW[spots[0]];
+          for (k = 0; k < 9; k++) { i2 = ROWCELLS[r][k]; if (BOX[i2] !== bx && !grid[i2] && (cand[i2] & b)) elim.push([i2, b]); }
+        }
+        if (sameC) {
+          c = COL[spots[0]];
+          for (k = 0; k < 9; k++) { i2 = COLCELLS[c][k]; if (BOX[i2] !== bx && !grid[i2] && (cand[i2] & b)) elim.push([i2, b]); }
+        }
+      }
+    }
+    var lines = ROWCELLS.concat(COLCELLS), u, unit, sameB, inLine;
+    for (u = 0; u < lines.length; u++) {
+      unit = lines[u];
+      for (d = 1; d <= 9; d++) {
+        b = 1 << (d - 1); spots = [];
+        for (k = 0; k < unit.length; k++) if (!grid[unit[k]] && (cand[unit[k]] & b)) spots.push(unit[k]);
+        if (spots.length < 2) continue;
+        sameB = true;
+        for (k = 1; k < spots.length; k++) if (BOX[spots[k]] !== BOX[spots[0]]) sameB = false;
+        if (!sameB) continue;
+        bx = BOX[spots[0]];
+        inLine = {};
+        for (k = 0; k < unit.length; k++) inLine[unit[k]] = 1;
+        for (k = 0; k < 9; k++) {
+          i2 = BOXCELLS[bx][k];
+          if (!inLine[i2] && !grid[i2] && (cand[i2] & b)) elim.push([i2, b]);
+        }
+      }
+    }
+    return applyElim(cand, elim);
+  }
+
+  function nakedPair(grid, cand) {
+    var elim = [], u, unit, empt, a, b_, k, i2, j2;
+    for (u = 0; u < UNITS.length; u++) {
+      unit = UNITS[u]; empt = [];
+      for (k = 0; k < unit.length; k++) if (!grid[unit[k]]) empt.push(unit[k]);
+      for (a = 0; a < empt.length; a++) {
+        i2 = empt[a];
+        if (popcount(cand[i2]) !== 2) continue;
+        for (b_ = a + 1; b_ < empt.length; b_++) {
+          j2 = empt[b_];
+          if (cand[j2] !== cand[i2]) continue;
+          for (k = 0; k < empt.length; k++) {
+            var m = empt[k];
+            if (m !== i2 && m !== j2 && (cand[m] & cand[i2])) elim.push([m, cand[m] & cand[i2]]);
+          }
+        }
+      }
+    }
+    return applyElim(cand, elim);
+  }
+
+  function hiddenPair(grid, cand) {
+    var elim = [], u, unit, d1, d2, b1, b2, k, s1, s2, keep, ok;
+    for (u = 0; u < UNITS.length; u++) {
+      unit = UNITS[u];
+      for (d1 = 1; d1 <= 9; d1++) {
+        b1 = 1 << (d1 - 1); s1 = [];
+        for (k = 0; k < unit.length; k++) if (!grid[unit[k]] && (cand[unit[k]] & b1)) s1.push(unit[k]);
+        if (s1.length !== 2) continue;
+        for (d2 = d1 + 1; d2 <= 9; d2++) {
+          b2 = 1 << (d2 - 1); s2 = [];
+          for (k = 0; k < unit.length; k++) if (!grid[unit[k]] && (cand[unit[k]] & b2)) s2.push(unit[k]);
+          if (s2.length !== 2) continue;
+          ok = true;
+          for (k = 0; k < 2; k++) if (s2[k] !== s1[k]) ok = false;
+          if (!ok) continue;
+          keep = b1 | b2;
+          for (k = 0; k < 2; k++) if (cand[s1[k]] & ~keep) elim.push([s1[k], cand[s1[k]] & ~keep]);
+        }
+      }
+    }
+    return applyElim(cand, elim);
+  }
+
+  var STEPS = [[1, nakedSingle], [2, hiddenSingle], [3, lockedCandidates], [4, nakedPair], [5, hiddenPair]];
+
+  function allFilled(grid) {
+    for (var k = 0; k < CELLS; k++) if (!grid[k]) return false;
+    return true;
+  }
+
+  /* 解くのに要った一番強い技法の名前。解けなければ「それ以上」 */
+  function rate(puzzle) {
+    var grid = (typeof puzzle === 'string') ? parse(puzzle) : puzzle.slice();
+    var cand = candidates(grid), hardest = 0, moved, s;
+    while (true) {
+      if (allFilled(grid)) break;
+      moved = false;
+      for (s = 0; s < STEPS.length; s++) {
+        if (STEPS[s][1](grid, cand)) {
+          if (STEPS[s][0] > hardest) hardest = STEPS[s][0];
+          moved = true;
+          break;
+        }
+      }
+      if (!moved) break;
+    }
+    if (!allFilled(grid)) return UNSOLVED;
+    return TECH[hardest] || TECH[1];
+  }
+
+  return {
+    CELLS: CELLS, ROW: ROW, COL: COL, BOX: BOX, PEERS: PEERS, UNITS: UNITS,
+    TECH: TECH, UNSOLVED: UNSOLVED, PUZZLES: PUZZLES,
+    parse: parse, toStr: toStr,
+    isValidPlacement: isValidPlacement, isComplete: isComplete,
+    countSolutions: countSolutions, rate: rate, tierOf: tierOf
+  };
+})();
+
+if (typeof window !== 'undefined') window.Sudoku = Sudoku;
+if (typeof globalThis !== 'undefined') globalThis.Sudoku = Sudoku;
+</script>
+
+<script>
+/* =====================================================================
+   画面
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var CELLS = 81, KEY = 'sudoku';
+  var ROW = Sudoku.ROW, COL = Sudoku.COL, BOX = Sudoku.BOX;
+
+  var elTitle = document.getElementById('title');
+  var elBoard = document.getElementById('board');
+  var elPad   = document.getElementById('pad');
+  var elErase = document.getElementById('erase');
+  var elNote  = document.getElementById('note');
+  var elUndo  = document.getElementById('undo');
+  var elReset = document.getElementById('reset');
+  var elClear = document.getElementById('clear');
+  var elNext  = document.getElementById('next');
+  var elMsg   = document.getElementById('msg');
+  var elLevels = document.getElementById('levels');
+
+  /* 段階名と何本目か（例「初級 3」） */
+  var LABELS = (function () {
+    var out = [], count = {}, i;
+    for (i = 0; i < PUZZLES.length; i++) {
+      var t = PUZZLES[i].tier;
+      count[t] = (count[t] || 0) + 1;
+      out.push({ tier: t, no: count[t], text: t + ' ' + count[t] });
+    }
+    return out;
+  })();
+
+  /* ---- 保存 ---- */
+  var save = { cleared: {}, last: 0, grid: {}, notes: {} };
+  function loadSave() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (!o || typeof o !== 'object') return;
+      if (o.cleared && typeof o.cleared === 'object') save.cleared = o.cleared;
+      if (Number.isInteger(o.last) && o.last >= 0 && o.last < PUZZLES.length) save.last = o.last;
+      if (o.grid && typeof o.grid === 'object') save.grid = o.grid;
+      if (o.notes && typeof o.notes === 'object') save.notes = o.notes;
+    } catch (e) { save = { cleared: {}, last: 0, grid: {}, notes: {} }; }
+  }
+  function storeSave() {
+    try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
+  }
+
+  /* ---- 状態 ---- */
+  var index = 0;
+  var given = [];      // 問題の数字（0=空）
+  var grid = [];       // 今の盤（given を含む）
+  var notes = [];      // 各マスの候補メモ（9ビット整数）
+  var sel = -1;
+  var noteMode = false;
+  var history = [];
+  var finished = false;
+  var cells = [], vEls = [], nEls = [];
+  var msgTimer = null;
+
+  function buildBoard() {
+    elBoard.innerHTML = '';
+    cells = []; vEls = []; nEls = [];
+    for (var i = 0; i < CELLS; i++) {
+      var d = document.createElement('div');
+      var cn = 'cell';
+      if (COL[i] === 2 || COL[i] === 5) cn += ' r3';
+      if (COL[i] === 8) cn += ' re';
+      if (ROW[i] === 2 || ROW[i] === 5) cn += ' b3';
+      if (ROW[i] === 8) cn += ' be';
+      d.className = cn;
+      d.dataset.i = String(i);
+      var v = document.createElement('span'); v.className = 'v';
+      var n = document.createElement('span'); n.className = 'nt';
+      var ns = [];
+      for (var k = 0; k < 9; k++) { var s = document.createElement('i'); n.appendChild(s); ns.push(s); }
+      d.appendChild(v); d.appendChild(n);
+      d.addEventListener('click', onCell);
+      elBoard.appendChild(d);
+      cells.push(d); vEls.push(v); nEls.push(ns);
+    }
+  }
+
+  function render() {
+    var selV = (sel >= 0 ? grid[sel] : 0);
+    for (var i = 0; i < CELLS; i++) {
+      var v = grid[i];
+      vEls[i].textContent = v ? String(v) : '';
+      var ns = nEls[i], m = v ? 0 : notes[i];
+      for (var k = 0; k < 9; k++) ns[k].textContent = (m & (1 << k)) ? String(k + 1) : '';
+      var cn = 'cell';
+      if (COL[i] === 2 || COL[i] === 5) cn += ' r3';
+      if (COL[i] === 8) cn += ' re';
+      if (ROW[i] === 2 || ROW[i] === 5) cn += ' b3';
+      if (ROW[i] === 8) cn += ' be';
+      if (given[i]) cn += ' given';
+      if (sel >= 0) {
+        if (i === sel) cn += ' sel';
+        else if (selV && v === selV) cn += ' same';
+        else if (ROW[i] === ROW[sel] || COL[i] === COL[sel] || BOX[i] === BOX[sel]) cn += ' peer';
+      }
+      cells[i].className = cn;
+    }
+    elUndo.disabled = finished || !history.length;
+    elNote.className = noteMode ? 'on' : '';
+  }
+
+  function message(text) {
+    elMsg.textContent = text;
+    if (msgTimer) clearTimeout(msgTimer);
+    if (text) msgTimer = setTimeout(function () { elMsg.textContent = ''; }, 4000);
+  }
+
+  /* ---- 保存の読み書き ---- */
+  function persist() {
+    save.grid[String(index)] = Sudoku.toStr(grid);
+    save.notes[String(index)] = notes.join(',');
+    save.last = index;
+    storeSave();
+  }
+
+  function restore(i) {
+    var ok = false;
+    var gs = save.grid && save.grid[String(i)];
+    if (typeof gs === 'string' && gs.length === CELLS) {
+      var g = Sudoku.parse(gs), k, fine = true;
+      for (k = 0; k < CELLS; k++) {
+        if (given[k] && g[k] !== given[k]) fine = false;
+        if (!(g[k] >= 0 && g[k] <= 9)) fine = false;
+      }
+      if (fine) { grid = g; ok = true; }
+    }
+    var ns = save.notes && save.notes[String(i)];
+    if (typeof ns === 'string') {
+      var parts = ns.split(','), out = [], fine2 = (parts.length === CELLS);
+      for (var m = 0; m < parts.length && fine2; m++) {
+        var x = parseInt(parts[m], 10);
+        if (!Number.isInteger(x) || x < 0 || x > 511) fine2 = false; else out.push(x);
+      }
+      if (fine2) notes = out;
+    }
+    return ok;
+  }
+
+  /* ---- 出題 ---- */
+  function loadLevel(i) {
+    index = i;
+    var p = PUZZLES[i];
+    given = Sudoku.parse(p.puzzle);
+    grid = given.slice();
+    notes = [];
+    for (var k = 0; k < CELLS; k++) notes.push(0);
+    restore(i);
+    sel = -1;
+    history = [];
+    finished = false;
+    noteMode = false;
+    elClear.hidden = true;
+    elTitle.textContent = LABELS[i].text;
+    message('');
+    buildBoard();
+    render();
+    renderLevelList();
+    save.last = i;
+    storeSave();
+  }
+
+  /* ---- 操作 ---- */
+  function snapshot() {
+    history.push({ grid: grid.slice(), notes: notes.slice() });
+    if (history.length > 200) history.shift();
+  }
+
+  function onCell() {
+    if (finished) return;
+    sel = parseInt(this.dataset.i, 10);
+    render();
+  }
+
+  function inputDigit(d) {
+    if (finished || sel < 0) return;
+    if (given[sel]) return;
+    if (noteMode) {
+      if (grid[sel]) return;           // 数字が入っているマスにはメモしない
+      snapshot();
+      notes[sel] ^= (1 << (d - 1));    // 同じ数字をもう一度で消える
+    } else {
+      if (grid[sel] === d) return;
+      snapshot();
+      grid[sel] = d;
+      notes[sel] = 0;
+      var p = Sudoku.PEERS[sel], mask = ~(1 << (d - 1));
+      for (var k = 0; k < p.length; k++) notes[p[k]] &= mask;   // 同じ行・列・ブロックのメモを消す
+    }
+    message('');
+    render();
+    persist();
+    judge();
+  }
+
+  function eraseCell() {
+    if (finished || sel < 0) return;
+    if (given[sel]) return;
+    if (!grid[sel] && !notes[sel]) return;
+    snapshot();
+    grid[sel] = 0;
+    notes[sel] = 0;
+    message('');
+    render();
+    persist();
+  }
+
+  /* 81マス埋まった瞬間だけ判定する（途中では正誤を教えない） */
+  function judge() {
+    for (var k = 0; k < CELLS; k++) if (!grid[k]) return;
+    if (Sudoku.isComplete(grid)) {
+      finished = true;
+      save.cleared[String(index)] = 1;
+      persist();
+      renderLevelList();
+      render();
+      elNext.hidden = (index >= PUZZLES.length - 1);
+      elClear.hidden = false;
+    } else {
+      message('どこか違う');
+    }
+  }
+
+  /* ---- パッド ---- */
+  (function buildPad() {
+    for (var d = 1; d <= 9; d++) {
+      var b = document.createElement('button');
+      b.textContent = String(d);
+      b.dataset.d = String(d);
+      b.addEventListener('click', function () { inputDigit(parseInt(this.dataset.d, 10)); });
+      elPad.appendChild(b);
+    }
+  })();
+
+  elErase.addEventListener('click', eraseCell);
+  elNote.addEventListener('click', function () { noteMode = !noteMode; render(); });
+  elUndo.addEventListener('click', function () {
+    if (finished || !history.length) return;
+    var h = history.pop();
+    grid = h.grid; notes = h.notes;
+    message('');
+    render();
+    persist();
+  });
+  elReset.addEventListener('click', function () {
+    grid = given.slice();
+    notes = [];
+    for (var k = 0; k < CELLS; k++) notes.push(0);
+    history = [];
+    finished = false;
+    elClear.hidden = true;
+    message('');
+    render();
+    persist();
+  });
+  elNext.addEventListener('click', function () {
+    if (index < PUZZLES.length - 1) { loadLevel(index + 1); window.scrollTo(0, 0); }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key >= '1' && e.key <= '9') inputDigit(parseInt(e.key, 10));
+    else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') eraseCell();
+  });
+
+  /* ---- レベル一覧 ---- */
+  function renderLevelList() {
+    if (!elLevels.childNodes.length) {
+      var tiers = [], seen = {}, i;
+      for (i = 0; i < LABELS.length; i++) {
+        if (!seen[LABELS[i].tier]) { seen[LABELS[i].tier] = []; tiers.push(LABELS[i].tier); }
+        seen[LABELS[i].tier].push(i);
+      }
+      for (var t = 0; t < tiers.length; t++) {
+        var box = document.createElement('div');
+        box.className = 'tier';
+        var name = document.createElement('div');
+        name.className = 'tierName';
+        name.textContent = tiers[t];
+        box.appendChild(name);
+        var row = document.createElement('div');
+        row.className = 'tierRow';
+        var idxs = seen[tiers[t]];
+        for (var k = 0; k < idxs.length; k++) {
+          var b = document.createElement('button');
+          b.className = 'lv';
+          b.dataset.idx = String(idxs[k]);
+          b.addEventListener('click', function () {
+            loadLevel(parseInt(this.dataset.idx, 10));
+            window.scrollTo(0, 0);
+          });
+          row.appendChild(b);
+        }
+        box.appendChild(row);
+        elLevels.appendChild(box);
+      }
+    }
+    var btns = elLevels.querySelectorAll('.lv');
+    for (var j = 0; j < btns.length; j++) {
+      var idx = parseInt(btns[j].dataset.idx, 10);
+      btns[j].textContent = LABELS[idx].no + (save.cleared[String(idx)] ? ' ✓' : '');
+      btns[j].className = 'lv' + (idx === index ? ' cur' : '');
+    }
+  }
+
+  loadSave();
+  loadLevel(save.last);
+})();
+</script>
+</body>
+</html>
