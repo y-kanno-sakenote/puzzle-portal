@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>箱入り娘</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --red:#d94436;
+    --vert:#5b7fa6; --horz:#6f8f6a; --small:#7d6b58;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  #app{max-width:420px;margin:0 auto;padding:10px 10px 40px}
+  header{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:2px 2px 10px}
+  #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+  #counts{font-size:14px;color:var(--sub);white-space:nowrap}
+  #counts b{color:var(--ink);font-weight:700}
+
+  #stage{position:relative}
+  #board{
+    /* content-box にして枠線を外へ出す＝マスが正方形になる */
+    box-sizing:content-box;position:relative;
+    width:calc(100% - 6px);max-width:400px;aspect-ratio:4/5;margin:0 auto;
+    background:var(--panel);border:3px solid var(--sub);border-radius:10px;
+    background-image:
+      repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px calc(100% / 4)),
+      repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px calc(100% / 5));
+    overflow:visible;touch-action:none;
+  }
+  /* 下辺の中央2マスだけ枠を切る＝出口 */
+  #board::after{content:"";position:absolute;bottom:-3px;left:25%;width:50%;height:3px;background:var(--panel)}
+  #exit{position:relative;height:clamp(18px,6vw,26px);max-width:400px;margin:0 auto}
+  #exitMark{
+    position:absolute;top:0;left:25%;width:50%;text-align:center;
+    color:var(--red);font-size:22px;line-height:1;
+  }
+
+  .piece{
+    position:absolute;border-radius:8px;touch-action:none;cursor:grab;
+    transition:left .13s ease, top .13s ease, transform .13s ease;
+    box-shadow:inset 0 -3px 0 rgba(0,0,0,.14), 0 0 0 1px rgba(255,255,255,.5), 0 1px 2px rgba(0,0,0,.12);
+  }
+  .piece.dragging{transition:none;z-index:6;filter:brightness(1.08);cursor:grabbing}
+  .piece.girl{background:var(--red)}
+  .piece.vert{background:var(--vert)}
+  .piece.horz{background:var(--horz)}
+  .piece.small{background:var(--small)}
+  .piece.exiting{transition:top .35s ease-in;z-index:7}
+
+  #buttons{display:flex;gap:8px;padding:12px 0 4px}
+  button{
+    font:inherit;font-size:15px;padding:11px 14px;border:1px solid var(--frame);
+    border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button:active{background:#eeece7}
+  button:disabled{opacity:.4;cursor:default}
+  #buttons button{flex:1}
+
+  #clear{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:10px;
+    background:rgba(245,244,241,.93);border-radius:10px;z-index:20;
+  }
+  #clear[hidden]{display:none}
+  #clearTitle{font-size:26px;font-weight:700}
+  #clearSub{font-size:15px;color:var(--sub);min-height:1.5em}
+  #next{font-size:17px;padding:12px 28px}
+
+  #levels{padding-top:18px}
+  .tier{margin-bottom:10px}
+  .tierName{font-size:13px;color:var(--sub);padding:2px 2px 4px}
+  .tierRow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .lv{
+    padding:0;height:40px;font-size:14px;border-radius:7px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .lv.cur{border-color:var(--ink);font-weight:700}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div id="title">入門 1</div>
+    <div id="counts">手数 <b id="moves">0</b> ／ 最短 <b id="best">5</b></div>
+  </header>
+
+  <div id="stage">
+    <div id="board"></div>
+    <div id="exit"><div id="exitMark">▼</div></div>
+    <div id="clear" hidden>
+      <div id="clearTitle">クリア！</div>
+      <div id="clearSub"></div>
+      <button id="next">つぎへ</button>
+    </div>
+  </div>
+
+  <div id="buttons">
+    <button id="undo">もどす</button>
+    <button id="reset">はじめから</button>
+  </div>
+
+  <section id="levels"></section>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.Hakoiri として公開する）
+   ===================================================================== */
+
+/* LEVELS-BEGIN  tools/gen_levels.py の出力をそのまま貼る。手で書き換えない */
+var LEVELS = [
+  {"board":"BoCDEAAFEAAFGooHGIoJ","min":5,"tier":"入門"},
+  {"board":"oBCDEBCDFFGooHAAIJAA","min":6,"tier":"入門"},
+  {"board":"ooBCDoBEFAAEFAAGHIJG","min":7,"tier":"入門"},
+  {"board":"BBCooDEFGHEFAAIJAAIJ","min":8,"tier":"入門"},
+  {"board":"BCDoBEDFoGGoHoAAIIAA","min":9,"tier":"入門"},
+  {"board":"BBAAoCAAoDEoFGEHFGoH","min":11,"tier":"入門"},
+  {"board":"BCDEFCDGFHoIoHAAJKAA","min":12,"tier":"入門"},
+  {"board":"AAoBAACBDEFGHoFIHooI","min":13,"tier":"入門"},
+  {"board":"AABBAAoCoDDCoEFGoEFG","min":14,"tier":"入門"},
+  {"board":"BCAABCAADEoooEFGoHFI","min":15,"tier":"入門"},
+  {"board":"AAooAABoCDBoCEFGHIFG","min":16,"tier":"初級"},
+  {"board":"AABCAABDEEFDoGFHoIoo","min":18,"tier":"初級"},
+  {"board":"BAACBAADoEoDFFGHIoJo","min":20,"tier":"初級"},
+  {"board":"AABoAABCDEEFDGoHIIoo","min":22,"tier":"初級"},
+  {"board":"BCooBCDEAADoAAFGHHIJ","min":24,"tier":"初級"},
+  {"board":"oAAooAABCDEBCFEGHFIJ","min":27,"tier":"初級"},
+  {"board":"AABBAACDEFoDGFHIJoHI","min":29,"tier":"初級"},
+  {"board":"BCAABCAADEFGDEooHIJK","min":31,"tier":"初級"},
+  {"board":"BCoDECFDEGFHAAoIAAJJ","min":33,"tier":"初級"},
+  {"board":"BBAACDAACDEEoFGoHIJK","min":35,"tier":"初級"},
+  {"board":"oAABCAADCoEDoFFGHIJJ","min":36,"tier":"中級"},
+  {"board":"BoAACDAACDEFGGoHIIJK","min":40,"tier":"中級"},
+  {"board":"oBBCAADEAADEFoGHFIGJ","min":44,"tier":"中級"},
+  {"board":"ooBCDoBCEAAFEAAGHHII","min":47,"tier":"中級"},
+  {"board":"BCAAoCAADDoEFGHIJGKI","min":51,"tier":"中級"},
+  {"board":"BAACBAAoDEoFoEGFHHII","min":55,"tier":"中級"},
+  {"board":"oAABCAABCoDEFFGGHIJK","min":59,"tier":"中級"},
+  {"board":"AAoBAAoBCDDEFGoEFGHH","min":62,"tier":"中級"},
+  {"board":"BoAAoCAADCEFDGHFIGJJ","min":66,"tier":"中級"},
+  {"board":"AABoAACDoECFGEHIJJHI","min":70,"tier":"中級"},
+  {"board":"AABoAABCooDCEEDFGHHI","min":71,"tier":"上級"},
+  {"board":"BAACBAACDoEFDoEoGGHH","min":75,"tier":"上級"},
+  {"board":"AABoAACDoEEFGHIFGHIJ","min":79,"tier":"上級"},
+  {"board":"AABCAADCEFDooFGHIIJH","min":83,"tier":"上級"},
+  {"board":"BCAABCAADDEFGGHFIJoo","min":87,"tier":"上級"},
+  {"board":"BAACBAACDEEFDGHFIooJ","min":90,"tier":"上級","name":"横刀立馬"},
+  {"board":"BAAoBAACDDECFFEoGHIJ","min":92,"tier":"上級"},
+  {"board":"BCAABoAAoDDEFGoEFGHH","min":96,"tier":"上級"},
+  {"board":"BoCoBDAAEDAAEFGHIIJJ","min":106,"tier":"上級"},
+  {"board":"BCDEFCoEAAGHAAGoIIJJ","min":114,"tier":"上級"}
+];
+/* LEVELS-END */
+
+var Hakoiri = (function () {
+  var W = 4;                 // 盤の幅
+  var H = 5;                 // 盤の高さ
+  var GOAL_X = 1, GOAL_Y = 3; // 娘の左上がここに来たらクリア（下辺中央の出口）
+
+  /* 20文字の盤面記法 -> 駒の配列（先頭が娘）
+     o=空 / A=娘（2×2）/ B〜=他の駒。同じ文字の占める範囲が長方形であること */
+  function parse(board) {
+    var cells = {}, order = [], i, ch;
+    for (i = 0; i < W * H; i++) {
+      ch = board.charAt(i);
+      if (ch === 'o' || ch === '' || ch === '.') continue;
+      if (!cells[ch]) { cells[ch] = []; order.push(ch); }
+      cells[ch].push(i);
+    }
+    var girl = null, others = [];
+    for (i = 0; i < order.length; i++) {
+      ch = order[i];
+      var list = cells[ch];
+      var xs = [], ys = [], k;
+      for (k = 0; k < list.length; k++) { xs.push(list[k] % W); ys.push(Math.floor(list[k] / W)); }
+      var x = Math.min.apply(null, xs), y = Math.min.apply(null, ys);
+      var p = {
+        ch: ch, x: x, y: y,
+        w: Math.max.apply(null, xs) - x + 1,
+        h: Math.max.apply(null, ys) - y + 1
+      };
+      if (ch === 'A') girl = p; else others.push(p);
+    }
+    return girl ? [girl].concat(others) : others;
+  }
+
+  function cloneState(state) {
+    var out = [], i, c;
+    for (i = 0; i < state.length; i++) {
+      c = state[i];
+      out.push({ ch: c.ch, x: c.x, y: c.y, w: c.w, h: c.h });
+    }
+    return out;
+  }
+
+  function toBoard(state) {
+    var g = [], i, j, k, c;
+    for (i = 0; i < W * H; i++) g.push('o');
+    for (i = 0; i < state.length; i++) {
+      c = state[i];
+      for (j = 0; j < c.h; j++) for (k = 0; k < c.w; k++) g[(c.y + j) * W + c.x + k] = c.ch;
+    }
+    return g.join('');
+  }
+
+  function occupancy(state) {
+    var g = [], i, j, k, c;
+    for (i = 0; i < W * H; i++) g.push(-1);
+    for (i = 0; i < state.length; i++) {
+      c = state[i];
+      for (j = 0; j < c.h; j++) for (k = 0; k < c.w; k++) g[(c.y + j) * W + c.x + k] = i;
+    }
+    return g;
+  }
+
+  /* 同じ大きさの駒は区別しない正規形。大きさの記号で塗った20文字 */
+  function signature(state) {
+    var g = [], i, j, k, c, s;
+    for (i = 0; i < W * H; i++) g.push('o');
+    for (i = 0; i < state.length; i++) {
+      c = state[i];
+      s = (c.w === 2 && c.h === 2) ? 'A' : (c.h === 2 ? 'V' : (c.w === 2 ? 'H' : 'S'));
+      for (j = 0; j < c.h; j++) for (k = 0; k < c.w; k++) g[(c.y + j) * W + c.x + k] = s;
+    }
+    return g.join('');
+  }
+
+  /* id の駒を (dx, dy) だけ動かせるか。1回の移動は一直線（縦か横のどちらか） */
+  function canMove(state, id, dx, dy) {
+    if (!state || id < 0 || id >= state.length) return false;
+    dx = dx | 0; dy = dy | 0;
+    if (dx !== 0 && dy !== 0) return false;   // 斜め・折れ曲がりは1手ではない
+    if (dx === 0 && dy === 0) return false;
+    var c = state[id];
+    var g = occupancy(state);
+    var sx = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
+    var sy = dy > 0 ? 1 : (dy < 0 ? -1 : 0);
+    var n = Math.abs(dx) + Math.abs(dy);
+    var x = c.x, y = c.y, step, j, cx, cy, who;
+    for (step = 1; step <= n; step++) {
+      x += sx; y += sy;
+      if (x < 0 || y < 0 || x + c.w > W || y + c.h > H) return false;
+      /* 進む向きの先頭の辺だけ調べる（後ろは自分がどく） */
+      for (j = 0; j < (sx ? c.h : c.w); j++) {
+        if (sx) { cx = x + (sx > 0 ? c.w - 1 : 0); cy = y + j; }
+        else    { cx = x + j;                      cy = y + (sy > 0 ? c.h - 1 : 0); }
+        who = g[cy * W + cx];
+        if (who !== -1 && who !== id) return false;
+      }
+    }
+    return true;
+  }
+
+  /* その向きへ何マス滑れるか（sx, sy はどちらか一方が ±1） */
+  function maxSlide(state, id, sx, sy) {
+    var n = 0;
+    while (canMove(state, id, sx * (n + 1), sy * (n + 1))) n++;
+    return n;
+  }
+
+  /* 動かした新しい状態を返す（元の state は変えない）。動かせなければ null */
+  function applyMove(state, id, dx, dy) {
+    if (!canMove(state, id, dx, dy)) return null;
+    var ns = cloneState(state);
+    ns[id].x += (dx | 0);
+    ns[id].y += (dy | 0);
+    return ns;
+  }
+
+  /* 娘の左上が (1,3) ＝ 下辺中央の出口に接したらクリア */
+  function isSolved(state) {
+    if (!state || !state.length) return false;
+    var girl = null, i;
+    for (i = 0; i < state.length; i++) if (state[i].ch === 'A') { girl = state[i]; break; }
+    if (!girl) return false;
+    return girl.w === 2 && girl.h === 2 && girl.x === GOAL_X && girl.y === GOAL_Y;
+  }
+
+  /* 最短手数を幅優先で求める。1手＝1駒を一直線に1マス以上。解けなければ -1 */
+  function solve(board, nodeLimit) {
+    var st = (typeof board === 'string') ? parse(board) : cloneState(board);
+    if (!st.length) return -1;
+    if (isSolved(st)) return 0;
+    nodeLimit = nodeLimit || 2000000;
+    var DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    var seen = Object.create(null);
+    seen[signature(st)] = 1;
+    var queue = [st], depth = [0], head = 0, nodes = 0;
+
+    while (head < queue.length) {
+      var state = queue[head], d = depth[head];
+      head++;
+      if (++nodes > nodeLimit) return -1;
+      var g = occupancy(state), nd = d + 1;
+      for (var i = 0; i < state.length; i++) {
+        var c = state[i];
+        for (var t = 0; t < 4; t++) {
+          var sx = DIRS[t][0], sy = DIRS[t][1];
+          var x = c.x, y = c.y;
+          for (;;) {
+            x += sx; y += sy;
+            if (x < 0 || y < 0 || x + c.w > W || y + c.h > H) break;
+            var blocked = false, j, cx, cy, who;
+            for (j = 0; j < (sx ? c.h : c.w); j++) {
+              if (sx) { cx = x + (sx > 0 ? c.w - 1 : 0); cy = y + j; }
+              else    { cx = x + j;                      cy = y + (sy > 0 ? c.h - 1 : 0); }
+              who = g[cy * W + cx];
+              if (who !== -1 && who !== i) { blocked = true; break; }
+            }
+            if (blocked) break;
+            if (i === 0 && x === GOAL_X && y === GOAL_Y) return nd;
+            var ns = cloneState(state);
+            ns[i].x = x; ns[i].y = y;
+            var key = signature(ns);
+            if (!seen[key]) { seen[key] = 1; queue.push(ns); depth.push(nd); }
+          }
+        }
+      }
+    }
+    return -1;
+  }
+
+  return {
+    W: W, H: H, GOAL_X: GOAL_X, GOAL_Y: GOAL_Y, LEVELS: LEVELS,
+    parse: parse, cloneState: cloneState, toBoard: toBoard, signature: signature,
+    occupancy: occupancy, canMove: canMove, maxSlide: maxSlide,
+    applyMove: applyMove, isSolved: isSolved, solve: solve
+  };
+})();
+
+if (typeof window !== 'undefined') window.Hakoiri = Hakoiri;
+if (typeof globalThis !== 'undefined') globalThis.Hakoiri = Hakoiri;
+
+/* =====================================================================
+   画面
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var W = Hakoiri.W, H = Hakoiri.H;
+  var KEY = 'hakoiri-musume';
+
+  var elTitle = document.getElementById('title');
+  var elMoves = document.getElementById('moves');
+  var elBest  = document.getElementById('best');
+  var elBoard = document.getElementById('board');
+  var elClear = document.getElementById('clear');
+  var elClearSub = document.getElementById('clearSub');
+  var elNext  = document.getElementById('next');
+  var elUndo  = document.getElementById('undo');
+  var elReset = document.getElementById('reset');
+  var elLevels = document.getElementById('levels');
+
+  /* 段階名と何本目か（古典は名前も。例「上級 3・横刀立馬」） */
+  var LABELS = (function () {
+    var out = [], count = {}, i, t;
+    for (i = 0; i < LEVELS.length; i++) {
+      t = LEVELS[i].tier;
+      count[t] = (count[t] || 0) + 1;
+      out.push({
+        tier: t, no: count[t],
+        text: t + ' ' + count[t] + (LEVELS[i].name ? '・' + LEVELS[i].name : '')
+      });
+    }
+    return out;
+  })();
+
+  var save = { cleared: {}, last: 0 };
+  function loadSave() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (o && typeof o === 'object') {
+        if (o.cleared && typeof o.cleared === 'object') save.cleared = o.cleared;
+        if (Number.isInteger(o.last) && o.last >= 0 && o.last < LEVELS.length) save.last = o.last;
+      }
+    } catch (e) { /* 保存が使えなくても遊べる */ }
+  }
+  function storeSave() {
+    try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
+  }
+
+  var levelIndex = 0;
+  var state = null;
+  var moves = 0;
+  var history = [];
+  var finished = false;
+  var els = [];
+
+  function px(v) { return (v * 100 / W) + '%'; }
+  function py(v) { return (v * 100 / H) + '%'; }
+
+  function kindOf(c) {
+    if (c.ch === 'A') return 'girl';
+    if (c.h === 2 && c.w === 1) return 'vert';
+    if (c.w === 2 && c.h === 1) return 'horz';
+    return 'small';
+  }
+
+  var GAP = 3;
+  function setPos(d, x, y) {
+    d.style.left = 'calc(' + px(x) + ' + ' + GAP + 'px)';
+    d.style.top  = 'calc(' + py(y) + ' + ' + GAP + 'px)';
+  }
+  function place() {
+    for (var i = 0; i < state.length; i++) {
+      var c = state[i], d = els[i];
+      setPos(d, c.x, c.y);
+      d.style.width  = 'calc(' + px(c.w) + ' - ' + (GAP * 2) + 'px)';
+      d.style.height = 'calc(' + py(c.h) + ' - ' + (GAP * 2) + 'px)';
+    }
+  }
+
+  function buildBoard() {
+    elBoard.innerHTML = '';
+    els = [];
+    for (var i = 0; i < state.length; i++) {
+      var d = document.createElement('div');
+      d.className = 'piece ' + kindOf(state[i]);
+      d.dataset.id = String(i);
+      elBoard.appendChild(d);
+      els.push(d);
+      d.addEventListener('pointerdown', onDown);
+      d.addEventListener('pointermove', onMove);
+      d.addEventListener('pointerup', onUp);
+      d.addEventListener('pointercancel', onUp);
+    }
+    place();
+  }
+
+  function loadLevel(i) {
+    levelIndex = i;
+    state = Hakoiri.parse(LEVELS[i].board);
+    moves = 0;
+    history = [];
+    finished = false;
+    drag = null;
+    elClear.hidden = true;
+    elTitle.textContent = LABELS[i].text;
+    elBest.textContent = String(LEVELS[i].min);
+    elMoves.textContent = '0';
+    elUndo.disabled = true;
+    buildBoard();
+    renderLevelList();
+    save.last = i;
+    storeSave();
+  }
+
+  /* ---- ドラッグ（1回のドラッグは一直線。動き出しで縦横を決める） ---- */
+  var drag = null;
+  var AXIS_LOCK = 6;   // これだけ指が動いたら軸を決める（px）
+
+  function cellSize() { return elBoard.clientWidth / W; } /* 枠線を含めない */
+
+  function onDown(e) {
+    if (finished) return;
+    var id = parseInt(this.dataset.id, 10);
+    drag = {
+      id: id, el: this, axis: null, cell: cellSize(), off: 0,
+      sx: e.clientX, sy: e.clientY
+    };
+    this.classList.add('dragging');
+    try { this.setPointerCapture(e.pointerId); } catch (err) {}
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (!drag || drag.el !== this) return;
+    var dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
+    if (!drag.axis) {
+      if (Math.abs(dx) < AXIS_LOCK && Math.abs(dy) < AXIS_LOCK) { e.preventDefault(); return; }
+      drag.axis = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
+      var s = drag.axis === 'h' ? [1, 0] : [0, 1];
+      drag.max =  Hakoiri.maxSlide(state, drag.id,  s[0],  s[1]) * drag.cell;
+      drag.min = -Hakoiri.maxSlide(state, drag.id, -s[0], -s[1]) * drag.cell;
+    }
+    var d = drag.axis === 'h' ? dx : dy;
+    if (d < drag.min) d = drag.min;
+    if (d > drag.max) d = drag.max;
+    drag.off = d;
+    this.style.transform = drag.axis === 'h'
+      ? 'translateX(' + d + 'px)' : 'translateY(' + d + 'px)';
+    e.preventDefault();
+  }
+
+  function onUp(e) {
+    if (!drag || drag.el !== this) return;
+    var id = drag.id, axis = drag.axis, cell = drag.cell, off = drag.off;
+    drag = null;
+    this.classList.remove('dragging');
+    var delta = axis ? Math.round(off / cell) : 0;
+    var dx = axis === 'h' ? delta : 0;
+    var dy = axis === 'v' ? delta : 0;
+    if (delta !== 0 && Hakoiri.canMove(state, id, dx, dy)) {
+      /* 離した位置を起点に、残りの距離だけ滑らせる（元の位置へ戻さない） */
+      var c = state[id];
+      var rem = off - delta * cell;
+      this.style.transition = 'none';
+      setPos(this, c.x + dx, c.y + dy);
+      this.style.transform = axis === 'h'
+        ? 'translateX(' + rem + 'px)' : 'translateY(' + rem + 'px)';
+      void this.getBoundingClientRect();
+      this.style.transition = '';
+      this.style.transform = '';
+      doMove(id, dx, dy);
+    } else {
+      this.style.transform = '';
+    }
+  }
+
+  function doMove(id, dx, dy) {
+    history.push(Hakoiri.cloneState(state));
+    state = Hakoiri.applyMove(state, id, dx, dy);
+    moves++;
+    elMoves.textContent = String(moves);
+    elUndo.disabled = false;
+    place();
+    if (Hakoiri.isSolved(state)) slipOut();
+  }
+
+  /* 娘が下辺に着いたら、そのまま出口から滑り出す */
+  function slipOut() {
+    finished = true;
+    elUndo.disabled = true;
+    var girl = els[0];
+    girl.classList.add('exiting');
+    girl.style.top = 'calc(100% + 26px)';
+    setTimeout(showClear, 360);
+  }
+
+  function showClear() {
+    var min = LEVELS[levelIndex].min;
+    save.cleared[String(levelIndex)] = 1;
+    storeSave();
+    renderLevelList();
+    elClearSub.textContent = (moves <= min) ? '★ 最短' : '';
+    elNext.hidden = (levelIndex >= LEVELS.length - 1);
+    elClear.hidden = false;
+  }
+
+  /* ---- ボタン ---- */
+  elUndo.addEventListener('click', function () {
+    if (finished || !history.length) return;
+    state = history.pop();
+    moves = Math.max(0, moves - 1);
+    elMoves.textContent = String(moves);
+    elUndo.disabled = !history.length;
+    place();
+  });
+  elReset.addEventListener('click', function () { loadLevel(levelIndex); });
+  elNext.addEventListener('click', function () {
+    if (levelIndex < LEVELS.length - 1) loadLevel(levelIndex + 1);
+  });
+
+  /* ---- レベル一覧 ---- */
+  function renderLevelList() {
+    if (!elLevels.childNodes.length) {
+      var tiers = [], seen = {}, i, t, k;
+      for (i = 0; i < LABELS.length; i++) {
+        if (!seen[LABELS[i].tier]) { seen[LABELS[i].tier] = []; tiers.push(LABELS[i].tier); }
+        seen[LABELS[i].tier].push(i);
+      }
+      for (t = 0; t < tiers.length; t++) {
+        var box = document.createElement('div');
+        box.className = 'tier';
+        var name = document.createElement('div');
+        name.className = 'tierName';
+        name.textContent = tiers[t];
+        box.appendChild(name);
+        var row = document.createElement('div');
+        row.className = 'tierRow';
+        var idxs = seen[tiers[t]];
+        for (k = 0; k < idxs.length; k++) {
+          var b = document.createElement('button');
+          b.className = 'lv';
+          b.dataset.idx = String(idxs[k]);
+          b.addEventListener('click', function () {
+            loadLevel(parseInt(this.dataset.idx, 10));
+            window.scrollTo(0, 0);
+          });
+          row.appendChild(b);
+        }
+        box.appendChild(row);
+        elLevels.appendChild(box);
+      }
+    }
+    var btns = elLevels.querySelectorAll('.lv');
+    for (var j = 0; j < btns.length; j++) {
+      var idx = parseInt(btns[j].dataset.idx, 10);
+      btns[j].textContent = LABELS[idx].no + (save.cleared[String(idx)] ? '✓' : '');
+      btns[j].className = 'lv'
+        + (save.cleared[String(idx)] ? ' done' : '')
+        + (idx === levelIndex ? ' cur' : '');
+    }
+  }
+
+  loadSave();
+  loadLevel(save.last);
+})();
+</script>
+</body>
+</html>

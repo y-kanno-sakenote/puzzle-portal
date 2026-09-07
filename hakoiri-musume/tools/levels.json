@@ -1,0 +1,203 @@
+[
+ {
+  "board": "BoCDEAAFEAAFGooHGIoJ",
+  "min": 5,
+  "tier": "入門"
+ },
+ {
+  "board": "oBCDEBCDFFGooHAAIJAA",
+  "min": 6,
+  "tier": "入門"
+ },
+ {
+  "board": "ooBCDoBEFAAEFAAGHIJG",
+  "min": 7,
+  "tier": "入門"
+ },
+ {
+  "board": "BBCooDEFGHEFAAIJAAIJ",
+  "min": 8,
+  "tier": "入門"
+ },
+ {
+  "board": "BCDoBEDFoGGoHoAAIIAA",
+  "min": 9,
+  "tier": "入門"
+ },
+ {
+  "board": "BBAAoCAAoDEoFGEHFGoH",
+  "min": 11,
+  "tier": "入門"
+ },
+ {
+  "board": "BCDEFCDGFHoIoHAAJKAA",
+  "min": 12,
+  "tier": "入門"
+ },
+ {
+  "board": "AAoBAACBDEFGHoFIHooI",
+  "min": 13,
+  "tier": "入門"
+ },
+ {
+  "board": "AABBAAoCoDDCoEFGoEFG",
+  "min": 14,
+  "tier": "入門"
+ },
+ {
+  "board": "BCAABCAADEoooEFGoHFI",
+  "min": 15,
+  "tier": "入門"
+ },
+ {
+  "board": "AAooAABoCDBoCEFGHIFG",
+  "min": 16,
+  "tier": "初級"
+ },
+ {
+  "board": "AABCAABDEEFDoGFHoIoo",
+  "min": 18,
+  "tier": "初級"
+ },
+ {
+  "board": "BAACBAADoEoDFFGHIoJo",
+  "min": 20,
+  "tier": "初級"
+ },
+ {
+  "board": "AABoAABCDEEFDGoHIIoo",
+  "min": 22,
+  "tier": "初級"
+ },
+ {
+  "board": "BCooBCDEAADoAAFGHHIJ",
+  "min": 24,
+  "tier": "初級"
+ },
+ {
+  "board": "oAAooAABCDEBCFEGHFIJ",
+  "min": 27,
+  "tier": "初級"
+ },
+ {
+  "board": "AABBAACDEFoDGFHIJoHI",
+  "min": 29,
+  "tier": "初級"
+ },
+ {
+  "board": "BCAABCAADEFGDEooHIJK",
+  "min": 31,
+  "tier": "初級"
+ },
+ {
+  "board": "BCoDECFDEGFHAAoIAAJJ",
+  "min": 33,
+  "tier": "初級"
+ },
+ {
+  "board": "BBAACDAACDEEoFGoHIJK",
+  "min": 35,
+  "tier": "初級"
+ },
+ {
+  "board": "oAABCAADCoEDoFFGHIJJ",
+  "min": 36,
+  "tier": "中級"
+ },
+ {
+  "board": "BoAACDAACDEFGGoHIIJK",
+  "min": 40,
+  "tier": "中級"
+ },
+ {
+  "board": "oBBCAADEAADEFoGHFIGJ",
+  "min": 44,
+  "tier": "中級"
+ },
+ {
+  "board": "ooBCDoBCEAAFEAAGHHII",
+  "min": 47,
+  "tier": "中級"
+ },
+ {
+  "board": "BCAAoCAADDoEFGHIJGKI",
+  "min": 51,
+  "tier": "中級"
+ },
+ {
+  "board": "BAACBAAoDEoFoEGFHHII",
+  "min": 55,
+  "tier": "中級"
+ },
+ {
+  "board": "oAABCAABCoDEFFGGHIJK",
+  "min": 59,
+  "tier": "中級"
+ },
+ {
+  "board": "AAoBAAoBCDDEFGoEFGHH",
+  "min": 62,
+  "tier": "中級"
+ },
+ {
+  "board": "BoAAoCAADCEFDGHFIGJJ",
+  "min": 66,
+  "tier": "中級"
+ },
+ {
+  "board": "AABoAACDoECFGEHIJJHI",
+  "min": 70,
+  "tier": "中級"
+ },
+ {
+  "board": "AABoAABCooDCEEDFGHHI",
+  "min": 71,
+  "tier": "上級"
+ },
+ {
+  "board": "BAACBAACDoEFDoEoGGHH",
+  "min": 75,
+  "tier": "上級"
+ },
+ {
+  "board": "AABoAACDoEEFGHIFGHIJ",
+  "min": 79,
+  "tier": "上級"
+ },
+ {
+  "board": "AABCAADCEFDooFGHIIJH",
+  "min": 83,
+  "tier": "上級"
+ },
+ {
+  "board": "BCAABCAADDEFGGHFIJoo",
+  "min": 87,
+  "tier": "上級"
+ },
+ {
+  "board": "BAACBAACDEEFDGHFIooJ",
+  "min": 90,
+  "tier": "上級",
+  "name": "横刀立馬"
+ },
+ {
+  "board": "BAAoBAACDDECFFEoGHIJ",
+  "min": 92,
+  "tier": "上級"
+ },
+ {
+  "board": "BCAABoAAoDDEFGoEFGHH",
+  "min": 96,
+  "tier": "上級"
+ },
+ {
+  "board": "BoCoBDAAEDAAEFGHIIJJ",
+  "min": 106,
+  "tier": "上級"
+ },
+ {
+  "board": "BCDEFCoEAAGHAAGoIIJJ",
+  "min": 114,
+  "tier": "上級"
+ }
+]
