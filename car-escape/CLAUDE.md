@@ -20,6 +20,6 @@
 
 ## 作業ルール
 - 日本語。編集対象は `index.html`・`docs/`・`tools/`
-- ローカルプレビュー: ルート `.claude/launch.json` の "car-escape"（python http.server 8733）
+- ローカルプレビュー: ルート `.claude/launch.json` の "puzzle-portal"（8733、このゲームは `/car-escape/`）
 - 実装した本人は検証しない（qa係）。文言・画面は ui係
 - 日本酒テーマは**入れない**（2026-09-06決定。入れるなら決定ログを経てから）
