@@ -8,6 +8,7 @@
 - `hakoiri-musume/` 箱入り娘（4×5・娘2×2を下の出口へ）— 正典は `hakoiri-musume/CLAUDE.md`
 - `slide-robots/` すべりロボ（ハイパーロボット型・12×12・宣言してから滑らせる）— 正典は `slide-robots/CLAUDE.md`
 - `sudoku/` 数独（9×9・別スキーム＝一意解と推論の強さを検証）— 正典は `sudoku/CLAUDE.md`
+- `mado-wake/` 窓わけ（領域分割・ルール組み合わせ・別スキーム）— 正典は `mado-wake/CLAUDE.md`
 
 ## 憲法（変えない原則）
 - 入口は一覧と進み具合だけ。ランキング・ログイン・広告・共通ライブラリを足さない
