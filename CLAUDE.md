@@ -17,6 +17,7 @@
 - 実機（スマホ）で遊ぶまで「完成」と言わない
 
 ## 作業ルール
+- 公開先: GitHub Pages https://y-kanno-sakenote.github.io/puzzle-portal/（main の root。push＝公開なので指示があるときだけ）
 - 日本語。ローカルプレビュー: ルート `.claude/launch.json` の "puzzle-portal"（python http.server 8733、tailnet からは http://100.71.44.114:8733/）
 - 実装した本人は検証しない（qa係）。文言・画面は ui係
 - 決定ログ: `docs/decision_log.md`（ポータル横断の判断）＋各ゲームの `docs/decision_log.md`。Vault は `10.Projects/パズル箱/90_開発ログ.md`
