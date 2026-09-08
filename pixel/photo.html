@@ -68,6 +68,8 @@
   .ctrl{margin-top:12px}
   .ctrlLabel{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:5px}
   .seg{display:flex;gap:6px}
+  #sizeSeg{gap:4px}
+  #sizeSeg button{font-size:14px;padding:9px 0}
   .seg button{
     flex:1;font:inherit;font-weight:700;padding:9px 0;
     border:1.5px solid var(--frame);border-radius:8px;
@@ -93,7 +95,12 @@
     -webkit-tap-highlight-color:transparent;
     box-shadow:0 1px 4px rgba(0,0,0,0.04);
   }
-  #stageWrapper.zoomed{overflow:auto;-webkit-overflow-scrolling:touch;max-height:68vh}
+  #stageWrapper.zoomed{overflow:auto;-webkit-overflow-scrolling:touch;max-height:68vh;touch-action:pan-x pan-y}
+  /* 大盤面（30以上）: 1マス固定幅でスクロールさせる。数字の帯は sticky で残す */
+  #stageWrapper.big{overflow:auto;-webkit-overflow-scrolling:touch;max-height:70vh;touch-action:pan-x pan-y}
+  /* 数字が多すぎるときだけ JS が幅(高さ)を決めて clip を付ける。帯の中だけスクロールする */
+  #rowHints.clip{overflow-x:auto;overscroll-behavior:contain}
+  #colHints.clip{overflow-y:auto;overscroll-behavior:contain}
   #boardWrapper{
     display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto 1fr;
     padding:6px;width:fit-content;min-width:100%;margin:0 auto;
@@ -178,6 +185,10 @@
   .modeBtn.active{background:var(--active);color:#ffffff;border-color:var(--active)}
   .modeBtn .dot{width:12px;height:12px;background:currentColor;border-radius:2px}
   .modeBtn .xmark{font-size:16px;line-height:1}
+
+  #boardZoom{display:flex;align-items:center;gap:10px;margin-top:8px}
+  #boardZoom .zlabel{font-size:12px;color:var(--sub);font-weight:700;white-space:nowrap}
+  #boardZoom input[type=range]{flex:1}
 
   #buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
   button.actionBtn{
@@ -441,6 +452,8 @@
   /* 写真はマス数で D の分布が違う。qa係の実測（なめらか画像 各N100枚）の四分位で刻む */
   var TIER_CUT = { 15: [158, 204, 221], 20: [240, 279, 314], 25: [330, 374, 410] };
   function tierOf(D, n){
+    /* 30以上は閾値の実測がないので段階を出さない（嘘のラベルを貼らない） */
+    if (n >= 30) return '大盤面';
     var c = TIER_CUT[n] || TIER_CUT[20];
     if (D <= c[0]) return '入門';
     if (D <= c[1]) return '初級';
@@ -608,6 +621,9 @@
         <button data-n="15">15</button>
         <button data-n="20" class="on">20</button>
         <button data-n="25">25</button>
+        <button data-n="30">30</button>
+        <button data-n="40">40</button>
+        <button data-n="50">50</button>
       </div>
     </div>
 
@@ -661,6 +677,11 @@
       <figure id="photoFig"><canvas id="photoCanvas"></canvas><figcaption>元の写真</figcaption></figure>
     </div>
 
+    <div id="boardZoom" hidden>
+      <span class="zlabel">1マスの大きさ</span>
+      <input type="range" id="boardZoomRange" min="12" max="28" step="1" value="18">
+    </div>
+
     <div id="controls">
       <button id="modeFill" class="modeBtn active"><span class="dot"></span>塗る</button>
       <button id="modeCross" class="modeBtn"><span class="xmark">✕</span>印</button>
@@ -690,6 +711,7 @@
   var $ = function(id){ return document.getElementById(id); };
   var screenPick = $('screenPick'), screenCrop = $('screenCrop'), screenPlay = $('screenPlay');
   var elLevelName = $('levelName'), btnZoom = $('zoomBtn');
+  var elBoardZoom = $('boardZoom'), boardZoomRange = $('boardZoomRange');
   var fileInput = $('fileInput'), pickBtn = $('pickBtn'), pickMsg = $('pickMsg');
   var cropCanvas = $('cropCanvas'), previewCanvas = $('previewCanvas');
   var zoomRange = $('zoomRange'), sizeSeg = $('sizeSeg'), thrRange = $('thrRange'), thrLabel = $('thrLabel');
@@ -731,7 +753,8 @@
     screenPick.hidden = (which !== 'pick');
     screenCrop.hidden = (which !== 'crop');
     screenPlay.hidden = (which !== 'play');
-    btnZoom.hidden = (which !== 'play');
+    btnZoom.hidden = (which !== 'play') || isBig();
+    elBoardZoom.hidden = (which !== 'play') || !isBig();
     elMade.hidden = (which === 'crop') || !store.made.length;
     if (which !== 'play') elLevelName.textContent = '';
     window.scrollTo(0, 0);
@@ -1017,7 +1040,7 @@
      ================================================================ */
   var currentPuzzle = null, currentId = '';
   var gridState = [], history = [], isCleared = false;
-  var currentInputMode = 'fill', isZoomed = false;
+  var currentInputMode = 'fill', isZoomed = false, bigCell = 18;
   var activeRow = -1, activeCol = -1;
   var isDragging = false, dragAction = null, lastTargetCell = -1;
 
@@ -1035,7 +1058,10 @@
     toast.textContent = (flips ? '写真を ' + flips + 'マス直して、解ける問題にしました。' : '');
 
     setZoom(false);
-    elLevelName.textContent = pz.tier + ' (' + pz.w + '×' + pz.h + ')';
+    elLevelName.textContent = isBig()
+      ? ('大盤面 ' + pz.w + '×' + pz.h)
+      : (pz.tier + ' (' + pz.w + '×' + pz.h + ')');
+    boardZoomRange.value = String(bigCell);
 
     var total = pz.w * pz.h;
     gridState = [];
@@ -1049,6 +1075,8 @@
     renderBoard();
     renderMadeList();
     show('play');
+    try { elStageWrapper.scrollTop = 0; elStageWrapper.scrollLeft = 0; } catch (e) {}
+    pinHintBands();
     persist();
     judge();
   }
@@ -1066,20 +1094,51 @@
     btnZoom.textContent = isZoomed ? '📱 全体' : '🔍 拡大';
     calculateSizes();
   }
-  btnZoom.addEventListener('click', function(){ setZoom(!isZoomed); });
+  btnZoom.addEventListener('click', function(){ if (!isBig()) setZoom(!isZoomed); });
+
+  function isBig(){ return !!currentPuzzle && Math.max(currentPuzzle.w, currentPuzzle.h) >= 30; }
 
   function calculateSizes(){
     if (!currentPuzzle) return;
-    var w = currentPuzzle.w;
+    var w = currentPuzzle.w, big = isBig();
+    elStageWrapper.classList.toggle('big', big);
     var availWidth = Math.min(window.innerWidth - 32, 420);
     var cs, fs;
-    if (isZoomed) { cs = 24; fs = 11; }
+    if (big) { cs = bigCell; fs = (cs >= 18) ? 11 : 10; }
+    else if (isZoomed) { cs = 24; fs = 11; }
     else if (w <= 15) { cs = Math.floor((availWidth - 85) / w); if (cs < 16) cs = 16; fs = 9.5; }
     else { cs = Math.floor((availWidth - 95) / w); if (cs < 11) cs = 11; fs = 8; }
     elStageWrapper.style.setProperty('--cs', cs + 'px');
     elStageWrapper.style.setProperty('--hint-fs', fs + 'px');
   }
-  window.addEventListener('resize', calculateSizes);
+
+  /* 数字の帯が幅（高さ）に収まらないとき、盤に近い側＝末尾の数字を見せる */
+  function pinHintBands(){
+    try {
+      elRowHints.classList.remove('clip'); elRowHints.style.width = '';
+      elColHints.classList.remove('clip'); elColHints.style.height = '';
+      if (!isBig()) return;
+      var rowCap = Math.min(Math.round(window.innerWidth * 0.44), 150);
+      if (elRowHints.offsetWidth > rowCap) {
+        elRowHints.style.width = rowCap + 'px';
+        elRowHints.classList.add('clip');
+        elRowHints.scrollLeft = elRowHints.scrollWidth;
+      }
+      var colCap = 104;
+      if (elColHints.offsetHeight > colCap) {
+        elColHints.style.height = colCap + 'px';
+        elColHints.classList.add('clip');
+        elColHints.scrollTop = elColHints.scrollHeight;
+      }
+    } catch (e) {}
+  }
+
+  boardZoomRange.addEventListener('input', function(){
+    bigCell = Math.max(12, Math.min(28, parseInt(boardZoomRange.value, 10) || 18));
+    calculateSizes();
+    pinHintBands();
+  });
+  window.addEventListener('resize', function(){ calculateSizes(); pinHintBands(); });
 
   function setupDOM(){
     var w = currentPuzzle.w, h = currentPuzzle.h;
