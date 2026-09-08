@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>星おき</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --thick:#5d5952;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  #app{max-width:420px;margin:0 auto;padding:10px 10px 40px}
+  header{display:flex;align-items:baseline;gap:8px;padding:2px 2px 8px}
+  #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+
+  #rules{padding:0 2px 10px;font-size:13px;line-height:1.7;color:var(--sub)}
+  #rules div{white-space:nowrap}
+
+  #stage{position:relative}
+  #board{
+    --cs:calc(min(100vw - 20px, 400px) / 9);
+    position:relative;
+    width:100%;max-width:400px;margin:0 auto;aspect-ratio:1/1;
+    background:var(--panel);border:2px solid var(--thick);border-radius:6px;
+    overflow:hidden;touch-action:none;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+  }
+  #grid{
+    position:absolute;inset:0;display:grid;
+  }
+  .cell{
+    position:relative;
+    border-right:1px solid rgba(0,0,0,.07);border-bottom:1px solid rgba(0,0,0,.07);
+    cursor:pointer;
+  }
+  .cell.re{border-right:0}
+  .cell.be{border-bottom:0}
+  .mk{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    line-height:1;pointer-events:none;
+  }
+  .cell.x .mk{font-size:calc(var(--cs) * .42);color:var(--sub);opacity:.5}
+  .cell.s .mk{font-size:calc(var(--cs) * .62);color:var(--ink)}
+  #edges{position:absolute;inset:0;pointer-events:none;z-index:3}
+  #edges i{position:absolute;background:var(--thick);display:block}
+
+  #buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:12px}
+  button{
+    font:inherit;padding:11px 0;border:1px solid var(--frame);
+    border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button:active{background:#eeece7}
+  button:disabled{opacity:.4;cursor:default}
+
+  #msg{height:22px;padding:8px 2px 0;font-size:14px;color:var(--sub);text-align:center}
+
+  #clear{
+    position:absolute;left:0;right:0;top:0;height:100%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+    background:rgba(245,244,241,.93);border-radius:6px;z-index:20;
+  }
+  #clear[hidden]{display:none}
+  #clearTitle{font-size:26px;font-weight:700}
+  #next{font-size:17px;padding:12px 28px}
+
+  #levels{padding-top:18px}
+  .tier{margin-bottom:10px}
+  .tierName{font-size:13px;color:var(--sub);padding:2px 2px 4px}
+  .tierRow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .lv{padding:0;height:40px;font-size:14px;border-radius:7px;
+      display:flex;align-items:center;justify-content:center}
+  .lv.cur{border-color:var(--ink);font-weight:700}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><div id="title">入門 1</div></header>
+
+  <div id="rules">
+    <div>どの色にも★を1つ</div>
+    <div>どの行・列にも★を1つ</div>
+    <div>★どうしは斜めも隣り合わない</div>
+  </div>
+
+  <div id="stage">
+    <div id="board"><div id="grid"></div><div id="edges"></div></div>
+    <div id="clear" hidden>
+      <div id="clearTitle">クリア！</div>
+      <button id="next">つぎへ</button>
+    </div>
+  </div>
+
+  <div id="buttons">
+    <button id="undo">もどす</button>
+    <button id="reset">はじめから</button>
+  </div>
+  <div id="msg"></div>
+
+  <section id="levels"></section>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.HoshiOki として公開する）
+   ===================================================================== */
+
+/* PUZZLES-BEGIN  tools/gen_puzzles.py の出力をそのまま貼る。手で書き換えない */
+var PUZZLES = [
+  {"n":5,"regions":"bbbaabbbbbdbbcedddceddeee","solution":"0000101000000101000000100","tier":"入門","nodes":0},
+  {"n":5,"regions":"aabbbcccbdecccdeccedeeeee","solution":"1000000010010000000100100","tier":"入門","nodes":0},
+  {"n":5,"regions":"ccaaacaabbceeddeedddeeedd","solution":"0010000001100000001001000","tier":"入門","nodes":0},
+  {"n":5,"regions":"aaaaabbaccaaaecddaeedddee","solution":"0010010000000010100000010","tier":"入門","nodes":0},
+  {"n":5,"regions":"bbaaacbbaacbbaabbbdaeeedd","solution":"0000100100100000001001000","tier":"入門","nodes":0},
+  {"n":6,"regions":"bccaaabcccccddcdccddddccddfeefddffff","solution":"000100100000000001010000000010001000","tier":"入門","nodes":0},
+  {"n":6,"regions":"aaaaabacababccbbbbccddbbcccdebcffdeb","solution":"000100000001100000001000000010010000","tier":"入門","nodes":0},
+  {"n":6,"regions":"aaaaaabaaccabaccdaeffcdaeefcddefffdd","solution":"000001100000001000000010010000000100","tier":"入門","nodes":0},
+  {"n":6,"regions":"aaaaaaaaaaabccccbbcdcbbbddeeeedffffe","solution":"100000000001000100010000000010001000","tier":"入門","nodes":0},
+  {"n":6,"regions":"aaaaaadbbbbaddecceddeeeeffffefffffff","solution":"000001010000000100100000000010001000","tier":"入門","nodes":0},
+  {"n":7,"regions":"ebbbaadebcbbadeccccadecggcadecggcccccgggffggggggf","solution":"0000100010000000010000000001100000000000100010000","tier":"初級","nodes":0},
+  {"n":7,"regions":"aaaaaaaabbbacaacccccaddccecaddeeeccddddfccggggffc","solution":"0000001000100000000101000000001000000001000100000","tier":"初級","nodes":0},
+  {"n":7,"regions":"bbbaaaabccccddeecdddfeeeedffeegeddfegggggfegggggg","solution":"0000010100000000100000000100010000000000010001000","tier":"初級","nodes":0},
+  {"n":7,"regions":"aaaabbbaababcbabbbbccabbbdccaedddddeeddffdegggfdd","solution":"1000000001000000000010000100010000000000100001000","tier":"初級","nodes":0},
+  {"n":7,"regions":"abbbbbbaaabddbacabdbbacabddbccedddbceeeddfcegggff","solution":"1000000000100001000000000010001000000000010000100","tier":"初級","nodes":0},
+  {"n":7,"regions":"aaaacccbadcceebddcccebddceeeffffeeefgffffeggfeeee","solution":"0001000100000000000100010000000000100001000100000","tier":"初級","nodes":0},
+  {"n":7,"regions":"cbbbaaacccbeffceeeeffeegedffeegddffegggggfggggggg","solution":"0000010000100010000000000100010000000000010010000","tier":"初級","nodes":0},
+  {"n":7,"regions":"aaaaaaaaacbbbbccccccbcdbbbbbddddebbddffeeefffggge","solution":"1000000000000100010000100000000010000100000000010","tier":"初級","nodes":0},
+  {"n":7,"regions":"aaaaaaaacacadbaccccdbaaeeddbaeeeddgeeefddgeeeffgg","solution":"1000000000000100100000000100010000000010000000010","tier":"初級","nodes":0},
+  {"n":7,"regions":"caaabbbcaabbddccadbbdcaaddddccadddefccceeefffggge","solution":"0010000000010001000000001000000000110000000000010","tier":"初級","nodes":0},
+  {"n":8,"regions":"ddaaaaaadaabbbbadbbbdbccdddddbbcddddebeeddeeeeefhgggggefhhheeeef","solution":"0000010000010000000000100100000000001000000000010010000010000000","tier":"中級","nodes":2},
+  {"n":8,"regions":"ccaaaaddccacaadbccccaddbecccddbbececcddbeeeeddfbeeegggffeeehhhhh","solution":"0010000000000001010000000000100010000000000000100001000000000100","tier":"中級","nodes":4},
+  {"n":8,"regions":"bbbaaaccbedadccceeddddcchefdfdggheffffgghhgfgggghgggghghhhhhhhhh","solution":"0000100010000000000000010000010001000000000100000000001000100000","tier":"中級","nodes":4},
+  {"n":8,"regions":"aaabbbbbcccccbeecfcccdeecffcddgeffhccdgefhhccgggffhhchggfffhhhhg","solution":"0100000000000100001000000000100000000001100000000000001000010000","tier":"中級","nodes":4},
+  {"n":8,"regions":"bbbccaacbdcccaccddffcccehdffffeehffeefeehgffeeeehgggggeehhhgggee","solution":"0000001010000000000010000100000000000001000100000000010000100000","tier":"中級","nodes":5},
+  {"n":8,"regions":"adddbbbbadbbbccbaddbffccggdfffeeggghhffeghhhhfhhgggghhhhgggghhhh","solution":"1000000000010000000000100010000000000001000001000100000000001000","tier":"中級","nodes":6},
+  {"n":8,"regions":"eccccaabeccccdabeeecdddbeeeeggddeffegggdhfffgggdhhffgggdhhfggggd","solution":"0000010000000001000100000000001010000000001000000000100001000000","tier":"中級","nodes":7},
+  {"n":8,"regions":"aaaccccceebbdddceebbdddceddddfffeeefffffgghfhfhfghhfhhhfgghhhhhf","solution":"0100000000010000000000010000100000100000000001001000000000000010","tier":"中級","nodes":8},
+  {"n":8,"regions":"aaaaaaffbbbaaaafcccacaffgdcccaffgddceeefghhhhfffghghhhhhgggghhhh","solution":"0001000010000000000010000100000000000100000000010010000000000010","tier":"中級","nodes":8},
+  {"n":8,"regions":"bbaaaaacbbaaaaccbaafaaccdddfccccffffcccegggffceeghfffceeghhheeee","solution":"0000010001000000000000100010000000000001000010001000000000010000","tier":"中級","nodes":12},
+  {"n":9,"regions":"aaaaaaaaaaaaeeaabacdeeaabbbcddeaebbbcdeeeeffbdddedeeffdddddgeffhhdgggeffhhhhgiiif","solution":"000100000000000010100000000001000000000010000000000001000001000010000000000000100","tier":"上級","nodes":20},
+  {"n":9,"regions":"caaaaddddcabbbbbbdcaafffbddiiifffbdgeeiifbbbgeiiffffggeiggfffggiiiggfgghiiigggghh","solution":"000010000000000100100000000000000010010000000000001000000100000000000001001000000","tier":"上級","nodes":24},
+  {"n":9,"regions":"aaaaacbbbaaacccbbbdacccccbbddddbbbbefdfdbbbbefffeeeebeiiigheeeeiigghhheeihhhhheee","solution":"000010000000000010000001000001000000000000001010000000000100000000000100100000000","tier":"上級","nodes":26},
+  {"n":9,"regions":"aaaaffffbaccffdddbaaccfffdbegcffffddegggggfgdeeeeggfgdiiiiggggdiihiiggddiihhiiiii","solution":"010000000000000001000100000000000010100000000000000100000010000001000000000001000","tier":"上級","nodes":28},
+  {"n":9,"regions":"bbbaaaaaacbbbbbbaacbbdddaaacgbbddddacgbbbeedagggfffedaigiiifddaiiiihhddaiiihhdddd","solution":"000000001000000100100000000000000010000001000000100000010000000000010000001000000","tier":"上級","nodes":29},
+  {"n":9,"regions":"aeeeebfffaaedebbffcceddffffceeeddfffccceeffifgcgggififggghgifiiggghhiiiigiiiiiiii","solution":"100000000000000100010000000000001000000100000000000001001000000000010000000000010","tier":"上級","nodes":33},
+  {"n":9,"regions":"baaaaaaaababaaaadabbbbaaddcgbgbbddccggggbbdeegffggdddeggfgddddehhhggiddehhhgiidde","solution":"000000100001000000000000001000001000000000010010000000000100000100000000000010000","tier":"上級","nodes":44},
+  {"n":9,"regions":"aaaabccccaababbcccaabbbccccdaffbbbccddfffbeecdffffbeccffggfheecggggghheeiiihhheee","solution":"000100000000001000000000001100000000000000010000010000001000000000000100010000000","tier":"上級","nodes":51},
+  {"n":9,"regions":"ccccaaaaabbbcaaahadddcgaahaddggghhhadeeeggghadedfffghhdddfggghhffffiihhhfffffihhh","solution":"000000010010000000000100000100000000001000000000010000000000100000000001000001000","tier":"上級","nodes":57},
+  {"n":9,"regions":"bbbbbbaaabbbdbbbbaccbdbbdbbceeddddddcceedfdddccehdfdddgchhdffffgiihhhfffggiifffff","solution":"000000001000000100010000000000000010000100000000001000100000000000010000001000000","tier":"上級","nodes":62}
+];
+/* PUZZLES-END */
+
+var HoshiOki = (function () {
+
+  /* 問題 -> {n, reg:[領域番号], sol:[0/1]} */
+  function parse(p) {
+    var n = p.n, N = n * n, reg = [], sol = [], i;
+    for (i = 0; i < N; i++) {
+      reg.push(p.regions.charCodeAt(i) - 97);
+      sol.push(p.solution.charAt(i) === '1' ? 1 : 0);
+    }
+    return { n: n, N: N, reg: reg, sol: sol };
+  }
+
+  /* stars は次のどれでもよい
+       ・★のマス番号の配列        [3, 9, 20, ...]
+       ・長さ N の 0/1 配列        （1 が★）
+       ・長さ N の 0/1 文字列      （solution と同じ書き方）
+     マス番号の配列は N 個に届かないので取り違えは起きない */
+  function starIndices(p, stars) {
+    var n = p.n, N = n * n, out = [], i, v;
+    if (typeof stars === 'string') {
+      for (i = 0; i < N && i < stars.length; i++) if (stars.charAt(i) === '1') out.push(i);
+      return out;
+    }
+    if (Object.prototype.toString.call(stars) === '[object Array]') {
+      if (stars.length === N) {
+        for (i = 0; i < N; i++) if (stars[i]) out.push(i);
+        return out;
+      }
+      for (i = 0; i < stars.length; i++) {
+        v = stars[i];
+        if (Number.isInteger(v) && v >= 0 && v < N) out.push(v);
+      }
+      return out;
+    }
+    return out;
+  }
+
+  /* 違反の種類だけを返す（どのマスかは言わない）
+     'row' 同じ行に2つ / 'col' 同じ列に2つ / 'region' 同じ色に2つ / 'adjacent' 隣り合う */
+  function check(p, stars) {
+    var d = parse(p), n = d.n;
+    var idx = starIndices(p, stars);
+    var rows = {}, cols = {}, regs = {}, bad = {}, i, j, r, c, k;
+    for (i = 0; i < idx.length; i++) {
+      r = Math.floor(idx[i] / n); c = idx[i] % n; k = d.reg[idx[i]];
+      if (rows[r]) bad.row = 1; else rows[r] = 1;
+      if (cols[c]) bad.col = 1; else cols[c] = 1;
+      if (regs[k]) bad.region = 1; else regs[k] = 1;
+    }
+    for (i = 0; i < idx.length; i++) {
+      for (j = i + 1; j < idx.length; j++) {
+        if (Math.abs(Math.floor(idx[i] / n) - Math.floor(idx[j] / n)) <= 1 &&
+            Math.abs((idx[i] % n) - (idx[j] % n)) <= 1) bad.adjacent = 1;
+      }
+    }
+    var order = ['row', 'col', 'region', 'adjacent'], out = [];
+    for (i = 0; i < order.length; i++) if (bad[order[i]]) out.push(order[i]);
+    return out;
+  }
+
+  /* ★がちょうど N 個そろっていて、違反がない */
+  function isSolution(p, stars) {
+    var idx = starIndices(p, stars);
+    if (idx.length !== p.n) return false;
+    return check(p, idx).length === 0;
+  }
+
+  /* 解を limit 個まで数える（行ごとに1つずつ置いていく総当り） */
+  function countSolutions(p, limit) {
+    limit = limit || 2;
+    var d = parse(p), n = d.n, reg = d.reg, full = (1 << n) - 1, cnt = 0;
+    function dfs(r, usedc, usedreg, prev) {
+      if (r === n) { cnt++; return; }
+      var m = full & ~usedc & ~prev, b, c, t, rb;
+      while (m) {
+        b = m & -m; m ^= b;
+        c = 0; t = b; while (t > 1) { t >>= 1; c++; }
+        rb = 1 << reg[r * n + c];
+        if (!(usedreg & rb)) {
+          dfs(r + 1, usedc | b, usedreg | rb, ((b << 1) | b | (b >> 1)) & full);
+          if (cnt >= limit) return;
+        }
+      }
+    }
+    dfs(0, 0, 0, 0);
+    return cnt;
+  }
+
+  /* 隣り合う領域が同じ色にならないように塗り分ける（次数の大きい順の貪欲） */
+  function colorRegions(p) {
+    var d = parse(p), n = d.n, adj = [], i, j, r, c;
+    for (i = 0; i < n; i++) adj.push({});
+    for (i = 0; i < d.N; i++) {
+      r = Math.floor(i / n); c = i % n;
+      if (c + 1 < n && d.reg[i] !== d.reg[i + 1]) { adj[d.reg[i]][d.reg[i + 1]] = 1; adj[d.reg[i + 1]][d.reg[i]] = 1; }
+      if (r + 1 < n && d.reg[i] !== d.reg[i + n]) { adj[d.reg[i]][d.reg[i + n]] = 1; adj[d.reg[i + n]][d.reg[i]] = 1; }
+    }
+    var order = [];
+    for (i = 0; i < n; i++) order.push(i);
+    order.sort(function (a, b) {
+      var da = Object.keys(adj[a]).length, db = Object.keys(adj[b]).length;
+      return db - da || a - b;
+    });
+    var col = [], tally = [], LIM = 9;
+    for (i = 0; i < n; i++) col.push(-1);
+    for (i = 0; i < LIM; i++) tally.push(0);
+    for (i = 0; i < order.length; i++) {
+      var k = order[i], used = {}, keys = Object.keys(adj[k]);
+      for (j = 0; j < keys.length; j++) if (col[keys[j]] >= 0) used[col[keys[j]]] = 1;
+      /* 使える色のうち、まだ出番の少ない色を選ぶ（色数が偏らないように） */
+      var g = -1;
+      for (j = 0; j < LIM; j++) if (!used[j] && (g < 0 || tally[j] < tally[g])) g = j;
+      if (g < 0) g = 0;
+      col[k] = g;
+      tally[g]++;
+    }
+    return col;
+  }
+
+  return {
+    PUZZLES: PUZZLES,
+    parse: parse, check: check, isSolution: isSolution,
+    countSolutions: countSolutions, starIndices: starIndices, colorRegions: colorRegions
+  };
+})();
+
+if (typeof window !== 'undefined') window.HoshiOki = HoshiOki;
+if (typeof globalThis !== 'undefined') globalThis.HoshiOki = HoshiOki;
+</script>
+
+<script>
+/* =====================================================================
+   画面
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var KEY = 'hoshi-oki';
+  /* 領域の色（隣り合う領域には別の色があたる） */
+  var PALETTE = ['#f0c9c4', '#dbe9cf', '#d2ddf0', '#f8f0c4', '#e4d6f0',
+                 '#c8e6e1', '#f0c9a5', '#d8dcd6', '#e6c2de'];
+
+  var elTitle = document.getElementById('title');
+  var elBoard = document.getElementById('board');
+  var elGrid  = document.getElementById('grid');
+  var elEdges = document.getElementById('edges');
+  var elUndo  = document.getElementById('undo');
+  var elReset = document.getElementById('reset');
+  var elClear = document.getElementById('clear');
+  var elNext  = document.getElementById('next');
+  var elMsg   = document.getElementById('msg');
+  var elLevels = document.getElementById('levels');
+
+  /* 段階名と何本目か（例「初級 3」） */
+  var LABELS = (function () {
+    var out = [], count = {}, i;
+    for (i = 0; i < PUZZLES.length; i++) {
+      var t = PUZZLES[i].tier;
+      count[t] = (count[t] || 0) + 1;
+      out.push({ tier: t, no: count[t], text: t + ' ' + count[t] });
+    }
+    return out;
+  })();
+
+  /* ---- 保存 ---- */
+  var save = { cleared: {}, last: 0, grid: {} };
+  function loadSave() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (!o || typeof o !== 'object') return;
+      if (o.cleared && typeof o.cleared === 'object') save.cleared = o.cleared;
+      if (Number.isInteger(o.last) && o.last >= 0 && o.last < PUZZLES.length) save.last = o.last;
+      if (o.grid && typeof o.grid === 'object') save.grid = o.grid;
+    } catch (e) { save = { cleared: {}, last: 0, grid: {} }; }
+  }
+  function storeSave() {
+    try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
+  }
+
+  /* ---- 状態 ---- */
+  var index = 0, p = null, d = null, n = 0, N = 0;
+  var st = [];            /* 0=空 1=× 2=★ */
+  var history = [];
+  var finished = false;
+  var cells = [], marks = [];
+  var dragging = false, moved = false, mode = null, startCell = -1, lastCell = -1;
+
+  function encode() { return st.join(''); }
+
+  function buildBoard() {
+    elGrid.innerHTML = '';
+    elEdges.innerHTML = '';
+    cells = []; marks = [];
+    elBoard.style.setProperty('--cs', 'calc(min(100vw - 20px, 400px) / ' + n + ')');
+    elGrid.style.gridTemplateColumns = 'repeat(' + n + ',1fr)';
+    elGrid.style.gridTemplateRows = 'repeat(' + n + ',1fr)';
+    var col = HoshiOki.colorRegions(p), i;
+    for (i = 0; i < N; i++) {
+      var e = document.createElement('div');
+      e.className = 'cell' + ((i % n === n - 1) ? ' re' : '') + ((i >= N - n) ? ' be' : '');
+      e.style.background = PALETTE[col[d.reg[i]] % PALETTE.length];
+      e.dataset.i = String(i);
+      var m = document.createElement('span');
+      m.className = 'mk';
+      e.appendChild(m);
+      elGrid.appendChild(e);
+      cells.push(e); marks.push(m);
+    }
+    /* 領域の境目に太線を引く（マスの枠と別に描くのでずれない） */
+    var u = 100 / n, w = 2;
+    function line(css) {
+      var s = document.createElement('i');
+      s.setAttribute('style', css);
+      elEdges.appendChild(s);
+    }
+    for (i = 0; i < N; i++) {
+      var r = Math.floor(i / n), c = i % n;
+      if (c + 1 < n && d.reg[i] !== d.reg[i + 1]) {
+        line('left:' + ((c + 1) * u) + '%;top:' + (r * u) + '%;width:' + w +
+             'px;height:' + u + '%;margin-left:' + (-w / 2) + 'px');
+      }
+      if (r + 1 < n && d.reg[i] !== d.reg[i + n]) {
+        line('top:' + ((r + 1) * u) + '%;left:' + (c * u) + '%;height:' + w +
+             'px;width:' + u + '%;margin-top:' + (-w / 2) + 'px');
+      }
+    }
+  }
+
+  function render() {
+    for (var i = 0; i < N; i++) {
+      var v = st[i];
+      marks[i].textContent = v === 2 ? '★' : (v === 1 ? '×' : '');
+      var cn = 'cell' + ((i % n === n - 1) ? ' re' : '') + ((i >= N - n) ? ' be' : '');
+      if (v === 1) cn += ' x';
+      if (v === 2) cn += ' s';
+      cells[i].className = cn;
+    }
+    elUndo.disabled = finished || !history.length;
+  }
+
+  function message(text) { elMsg.textContent = text; }
+
+  function persist() {
+    save.grid[String(index)] = encode();
+    save.last = index;
+    storeSave();
+  }
+
+  function restore(i) {
+    var s = save.grid && save.grid[String(i)];
+    if (typeof s !== 'string' || s.length !== N) return;
+    var out = [], k, ch;
+    for (k = 0; k < N; k++) {
+      ch = s.charAt(k);
+      if (ch !== '0' && ch !== '1' && ch !== '2') return;
+      out.push(ch.charCodeAt(0) - 48);
+    }
+    st = out;
+  }
+
+  /* ---- 出題 ---- */
+  function loadLevel(i) {
+    index = i;
+    p = PUZZLES[i];
+    d = HoshiOki.parse(p);
+    n = d.n; N = d.N;
+    st = [];
+    for (var k = 0; k < N; k++) st.push(0);
+    restore(i);
+    history = [];
+    finished = false;
+    dragging = false;
+    elClear.hidden = true;
+    elTitle.textContent = LABELS[i].text;
+    message('');
+    buildBoard();
+    render();
+    renderLevelList();
+    save.last = i;
+    storeSave();
+  }
+
+  /* ---- 操作 ---- */
+  function snapshot() {
+    history.push(st.slice());
+    if (history.length > 200) history.shift();
+  }
+
+  function cellAt(x, y) {
+    var el = document.elementFromPoint(x, y);
+    while (el && el !== elGrid && !(el.classList && el.classList.contains('cell'))) el = el.parentNode;
+    if (!el || el === elGrid || !el.dataset) return -1;
+    var i = parseInt(el.dataset.i, 10);
+    return Number.isInteger(i) ? i : -1;
+  }
+
+  function paint(i) {
+    if (mode === 'mark') { if (st[i] === 0) st[i] = 1; }
+    else if (mode === 'erase') { if (st[i] === 1) st[i] = 0; }
+  }
+
+  /* 指が飛んでも間のマスを埋める */
+  function paintPath(a, b) {
+    var r = Math.floor(a / n), c = a % n, rb = Math.floor(b / n), cb = b % n;
+    while (r !== rb) { r += (rb > r) ? 1 : -1; paint(r * n + c); }
+    while (c !== cb) { c += (cb > c) ? 1 : -1; paint(r * n + c); }
+  }
+
+  elBoard.addEventListener('pointerdown', function (e) {
+    if (finished) return;
+    var i = cellAt(e.clientX, e.clientY);
+    if (i < 0) return;
+    e.preventDefault();
+    try { elBoard.setPointerCapture(e.pointerId); } catch (err) {}
+    dragging = true; moved = false; startCell = i; lastCell = i;
+    /* なぞりの向き（置く／消す）は起点のマスの状態で決める。★の上からは始まらない */
+    mode = (st[i] === 0) ? 'mark' : (st[i] === 1 ? 'erase' : null);
+  });
+
+  elBoard.addEventListener('pointermove', function (e) {
+    if (!dragging) return;
+    var i = cellAt(e.clientX, e.clientY);
+    if (i < 0 || i === lastCell) return;
+    if (!mode) { lastCell = i; moved = true; return; }
+    if (!moved) { snapshot(); paint(startCell); }
+    moved = true;
+    paintPath(lastCell, i);
+    lastCell = i;
+    message('');
+    render();
+  });
+
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    if (moved) {
+      if (mode) { render(); persist(); }
+      return;
+    }
+    /* タップ: 空 -> × -> ★ -> 空 */
+    snapshot();
+    var before = st[startCell];
+    st[startCell] = (before + 1) % 3;
+    message('');
+    render();
+    persist();
+    if (before === 2 || st[startCell] === 2) judge();
+  }
+  elBoard.addEventListener('pointerup', endDrag);
+  elBoard.addEventListener('pointercancel', endDrag);
+
+  /* ★が N 個になった瞬間だけ判定する（途中では正誤を教えない） */
+  function judge() {
+    var idx = [], k;
+    for (k = 0; k < N; k++) if (st[k] === 2) idx.push(k);
+    if (idx.length !== n) return;
+    if (HoshiOki.isSolution(p, idx)) {
+      finished = true;
+      save.cleared[String(index)] = 1;
+      persist();
+      renderLevelList();
+      render();
+      elNext.hidden = (index >= PUZZLES.length - 1);
+      elClear.hidden = false;
+    } else {
+      message('どこか違う');
+    }
+  }
+
+  elUndo.addEventListener('click', function () {
+    if (finished || !history.length) return;
+    st = history.pop();
+    message('');
+    render();
+    persist();
+  });
+  elReset.addEventListener('click', function () {
+    snapshot();
+    st = [];
+    for (var k = 0; k < N; k++) st.push(0);
+    finished = false;
+    elClear.hidden = true;
+    message('');
+    render();
+    persist();
+  });
+  elNext.addEventListener('click', function () {
+    if (index < PUZZLES.length - 1) { loadLevel(index + 1); window.scrollTo(0, 0); }
+  });
+
+  /* ---- レベル一覧 ---- */
+  function renderLevelList() {
+    if (!elLevels.childNodes.length) {
+      var tiers = [], seen = {}, i;
+      for (i = 0; i < LABELS.length; i++) {
+        if (!seen[LABELS[i].tier]) { seen[LABELS[i].tier] = []; tiers.push(LABELS[i].tier); }
+        seen[LABELS[i].tier].push(i);
+      }
+      for (var t = 0; t < tiers.length; t++) {
+        var box = document.createElement('div');
+        box.className = 'tier';
+        var name = document.createElement('div');
+        name.className = 'tierName';
+        name.textContent = tiers[t];
+        box.appendChild(name);
+        var row = document.createElement('div');
+        row.className = 'tierRow';
+        var idxs = seen[tiers[t]];
+        for (var k = 0; k < idxs.length; k++) {
+          var b = document.createElement('button');
+          b.className = 'lv';
+          b.dataset.idx = String(idxs[k]);
+          b.addEventListener('click', function () {
+            loadLevel(parseInt(this.dataset.idx, 10));
+            window.scrollTo(0, 0);
+          });
+          row.appendChild(b);
+        }
+        box.appendChild(row);
+        elLevels.appendChild(box);
+      }
+    }
+    var btns = elLevels.querySelectorAll('.lv');
+    for (var j = 0; j < btns.length; j++) {
+      var idx = parseInt(btns[j].dataset.idx, 10);
+      btns[j].textContent = LABELS[idx].no + (save.cleared[String(idx)] ? ' ✓' : '');
+      btns[j].className = 'lv' + (idx === index ? ' cur' : '');
+    }
+  }
+
+  loadSave();
+  loadLevel(save.last);
+})();
+</script>
+</body>
+</html>

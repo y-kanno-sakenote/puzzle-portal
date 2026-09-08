@@ -1,0 +1,282 @@
+[
+ {
+  "n": 5,
+  "regions": "bbbaabbbbbdbbcedddceddeee",
+  "solution": "0000101000000101000000100",
+  "tier": "入門",
+  "nodes": 0
+ },
+ {
+  "n": 5,
+  "regions": "aabbbcccbdecccdeccedeeeee",
+  "solution": "1000000010010000000100100",
+  "tier": "入門",
+  "nodes": 0
+ },
+ {
+  "n": 5,
+  "regions": "ccaaacaabbceeddeedddeeedd",
+  "solution": "0010000001100000001001000",
+  "tier": "入門",
+  "nodes": 0
+ },
+ {
+  "n": 5,
+  "regions": "aaaaabbaccaaaecddaeedddee",
+  "solution": "0010010000000010100000010",
+  "tier": "入門",
+  "nodes": 0
+ },
+ {
+  "n": 5,
+  "regions": "bbaaacbbaacbbaabbbdaeeedd",
+  "solution": "0000100100100000001001000",
+  "tier": "入門",
+  "nodes": 0
+ },
+ {
+  "n": 6,
+  "regions": "bccaaabcccccddcdccddddccddfeefddffff",
+  "solution": "000100100000000001010000000010001000",
+  "tier": "入門",
+  "nodes": 0
+ },
+ {
+  "n": 6,
+  "regions": "aaaaabacababccbbbbccddbbcccdebcffdeb",
+  "solution": "000100000001100000001000000010010000",
+  "tier": "入門",
+  "nodes": 0
+ },
+ {
+  "n": 6,
+  "regions": "aaaaaabaaccabaccdaeffcdaeefcddefffdd",
+  "solution": "000001100000001000000010010000000100",
+  "tier": "入門",
+  "nodes": 0
+ },
+ {
+  "n": 6,
+  "regions": "aaaaaaaaaaabccccbbcdcbbbddeeeedffffe",
+  "solution": "100000000001000100010000000010001000",
+  "tier": "入門",
+  "nodes": 0
+ },
+ {
+  "n": 6,
+  "regions": "aaaaaadbbbbaddecceddeeeeffffefffffff",
+  "solution": "000001010000000100100000000010001000",
+  "tier": "入門",
+  "nodes": 0
+ },
+ {
+  "n": 7,
+  "regions": "ebbbaadebcbbadeccccadecggcadecggcccccgggffggggggf",
+  "solution": "0000100010000000010000000001100000000000100010000",
+  "tier": "初級",
+  "nodes": 0
+ },
+ {
+  "n": 7,
+  "regions": "aaaaaaaabbbacaacccccaddccecaddeeeccddddfccggggffc",
+  "solution": "0000001000100000000101000000001000000001000100000",
+  "tier": "初級",
+  "nodes": 0
+ },
+ {
+  "n": 7,
+  "regions": "bbbaaaabccccddeecdddfeeeedffeegeddfegggggfegggggg",
+  "solution": "0000010100000000100000000100010000000000010001000",
+  "tier": "初級",
+  "nodes": 0
+ },
+ {
+  "n": 7,
+  "regions": "aaaabbbaababcbabbbbccabbbdccaedddddeeddffdegggfdd",
+  "solution": "1000000001000000000010000100010000000000100001000",
+  "tier": "初級",
+  "nodes": 0
+ },
+ {
+  "n": 7,
+  "regions": "abbbbbbaaabddbacabdbbacabddbccedddbceeeddfcegggff",
+  "solution": "1000000000100001000000000010001000000000010000100",
+  "tier": "初級",
+  "nodes": 0
+ },
+ {
+  "n": 7,
+  "regions": "aaaacccbadcceebddcccebddceeeffffeeefgffffeggfeeee",
+  "solution": "0001000100000000000100010000000000100001000100000",
+  "tier": "初級",
+  "nodes": 0
+ },
+ {
+  "n": 7,
+  "regions": "cbbbaaacccbeffceeeeffeegedffeegddffegggggfggggggg",
+  "solution": "0000010000100010000000000100010000000000010010000",
+  "tier": "初級",
+  "nodes": 0
+ },
+ {
+  "n": 7,
+  "regions": "aaaaaaaaacbbbbccccccbcdbbbbbddddebbddffeeefffggge",
+  "solution": "1000000000000100010000100000000010000100000000010",
+  "tier": "初級",
+  "nodes": 0
+ },
+ {
+  "n": 7,
+  "regions": "aaaaaaaacacadbaccccdbaaeeddbaeeeddgeeefddgeeeffgg",
+  "solution": "1000000000000100100000000100010000000010000000010",
+  "tier": "初級",
+  "nodes": 0
+ },
+ {
+  "n": 7,
+  "regions": "caaabbbcaabbddccadbbdcaaddddccadddefccceeefffggge",
+  "solution": "0010000000010001000000001000000000110000000000010",
+  "tier": "初級",
+  "nodes": 0
+ },
+ {
+  "n": 8,
+  "regions": "ddaaaaaadaabbbbadbbbdbccdddddbbcddddebeeddeeeeefhgggggefhhheeeef",
+  "solution": "0000010000010000000000100100000000001000000000010010000010000000",
+  "tier": "中級",
+  "nodes": 2
+ },
+ {
+  "n": 8,
+  "regions": "ccaaaaddccacaadbccccaddbecccddbbececcddbeeeeddfbeeegggffeeehhhhh",
+  "solution": "0010000000000001010000000000100010000000000000100001000000000100",
+  "tier": "中級",
+  "nodes": 4
+ },
+ {
+  "n": 8,
+  "regions": "bbbaaaccbedadccceeddddcchefdfdggheffffgghhgfgggghgggghghhhhhhhhh",
+  "solution": "0000100010000000000000010000010001000000000100000000001000100000",
+  "tier": "中級",
+  "nodes": 4
+ },
+ {
+  "n": 8,
+  "regions": "aaabbbbbcccccbeecfcccdeecffcddgeffhccdgefhhccgggffhhchggfffhhhhg",
+  "solution": "0100000000000100001000000000100000000001100000000000001000010000",
+  "tier": "中級",
+  "nodes": 4
+ },
+ {
+  "n": 8,
+  "regions": "bbbccaacbdcccaccddffcccehdffffeehffeefeehgffeeeehgggggeehhhgggee",
+  "solution": "0000001010000000000010000100000000000001000100000000010000100000",
+  "tier": "中級",
+  "nodes": 5
+ },
+ {
+  "n": 8,
+  "regions": "adddbbbbadbbbccbaddbffccggdfffeeggghhffeghhhhfhhgggghhhhgggghhhh",
+  "solution": "1000000000010000000000100010000000000001000001000100000000001000",
+  "tier": "中級",
+  "nodes": 6
+ },
+ {
+  "n": 8,
+  "regions": "eccccaabeccccdabeeecdddbeeeeggddeffegggdhfffgggdhhffgggdhhfggggd",
+  "solution": "0000010000000001000100000000001010000000001000000000100001000000",
+  "tier": "中級",
+  "nodes": 7
+ },
+ {
+  "n": 8,
+  "regions": "aaaccccceebbdddceebbdddceddddfffeeefffffgghfhfhfghhfhhhfgghhhhhf",
+  "solution": "0100000000010000000000010000100000100000000001001000000000000010",
+  "tier": "中級",
+  "nodes": 8
+ },
+ {
+  "n": 8,
+  "regions": "aaaaaaffbbbaaaafcccacaffgdcccaffgddceeefghhhhfffghghhhhhgggghhhh",
+  "solution": "0001000010000000000010000100000000000100000000010010000000000010",
+  "tier": "中級",
+  "nodes": 8
+ },
+ {
+  "n": 8,
+  "regions": "bbaaaaacbbaaaaccbaafaaccdddfccccffffcccegggffceeghfffceeghhheeee",
+  "solution": "0000010001000000000000100010000000000001000010001000000000010000",
+  "tier": "中級",
+  "nodes": 12
+ },
+ {
+  "n": 9,
+  "regions": "aaaaaaaaaaaaeeaabacdeeaabbbcddeaebbbcdeeeeffbdddedeeffdddddgeffhhdgggeffhhhhgiiif",
+  "solution": "000100000000000010100000000001000000000010000000000001000001000010000000000000100",
+  "tier": "上級",
+  "nodes": 20
+ },
+ {
+  "n": 9,
+  "regions": "caaaaddddcabbbbbbdcaafffbddiiifffbdgeeiifbbbgeiiffffggeiggfffggiiiggfgghiiigggghh",
+  "solution": "000010000000000100100000000000000010010000000000001000000100000000000001001000000",
+  "tier": "上級",
+  "nodes": 24
+ },
+ {
+  "n": 9,
+  "regions": "aaaaacbbbaaacccbbbdacccccbbddddbbbbefdfdbbbbefffeeeebeiiigheeeeiigghhheeihhhhheee",
+  "solution": "000010000000000010000001000001000000000000001010000000000100000000000100100000000",
+  "tier": "上級",
+  "nodes": 26
+ },
+ {
+  "n": 9,
+  "regions": "aaaaffffbaccffdddbaaccfffdbegcffffddegggggfgdeeeeggfgdiiiiggggdiihiiggddiihhiiiii",
+  "solution": "010000000000000001000100000000000010100000000000000100000010000001000000000001000",
+  "tier": "上級",
+  "nodes": 28
+ },
+ {
+  "n": 9,
+  "regions": "bbbaaaaaacbbbbbbaacbbdddaaacgbbddddacgbbbeedagggfffedaigiiifddaiiiihhddaiiihhdddd",
+  "solution": "000000001000000100100000000000000010000001000000100000010000000000010000001000000",
+  "tier": "上級",
+  "nodes": 29
+ },
+ {
+  "n": 9,
+  "regions": "aeeeebfffaaedebbffcceddffffceeeddfffccceeffifgcgggififggghgifiiggghhiiiigiiiiiiii",
+  "solution": "100000000000000100010000000000001000000100000000000001001000000000010000000000010",
+  "tier": "上級",
+  "nodes": 33
+ },
+ {
+  "n": 9,
+  "regions": "baaaaaaaababaaaadabbbbaaddcgbgbbddccggggbbdeegffggdddeggfgddddehhhggiddehhhgiidde",
+  "solution": "000000100001000000000000001000001000000000010010000000000100000100000000000010000",
+  "tier": "上級",
+  "nodes": 44
+ },
+ {
+  "n": 9,
+  "regions": "aaaabccccaababbcccaabbbccccdaffbbbccddfffbeecdffffbeccffggfheecggggghheeiiihhheee",
+  "solution": "000100000000001000000000001100000000000000010000010000001000000000000100010000000",
+  "tier": "上級",
+  "nodes": 51
+ },
+ {
+  "n": 9,
+  "regions": "ccccaaaaabbbcaaahadddcgaahaddggghhhadeeeggghadedfffghhdddfggghhffffiihhhfffffihhh",
+  "solution": "000000010010000000000100000100000000001000000000010000000000100000000001000001000",
+  "tier": "上級",
+  "nodes": 57
+ },
+ {
+  "n": 9,
+  "regions": "bbbbbbaaabbbdbbbbaccbdbbdbbceeddddddcceedfdddccehdfdddgchhdffffgiihhhfffggiifffff",
+  "solution": "000000001000000100010000000000000010000100000000001000100000000000010000001000000",
+  "tier": "上級",
+  "nodes": 62
+ }
+]
