@@ -1,0 +1,1379 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>ピクセル 写真</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --thick:#5d5952; --active:#3a3833;
+    --hint-bg:#eae8e1; --highlight-bg:#e8e4db; --guide-bg:rgba(0,0,0,0.035);
+    --guide-cross:rgba(0,0,0,0.07);
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none !important}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:15px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  #app{max-width:440px;margin:0 auto;padding:10px 8px 40px}
+  header{display:flex;align-items:baseline;justify-content:space-between;padding:2px 4px 6px}
+  #titleWrap{display:flex;align-items:baseline;gap:8px}
+  #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+  #levelName{font-size:13.5px;color:var(--sub);font-weight:600}
+  #headerActions{display:flex;align-items:center;gap:10px}
+  #zoomBtn{
+    font-size:12px;font-weight:700;padding:3px 8px;border-radius:6px;
+    border:1px solid var(--frame);background:var(--panel);color:var(--ink);
+    cursor:pointer;-webkit-tap-highlight-color:transparent;
+  }
+  #zoomBtn:active{background:#eeece7}
+  #portalLink{font-size:13px;color:var(--sub);text-decoration:none}
+  #portalLink:hover{text-decoration:underline}
+
+  .note{padding:0 4px 8px;font-size:12px;line-height:1.5;color:var(--sub)}
+
+  /* ---- 画面1 選ぶ ---- */
+  #pickBox{
+    background:var(--panel);border:2px solid var(--thick);border-radius:8px;
+    padding:22px 16px;text-align:center;
+  }
+  #pickBox p{margin:0 0 14px;font-size:13.5px;color:var(--sub);line-height:1.6}
+  .bigBtn{
+    display:inline-block;font:inherit;font-weight:700;font-size:16px;
+    padding:13px 26px;border-radius:8px;border:none;
+    background:#44413c;color:#fff;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .bigBtn:active{background:#2a2825}
+  #fileInput{display:none}
+
+  /* ---- 画面2 切る・調整 ---- */
+  #cropRow{display:flex;gap:8px;align-items:flex-start}
+  .sq{flex:1 1 0;min-width:0}
+  .sqLabel{font-size:11.5px;color:var(--sub);font-weight:700;margin:0 0 3px 2px}
+  #cropCanvas{
+    width:100%;aspect-ratio:1/1;display:block;
+    background:#e6e4df;border:2px solid var(--thick);border-radius:6px;
+    touch-action:none;cursor:grab;
+  }
+  #previewCanvas{
+    width:100%;aspect-ratio:1/1;display:block;
+    background:#fff;border:2px solid var(--thick);border-radius:6px;
+    image-rendering:pixelated;image-rendering:crisp-edges;
+  }
+  .ctrl{margin-top:12px}
+  .ctrlLabel{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:5px}
+  .seg{display:flex;gap:6px}
+  .seg button{
+    flex:1;font:inherit;font-weight:700;padding:9px 0;
+    border:1.5px solid var(--frame);border-radius:8px;
+    background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .seg button.on{background:var(--active);color:#fff;border-color:var(--active)}
+  input[type=range]{width:100%;margin:0}
+  #titleInput{
+    width:100%;font:inherit;padding:9px 10px;
+    border:1.5px solid var(--frame);border-radius:8px;background:var(--panel);color:var(--ink);
+  }
+  #cropButtons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+  #makeBtn{grid-column:span 2;background:#44413c;color:#fff;border-color:#44413c;font-weight:700;padding:13px 0}
+  #makeBtn:active{background:#2a2825}
+  #makeMsg{margin-top:10px;font-size:13px;line-height:1.6;color:#8a5a3c;min-height:1.2em}
+
+  /* ---- 盤面（index.html と同じ作法） ---- */
+  #stageWrapper{
+    position:relative;width:100%;
+    background:var(--panel);border:2px solid var(--thick);border-radius:8px;
+    overflow:hidden;user-select:none;-webkit-user-select:none;
+    -webkit-tap-highlight-color:transparent;
+    box-shadow:0 1px 4px rgba(0,0,0,0.04);
+  }
+  #stageWrapper.zoomed{overflow:auto;-webkit-overflow-scrolling:touch;max-height:68vh}
+  #boardWrapper{
+    display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto 1fr;
+    padding:6px;width:fit-content;min-width:100%;margin:0 auto;
+  }
+  #corner{grid-column:1;grid-row:1;background:var(--panel);position:sticky;top:0;left:0;z-index:10}
+  #colHints{
+    grid-column:2;grid-row:1;display:grid;align-items:end;
+    background:var(--panel);position:sticky;top:0;z-index:5;
+  }
+  .colHint{
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+    font-size:var(--hint-fs, 11px);font-weight:700;color:var(--ink);
+    padding-bottom:3px;line-height:1.15;border-right:1px solid transparent;
+    transition:background-color .15s;
+  }
+  .colHint.b-r5{border-right:2px solid var(--thick)}
+  .colHint.active{background:var(--highlight-bg);border-radius:4px 4px 0 0}
+  #rowHints{
+    grid-column:1;grid-row:2;display:grid;justify-items:end;
+    background:var(--panel);position:sticky;left:0;z-index:5;
+  }
+  .rowHint{
+    display:flex;align-items:center;justify-content:flex-end;gap:3px;
+    font-size:var(--hint-fs, 11px);font-weight:700;color:var(--ink);
+    padding-right:5px;white-space:nowrap;border-bottom:1px solid transparent;
+    transition:background-color .15s;
+  }
+  .rowHint.b-b5{border-bottom:2px solid var(--thick)}
+  .rowHint.active{background:var(--highlight-bg);border-radius:4px 0 0 4px}
+  .hintNum{cursor:pointer;padding:0 1px;border-radius:2px;display:inline-block}
+  .hintNum.checked{opacity:.25;text-decoration:line-through}
+  #grid{
+    grid-column:2;grid-row:2;position:relative;display:grid;
+    border:1px solid var(--thick);background:var(--panel);touch-action:none;
+  }
+  .cell{
+    position:relative;border-right:1px solid var(--line);border-bottom:1px solid var(--line);
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+    width:var(--cs, 26px);height:var(--cs, 26px);
+  }
+  .cell.re{border-right:0}
+  .cell.be{border-bottom:0}
+  .cell.b-r5{border-right:2px solid var(--thick)}
+  .cell.b-b5{border-bottom:2px solid var(--thick)}
+  .cell.guide-col, .cell.guide-row{background-color:var(--guide-bg)}
+  .cell.guide-cross{background-color:var(--guide-cross)}
+  .cell.fill{background:var(--ink)}
+  .cell.fill.guide-cross{background:#111111}
+  .cell.x::after{
+    content:"✕";font-size:calc(var(--cs, 26px) * 0.58);
+    color:var(--sub);line-height:1;opacity:.7;
+  }
+  #stageWrapper.cleared #colHints, #stageWrapper.cleared #rowHints{opacity:.25}
+  #stageWrapper.cleared .cell.x::after{display:none}
+  #stageWrapper.cleared #grid{border-color:var(--ink)}
+  #stageWrapper.cleared .cell.guide-col, #stageWrapper.cleared .cell.guide-row, #stageWrapper.cleared .cell.guide-cross{background-color:transparent}
+
+  #clearBanner{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 14px;margin-top:10px;background:#ebe7df;border-radius:8px;
+  }
+  #artTitle{font-size:16px;font-weight:700;color:var(--ink)}
+  #artTitle span{font-size:13px;font-weight:400;color:var(--sub);margin-left:6px}
+
+  #compare{display:flex;gap:8px;margin-top:10px}
+  #compare figure{flex:1 1 0;min-width:0;margin:0;text-align:center}
+  #compare canvas, #compare img{
+    width:100%;aspect-ratio:1/1;display:block;object-fit:cover;
+    border:1.5px solid var(--frame);border-radius:6px;background:#fff;
+    image-rendering:pixelated;
+  }
+  #compare figcaption{font-size:11.5px;color:var(--sub);margin-top:3px}
+
+  #controls{display:flex;gap:8px;margin-top:10px}
+  .modeBtn{
+    flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+    padding:11px 0;font-size:15px;font-weight:700;
+    border:1.5px solid var(--frame);border-radius:8px;
+    background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .modeBtn.active{background:var(--active);color:#ffffff;border-color:var(--active)}
+  .modeBtn .dot{width:12px;height:12px;background:currentColor;border-radius:2px}
+  .modeBtn .xmark{font-size:16px;line-height:1}
+
+  #buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  button.actionBtn{
+    font:inherit;padding:10px 0;border:1px solid var(--frame);
+    border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;font-weight:500;
+  }
+  button.actionBtn:active{background:#eeece7}
+  #againBtn{background:#44413c;color:#fff;border-color:#44413c;font-weight:700}
+  #againBtn:active{background:#2a2825}
+  #toast{margin-top:8px;font-size:12.5px;color:var(--sub);min-height:1.2em}
+
+  /* ---- 作った問題の一覧 ---- */
+  #made{margin-top:24px;border-top:1px solid var(--line);padding-top:14px}
+  #madeTitle{font-size:12px;font-weight:700;color:var(--sub);margin-bottom:8px;letter-spacing:.04em}
+  .madeRow{
+    display:flex;align-items:center;gap:8px;width:100%;
+    font:inherit;text-align:left;padding:9px 10px;margin-bottom:6px;
+    border:1px solid var(--frame);border-radius:8px;
+    background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .madeRow.cur{border-color:var(--ink);background:#eeece7}
+  .madeRow .mn{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .madeRow .mt{font-size:12px;color:var(--sub)}
+  .madeRow .mc{font-size:12px;color:#5b784a;font-weight:700;width:1.2em;text-align:right}
+</style>
+</head>
+<body>
+
+<script>
+/* ================================================================
+   純粋ロジック（DOM 非依存・window.PixelPhoto として公開）
+   ・二値化 / ヒント / ラインソルバー / 修復 / 難度 D / 共有ハッシュ
+   ・ラインソルバーと D は tools/gen_puzzles.py の solve_with_metrics と同じ判定
+   ================================================================ */
+(function(){
+  'use strict';
+
+  /* ---- 大津の方法（0..255 のグレー配列 → しきい値） ---- */
+  function otsu(gray){
+    var hist = new Array(256), i;
+    for (i = 0; i < 256; i++) hist[i] = 0;
+    for (i = 0; i < gray.length; i++) {
+      var v = gray[i] | 0;
+      if (v < 0) v = 0; if (v > 255) v = 255;
+      hist[v]++;
+    }
+    var total = gray.length;
+    if (!total) return 128;
+    var sum = 0;
+    for (i = 0; i < 256; i++) sum += i * hist[i];
+    var sumB = 0, wB = 0, best = -1, thr = 128;
+    for (i = 0; i < 256; i++) {
+      wB += hist[i];
+      if (!wB) continue;
+      var wF = total - wB;
+      if (!wF) break;
+      sumB += i * hist[i];
+      var mB = sumB / wB, mF = (sum - sumB) / wF;
+      var between = wB * wF * (mB - mF) * (mB - mF);
+      if (between > best) { best = between; thr = i + 1; }
+    }
+    return thr;
+  }
+
+  /* ---- コントラスト伸長（下位/上位 2% を切って 0..255 に伸ばす） ---- */
+  function stretch(gray){
+    var n = gray.length;
+    if (!n) return gray.slice();
+    var sorted = gray.slice().sort(function(a, b){ return a - b; });
+    var lo = sorted[Math.floor(n * 0.02)];
+    var hi = sorted[Math.ceil(n * 0.98) - 1];
+    if (!(hi > lo)) { lo = sorted[0]; hi = sorted[n - 1]; }
+    var out = new Array(n);
+    if (!(hi > lo)) { for (var i = 0; i < n; i++) out[i] = 128; return out; }
+    var k = 255 / (hi - lo);
+    for (var j = 0; j < n; j++) {
+      var v = (gray[j] - lo) * k;
+      out[j] = v < 0 ? 0 : (v > 255 ? 255 : v);
+    }
+    return out;
+  }
+
+  /* ---- 二値化: 暗いマス(< thr)を塗る = '1' ---- */
+  function binarize(gray, n, thr){
+    var out = '', total = n * n;
+    for (var i = 0; i < total; i++) out += (gray[i] < thr) ? '1' : '0';
+    return out;
+  }
+
+  /* ---- ヒント（行・列の数字） ---- */
+  function hints(bits, w, h){
+    var rowHints = [], colHints = [], r, c, cur, arr;
+    for (r = 0; r < h; r++) {
+      arr = []; cur = 0;
+      for (c = 0; c < w; c++) {
+        if (bits.charAt(r * w + c) === '1') cur++;
+        else if (cur > 0) { arr.push(cur); cur = 0; }
+      }
+      if (cur > 0) arr.push(cur);
+      rowHints.push(arr.length ? arr : [0]);
+    }
+    for (c = 0; c < w; c++) {
+      arr = []; cur = 0;
+      for (r = 0; r < h; r++) {
+        if (bits.charAt(r * w + c) === '1') cur++;
+        else if (cur > 0) { arr.push(cur); cur = 0; }
+      }
+      if (cur > 0) arr.push(cur);
+      colHints.push(arr.length ? arr : [0]);
+    }
+    return { rowHints: rowHints, colHints: colHints };
+  }
+
+  /* ---- 1ライン分の確定推論（全パターン列挙と同じ結論を DP で出す） ----
+     vals: -1 未確定 / 0 空 / 1 黒。戻り値は同じ形式の配列。矛盾なら null */
+  function lineDeduce(vals, hs){
+    var L = vals.length, i, j, t;
+    var blocks = (hs.length === 1 && hs[0] === 0) ? [] : hs;
+    var k = blocks.length;
+
+    var okZero = new Array(L + 1);
+    okZero[L] = true;
+    for (i = L - 1; i >= 0; i--) okZero[i] = okZero[i + 1] && vals[i] !== 1;
+
+    var back = new Array(L + 1);
+    for (i = 0; i <= L; i++) {
+      back[i] = new Array(k + 1);
+      for (j = 0; j <= k; j++) back[i][j] = false;
+      back[i][k] = okZero[i];
+    }
+    for (j = k - 1; j >= 0; j--) {
+      var b = blocks[j];
+      for (i = L; i >= 0; i--) {
+        var ok = false;
+        if (i < L && vals[i] !== 1 && back[i + 1][j]) ok = true;
+        if (!ok && i + b <= L) {
+          var fits = true;
+          for (t = i; t < i + b; t++) { if (vals[t] === 0) { fits = false; break; } }
+          if (fits) {
+            if (i + b === L) ok = back[L][j + 1];
+            else if (vals[i + b] !== 1) ok = back[i + b + 1][j + 1];
+          }
+        }
+        back[i][j] = ok;
+      }
+    }
+    if (!back[0][0]) return null;
+
+    var can0 = new Array(L), can1 = new Array(L);
+    for (i = 0; i < L; i++) { can0[i] = false; can1[i] = false; }
+    var reach = new Array(L + 1);
+    for (i = 0; i <= L; i++) {
+      reach[i] = new Array(k + 1);
+      for (j = 0; j <= k; j++) reach[i][j] = false;
+    }
+    reach[0][0] = true;
+    for (i = 0; i <= L; i++) {
+      for (j = 0; j <= k; j++) {
+        if (!reach[i][j] || !back[i][j]) continue;
+        if (i < L && vals[i] !== 1 && back[i + 1][j]) { can0[i] = true; reach[i + 1][j] = true; }
+        if (j < k) {
+          var bl = blocks[j];
+          if (i + bl <= L) {
+            var fit = true;
+            for (t = i; t < i + bl; t++) { if (vals[t] === 0) { fit = false; break; } }
+            if (fit) {
+              var ni = -1;
+              if (i + bl === L) { if (back[L][j + 1]) ni = L; }
+              else if (vals[i + bl] !== 1 && back[i + bl + 1][j + 1]) ni = i + bl + 1;
+              if (ni >= 0) {
+                for (t = i; t < i + bl; t++) can1[t] = true;
+                if (i + bl < L) can0[i + bl] = true;
+                reach[ni][j + 1] = true;
+              }
+            }
+          }
+        }
+      }
+    }
+    var out = new Array(L);
+    for (i = 0; i < L; i++) {
+      if (can0[i] && can1[i]) out[i] = -1;
+      else if (can1[i]) out[i] = 1;
+      else if (can0[i]) out[i] = 0;
+      else return null;
+    }
+    return out;
+  }
+
+  /* ---- 候補パターン総数 S（探索空間の大きさ・情報用） ---- */
+  function comb(n, k){
+    if (k < 0 || n < 0 || k > n) return 0;
+    var r = 1;
+    for (var i = 1; i <= k; i++) r = r * (n - k + i) / i;
+    return Math.round(r);
+  }
+  function lineSpace(L, hs){
+    if (hs.length === 1 && hs[0] === 0) return 1;
+    var s = 0;
+    for (var i = 0; i < hs.length; i++) s += hs[i];
+    return comb(L - s + 1, hs.length);
+  }
+
+  /* ---- 計測付きラインソルバー（gen_puzzles.py solve_with_metrics と同じ手順） ---- */
+  function solveMetrics(rowHints, colHints, w, h){
+    var grid = new Array(w * h), i, r, c;
+    for (i = 0; i < w * h; i++) grid[i] = -1;
+
+    var space = 0;
+    for (r = 0; r < h; r++) space += lineSpace(w, rowHints[r]);
+    for (c = 0; c < w; c++) space += lineSpace(h, colHints[c]);
+
+    var passes = 0, work = 0, rest1 = null, changed = true, vals, res, got, t;
+
+    while (changed) {
+      changed = false;
+      passes++;
+      for (r = 0; r < h; r++) {
+        vals = new Array(w);
+        for (c = 0; c < w; c++) vals[c] = grid[r * w + c];
+        res = lineDeduce(vals, rowHints[r]);
+        if (!res) return { ok:false, grid:grid, P:passes, W:work, R1:w * h, S:space, D:1000000 };
+        got = false;
+        for (c = 0; c < w; c++) {
+          if (grid[r * w + c] === -1 && res[c] !== -1) { grid[r * w + c] = res[c]; changed = true; got = true; }
+        }
+        if (got) work++;
+      }
+      for (c = 0; c < w; c++) {
+        vals = new Array(h);
+        for (r = 0; r < h; r++) vals[r] = grid[r * w + c];
+        res = lineDeduce(vals, colHints[c]);
+        if (!res) return { ok:false, grid:grid, P:passes, W:work, R1:w * h, S:space, D:1000000 };
+        got = false;
+        for (r = 0; r < h; r++) {
+          if (grid[r * w + c] === -1 && res[r] !== -1) { grid[r * w + c] = res[r]; changed = true; got = true; }
+        }
+        if (got) work++;
+      }
+      if (passes === 1) {
+        t = 0;
+        for (i = 0; i < w * h; i++) if (grid[i] === -1) t++;
+        rest1 = t;
+      }
+    }
+    if (rest1 === null) rest1 = 0;
+    var complete = true;
+    for (i = 0; i < w * h; i++) if (grid[i] === -1) { complete = false; break; }
+    return { ok:complete, grid:grid, P:passes, W:work, R1:rest1, S:space, D: passes * 20 + work * 2 + rest1 };
+  }
+
+  /* ---- 仮定なしで解けるか。解けたら盤（0/1 配列）、無理なら null ---- */
+  function lineSolve(rowHints, colHints, w, h){
+    var m = solveMetrics(rowHints, colHints, w, h);
+    return m.ok ? m.grid : null;
+  }
+
+  /* ---- 難度 D と段階（index.html の生成器の実測レンジと同じ閾値） ---- */
+  /* 写真はマス数で D の分布が違う。qa係の実測（なめらか画像 各N100枚）の四分位で刻む */
+  var TIER_CUT = { 15: [158, 204, 221], 20: [240, 279, 314], 25: [330, 374, 410] };
+  function tierOf(D, n){
+    var c = TIER_CUT[n] || TIER_CUT[20];
+    if (D <= c[0]) return '入門';
+    if (D <= c[1]) return '初級';
+    if (D <= c[2]) return '中級';
+    return '上級';
+  }
+  function rate(rowHints, colHints, w, h){
+    var m = solveMetrics(rowHints, colHints, w, h);
+    return { ok:m.ok, D:m.D, P:m.P, W:m.W, R1:m.R1, S:m.S, tier: m.ok ? tierOf(m.D, Math.max(w, h)) : null };
+  }
+
+  /* ---- 修復: しきい値に近い（灰色の）マスから1つずつ反転して解けるまで ---- */
+  function repair(bits, gray, w, h, maxFlips){
+    var total = w * h, i;
+    var cur = bits.split('');
+    var hs = hints(cur.join(''), w, h);
+    var m = solveMetrics(hs.rowHints, hs.colHints, w, h);
+    if (m.ok) return { bits: cur.join(''), flips: 0 };
+
+    /* しきい値の推定: 2群の境目 */
+    var s1 = 0, n1 = 0, s0 = 0, n0 = 0, max1 = -1, min1 = 1e9, max0 = -1, min0 = 1e9, g;
+    for (i = 0; i < total; i++) {
+      g = gray[i];
+      if (cur[i] === '1') { s1 += g; n1++; if (g > max1) max1 = g; if (g < min1) min1 = g; }
+      else { s0 += g; n0++; if (g > max0) max0 = g; if (g < min0) min0 = g; }
+    }
+    var thrEst = 128;
+    if (n1 && n0) thrEst = (s1 / n1 <= s0 / n0) ? (max1 + min0) / 2 : (min1 + max0) / 2;
+
+    var order = [];
+    for (i = 0; i < total; i++) order.push(i);
+    order.sort(function(a, b){
+      var da = Math.abs(gray[a] - thrEst), db = Math.abs(gray[b] - thrEst);
+      return da === db ? a - b : da - db;
+    });
+
+    var flipped = {}, limit = Math.min(maxFlips | 0, total);
+    for (var f = 0; f < limit; f++) {
+      /* 未確定のまま残ったマスを優先して反転する（同じ灰色の並び順の中で） */
+      var pick = -1, fallback = -1, idx;
+      for (i = 0; i < order.length; i++) {
+        idx = order[i];
+        if (flipped[idx]) continue;
+        if (fallback < 0) fallback = idx;
+        if (m.grid[idx] === -1) { pick = idx; break; }
+      }
+      if (pick < 0) pick = fallback;
+      if (pick < 0) break;
+      flipped[pick] = 1;
+      cur[pick] = (cur[pick] === '1') ? '0' : '1';
+      hs = hints(cur.join(''), w, h);
+      m = solveMetrics(hs.rowHints, hs.colHints, w, h);
+      if (m.ok) return { bits: cur.join(''), flips: f + 1 };
+    }
+    return null;
+  }
+
+  /* ---- 共有ハッシュ ---- */
+  var B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  function bitsToB64(bits){
+    var out = '', i, j, chunk, n = bits.length;
+    for (i = 0; i < n; i += 6) {
+      chunk = 0;
+      for (j = 0; j < 6; j++) chunk = (chunk << 1) | ((i + j < n && bits.charAt(i + j) === '1') ? 1 : 0);
+      out += B64.charAt(chunk);
+    }
+    return out;
+  }
+  function b64ToBits(s, len){
+    var out = '', i, j, v;
+    for (i = 0; i < s.length; i++) {
+      v = B64.indexOf(s.charAt(i));
+      if (v < 0) return null;
+      for (j = 5; j >= 0; j--) out += ((v >> j) & 1) ? '1' : '0';
+    }
+    if (out.length < len) return null;
+    return out.slice(0, len);
+  }
+  function encode(bits, w, h, title){
+    var t = '';
+    try { t = encodeURIComponent(title || ''); } catch (e) { t = ''; } /* 壊れたサロゲート対策 */
+    return '#v1.' + w + '.' + h + '.' + bitsToB64(bits) + '.' + t;
+  }
+  function decode(hash){
+    if (typeof hash !== 'string') return null;
+    var s = hash.charAt(0) === '#' ? hash.slice(1) : hash;
+    var p = s.split('.');
+    if (p.length < 4 || p[0] !== 'v1') return null;
+    var w = parseInt(p[1], 10), h = parseInt(p[2], 10);
+    if (!(w >= 3 && w <= 60 && h >= 3 && h <= 60)) return null;
+    var bits = b64ToBits(p[3], w * h);
+    if (!bits) return null;
+    var title = '写真';
+    if (p.length > 4) {
+      try { title = decodeURIComponent(p.slice(4).join('.')); } catch (e) { title = '写真'; }
+    }
+    if (!title) title = '写真';
+    return { bits: bits, w: w, h: h, title: title.slice(0, 30) };
+  }
+
+  var PixelPhoto = {
+    otsu: otsu,
+    stretch: stretch,
+    binarize: binarize,
+    hints: hints,
+    lineSolve: lineSolve,
+    lineDeduce: lineDeduce,
+    repair: repair,
+    rate: rate,
+    tierOf: tierOf,
+    encode: encode,
+    decode: decode
+  };
+  if (typeof window !== 'undefined') window.PixelPhoto = PixelPhoto;
+  if (typeof globalThis !== 'undefined') globalThis.PixelPhoto = PixelPhoto;
+  if (typeof module !== 'undefined' && module.exports) module.exports = PixelPhoto;
+})();
+</script>
+
+<div id="app">
+  <header>
+    <div id="titleWrap">
+      <span id="title">ピクセル 写真</span>
+      <span id="levelName"></span>
+    </div>
+    <div id="headerActions">
+      <button id="zoomBtn" hidden>🔍 拡大</button>
+      <a id="portalLink" href="../">パズル箱</a>
+    </div>
+  </header>
+
+  <!-- 画面1 選ぶ -->
+  <section id="screenPick">
+    <div class="note">写真はこの端末から出ません。</div>
+    <div id="pickBox">
+      <p>写真を1枚えらんでください<br>顔・ロゴ・シルエットのように<br>白黒がはっきりした写真が向いています</p>
+      <button id="pickBtn" class="bigBtn">写真をえらぶ</button>
+      <input type="file" id="fileInput" accept="image/*">
+    </div>
+    <div id="pickMsg" class="note" style="padding-top:10px"></div>
+  </section>
+
+  <!-- 画面2 切る・調整 -->
+  <section id="screenCrop" hidden>
+    <div class="note">枠の中で写真をドラッグして位置を決めます</div>
+    <div id="cropRow">
+      <div class="sq">
+        <div class="sqLabel">写真</div>
+        <canvas id="cropCanvas" width="600" height="600"></canvas>
+      </div>
+      <div class="sq">
+        <div class="sqLabel">下絵</div>
+        <canvas id="previewCanvas" width="20" height="20"></canvas>
+      </div>
+    </div>
+
+    <div class="ctrl">
+      <div class="ctrlLabel">大きさ（ズーム）</div>
+      <input type="range" id="zoomRange" min="100" max="400" value="100">
+    </div>
+
+    <div class="ctrl">
+      <div class="ctrlLabel">マス数</div>
+      <div class="seg" id="sizeSeg">
+        <button data-n="15">15</button>
+        <button data-n="20" class="on">20</button>
+        <button data-n="25">25</button>
+      </div>
+    </div>
+
+    <div class="ctrl">
+      <div class="ctrlLabel" id="thrLabel">しきい値（自動）</div>
+      <input type="range" id="thrRange" min="1" max="255" value="128">
+    </div>
+
+    <div class="ctrl">
+      <div class="seg">
+        <button id="invertBtn">白黒反転</button>
+        <button id="autoThrBtn">しきい値を自動に</button>
+      </div>
+    </div>
+
+    <div class="ctrl">
+      <div class="ctrlLabel">題名</div>
+      <input type="text" id="titleInput" maxlength="20" placeholder="写真">
+    </div>
+
+    <div id="cropButtons">
+      <button id="makeBtn" class="actionBtn">これで作る</button>
+      <button id="rePickBtn" class="actionBtn">写真をえらび直す</button>
+      <button id="backToPlayBtn" class="actionBtn" hidden>やめる</button>
+    </div>
+    <div id="makeMsg"></div>
+  </section>
+
+  <!-- 画面3 遊ぶ -->
+  <section id="screenPlay" hidden>
+    <div class="note">
+      <div>行・列の数字の数だけマスを黒く塗る</div>
+      <div>数字が複数のときは、間に1マス以上あける</div>
+    </div>
+
+    <div id="stageWrapper">
+      <div id="boardWrapper">
+        <div id="corner"></div>
+        <div id="colHints"></div>
+        <div id="rowHints"></div>
+        <div id="grid"></div>
+      </div>
+    </div>
+
+    <div id="clearBanner" hidden>
+      <div id="artTitle"></div>
+    </div>
+
+    <div id="compare" hidden>
+      <figure><canvas id="artCanvas"></canvas><figcaption>絵</figcaption></figure>
+      <figure id="photoFig"><canvas id="photoCanvas"></canvas><figcaption>元の写真</figcaption></figure>
+    </div>
+
+    <div id="controls">
+      <button id="modeFill" class="modeBtn active"><span class="dot"></span>塗る</button>
+      <button id="modeCross" class="modeBtn"><span class="xmark">✕</span>印</button>
+    </div>
+
+    <div id="buttons">
+      <button id="undoBtn" class="actionBtn">もどす</button>
+      <button id="resetBtn" class="actionBtn">はじめから</button>
+      <button id="shareBtn" class="actionBtn">共有</button>
+      <button id="againBtn" class="actionBtn">もう一枚</button>
+    </div>
+    <div id="toast"></div>
+  </section>
+
+  <div id="made" hidden>
+    <div id="madeTitle">作った問題</div>
+    <div id="madeList"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var P = window.PixelPhoto;
+
+  /* ---------------- 要素 ---------------- */
+  var $ = function(id){ return document.getElementById(id); };
+  var screenPick = $('screenPick'), screenCrop = $('screenCrop'), screenPlay = $('screenPlay');
+  var elLevelName = $('levelName'), btnZoom = $('zoomBtn');
+  var fileInput = $('fileInput'), pickBtn = $('pickBtn'), pickMsg = $('pickMsg');
+  var cropCanvas = $('cropCanvas'), previewCanvas = $('previewCanvas');
+  var zoomRange = $('zoomRange'), sizeSeg = $('sizeSeg'), thrRange = $('thrRange'), thrLabel = $('thrLabel');
+  var invertBtn = $('invertBtn'), autoThrBtn = $('autoThrBtn'), titleInput = $('titleInput');
+  var makeBtn = $('makeBtn'), rePickBtn = $('rePickBtn'), backToPlayBtn = $('backToPlayBtn'), makeMsg = $('makeMsg');
+  var elStageWrapper = $('stageWrapper'), elGrid = $('grid'), elColHints = $('colHints'), elRowHints = $('rowHints');
+  var elClearBanner = $('clearBanner'), artTitle = $('artTitle'), elCompare = $('compare');
+  var artCanvas = $('artCanvas'), photoCanvas = $('photoCanvas'), photoFig = $('photoFig');
+  var btnModeFill = $('modeFill'), btnModeCross = $('modeCross');
+  var btnUndo = $('undoBtn'), btnReset = $('resetBtn'), btnShare = $('shareBtn'), btnAgain = $('againBtn');
+  var toast = $('toast'), elMade = $('made'), elMadeList = $('madeList');
+
+  /* ---------------- 保存 ---------------- */
+  var STORE_KEY = 'pixel-photo';
+  var store = { made: [], progress: {} };
+  var sessionPhotos = {}; /* id -> dataURL（この端末・このセッションだけ。保存しない） */
+
+  function loadStore(){
+    try {
+      var s = localStorage.getItem(STORE_KEY);
+      if (!s) return;
+      var p = JSON.parse(s);
+      if (p && typeof p === 'object') {
+        store.made = Array.isArray(p.made) ? p.made.filter(function(m){
+          return m && typeof m.bits === 'string' && m.bits.length === (m.w | 0) * (m.h | 0) && m.w > 0;
+        }).slice(0, 20) : [];
+        store.progress = (p.progress && typeof p.progress === 'object') ? p.progress : {};
+      }
+    } catch (e) { store = { made: [], progress: {} }; }
+  }
+  function saveStore(){
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({ made: store.made.slice(0, 20), progress: store.progress }));
+    } catch (e) {}
+  }
+
+  /* ---------------- 画面切り替え ---------------- */
+  function show(which){
+    screenPick.hidden = (which !== 'pick');
+    screenCrop.hidden = (which !== 'crop');
+    screenPlay.hidden = (which !== 'play');
+    btnZoom.hidden = (which !== 'play');
+    elMade.hidden = (which === 'crop') || !store.made.length;
+    if (which !== 'play') elLevelName.textContent = '';
+    window.scrollTo(0, 0);
+  }
+
+  /* ================================================================
+     画面1・2: 写真 → 下絵
+     ================================================================ */
+  var img = null, imgW = 0, imgH = 0;
+  var cx = 0, cy = 0, zoom = 1;          /* 切り取り中心と倍率 */
+  var N = 20, thr = 128, thrAuto = true, invert = false;
+  var grayN = null;                       /* N×N の伸長済みグレー */
+  var curBits = '';
+
+  pickBtn.addEventListener('click', function(){ fileInput.click(); });
+  rePickBtn.addEventListener('click', function(){ fileInput.click(); });
+
+  fileInput.addEventListener('change', function(){
+    var f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    pickMsg.textContent = '読み込んでいます…';
+    loadImage(f).then(function(bmp){
+      img = bmp; imgW = bmp.width; imgH = bmp.height;
+      zoom = 1; cx = imgW / 2; cy = imgH / 2;
+      zoomRange.value = '100';
+      thrAuto = true; invert = false;
+      invertBtn.classList.remove('on');
+      titleInput.value = '';
+      makeMsg.textContent = '';
+      pickMsg.textContent = '';
+      backToPlayBtn.hidden = !currentPuzzle;
+      show('crop');
+      redraw();
+    }).catch(function(){
+      pickMsg.textContent = 'この写真は読み込めませんでした。別の写真を選んでください。';
+    });
+    fileInput.value = '';
+  });
+
+  function loadImage(file){
+    if (typeof createImageBitmap === 'function') {
+      try {
+        return createImageBitmap(file, { imageOrientation: 'from-image' }).catch(function(){
+          return createImageBitmap(file).catch(fallbackImage);
+        });
+      } catch (e) { /* 下へ */ }
+    }
+    return fallbackImage();
+
+    function fallbackImage(){
+      return new Promise(function(res, rej){
+        var url = URL.createObjectURL(file);
+        var im = new Image();
+        im.onload = function(){ res(im); };
+        im.onerror = function(){ URL.revokeObjectURL(url); rej(new Error('load')); };
+        im.src = url;
+      });
+    }
+  }
+
+  function cropSide(){ return Math.min(imgW, imgH) / zoom; }
+  function clampCenter(){
+    var s = cropSide();
+    cx = Math.max(s / 2, Math.min(imgW - s / 2, cx));
+    cy = Math.max(s / 2, Math.min(imgH - s / 2, cy));
+  }
+
+  /* 切り取り→グレー→N×N平均→コントラスト伸長 */
+  var tmp = document.createElement('canvas');
+  function computeGray(){
+    if (!img) return;
+    var block = 6, size = N * block;
+    tmp.width = size; tmp.height = size;
+    var tg = tmp.getContext('2d');
+    tg.imageSmoothingEnabled = true;
+    tg.fillStyle = '#fff'; tg.fillRect(0, 0, size, size);
+    var s = cropSide();
+    tg.drawImage(img, cx - s / 2, cy - s / 2, s, s, 0, 0, size, size);
+    var data;
+    try { data = tg.getImageData(0, 0, size, size).data; }
+    catch (e) { grayN = null; return; }
+
+    var raw = new Array(N * N), r, c, by, bx, sum, i;
+    for (r = 0; r < N; r++) {
+      for (c = 0; c < N; c++) {
+        sum = 0;
+        for (by = 0; by < block; by++) {
+          for (bx = 0; bx < block; bx++) {
+            i = (((r * block + by) * size) + (c * block + bx)) * 4;
+            sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          }
+        }
+        raw[r * N + c] = sum / (block * block);
+      }
+    }
+    grayN = P.stretch(raw);
+  }
+
+  function currentBits(){
+    if (!grayN) return '';
+    var b = P.binarize(grayN, N, thr);
+    if (!invert) return b;
+    var out = '';
+    for (var i = 0; i < b.length; i++) out += (b.charAt(i) === '1') ? '0' : '1';
+    return out;
+  }
+
+  function drawCrop(){
+    var g = cropCanvas.getContext('2d');
+    g.fillStyle = '#e6e4df';
+    g.fillRect(0, 0, cropCanvas.width, cropCanvas.height);
+    if (!img) return;
+    var s = cropSide();
+    g.drawImage(img, cx - s / 2, cy - s / 2, s, s, 0, 0, cropCanvas.width, cropCanvas.height);
+  }
+
+  function drawPreview(){
+    previewCanvas.width = N; previewCanvas.height = N;
+    var g = previewCanvas.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, N, N);
+    g.fillStyle = '#2b2b2b';
+    for (var r = 0; r < N; r++) {
+      for (var c = 0; c < N; c++) {
+        if (curBits.charAt(r * N + c) === '1') g.fillRect(c, r, 1, 1);
+      }
+    }
+  }
+
+  function redraw(){
+    clampCenter();
+    drawCrop();
+    computeGray();
+    if (grayN && thrAuto) {
+      thr = P.otsu(grayN);
+      thrRange.value = String(thr);
+      thrLabel.textContent = 'しきい値（自動 ' + thr + '）';
+    } else {
+      thrLabel.textContent = 'しきい値 ' + thr;
+    }
+    curBits = currentBits();
+    drawPreview();
+  }
+
+  /* パン & ピンチ */
+  var pointers = {}, dragLast = null, pinchStart = null;
+  cropCanvas.addEventListener('pointerdown', function(e){
+    if (!img) return;
+    cropCanvas.setPointerCapture(e.pointerId);
+    pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var ids = Object.keys(pointers);
+    if (ids.length === 1) dragLast = { x: e.clientX, y: e.clientY };
+    else if (ids.length === 2) {
+      pinchStart = { d: pointerDist(), zoom: zoom };
+      dragLast = null;
+    }
+    e.preventDefault();
+  });
+  cropCanvas.addEventListener('pointermove', function(e){
+    if (!img || !pointers[e.pointerId]) return;
+    pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var ids = Object.keys(pointers);
+    if (ids.length >= 2 && pinchStart) {
+      var d = pointerDist();
+      if (d > 0 && pinchStart.d > 0) {
+        zoom = Math.max(1, Math.min(4, pinchStart.zoom * (d / pinchStart.d)));
+        zoomRange.value = String(Math.round(zoom * 100));
+        redraw();
+      }
+    } else if (dragLast) {
+      var rect = cropCanvas.getBoundingClientRect();
+      var k = cropSide() / rect.width;
+      cx -= (e.clientX - dragLast.x) * k;
+      cy -= (e.clientY - dragLast.y) * k;
+      dragLast = { x: e.clientX, y: e.clientY };
+      redraw();
+    }
+    e.preventDefault();
+  });
+  function endPointer(e){
+    delete pointers[e.pointerId];
+    var ids = Object.keys(pointers);
+    if (ids.length < 2) pinchStart = null;
+    if (ids.length === 1) dragLast = { x: pointers[ids[0]].x, y: pointers[ids[0]].y };
+    if (ids.length === 0) dragLast = null;
+  }
+  cropCanvas.addEventListener('pointerup', endPointer);
+  cropCanvas.addEventListener('pointercancel', endPointer);
+  function pointerDist(){
+    var ids = Object.keys(pointers);
+    if (ids.length < 2) return 0;
+    var a = pointers[ids[0]], b = pointers[ids[1]];
+    return Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
+  }
+
+  zoomRange.addEventListener('input', function(){
+    zoom = Math.max(1, Math.min(4, parseInt(zoomRange.value, 10) / 100));
+    redraw();
+  });
+  thrRange.addEventListener('input', function(){
+    thrAuto = false;
+    thr = parseInt(thrRange.value, 10) || 128;
+    redraw();
+  });
+  autoThrBtn.addEventListener('click', function(){ thrAuto = true; redraw(); });
+  invertBtn.addEventListener('click', function(){
+    invert = !invert;
+    invertBtn.classList.toggle('on', invert);
+    redraw();
+  });
+  for (var si = 0; si < sizeSeg.children.length; si++) {
+    sizeSeg.children[si].addEventListener('click', function(){
+      N = parseInt(this.dataset.n, 10);
+      for (var k = 0; k < sizeSeg.children.length; k++) sizeSeg.children[k].classList.remove('on');
+      this.classList.add('on');
+      redraw();
+    });
+  }
+  backToPlayBtn.addEventListener('click', function(){ if (currentPuzzle) show('play'); });
+
+  /* 「これで作る」 */
+  makeBtn.addEventListener('click', function(){
+    if (!grayN) { makeMsg.textContent = 'まず写真を選んでください。'; return; }
+    makeMsg.style.color = 'var(--sub)';
+    makeMsg.textContent = '作っています…';
+    makeBtn.disabled = true;
+    setTimeout(function(){
+      var bits = curBits;
+      var hs = P.hints(bits, N, N);
+      var solved = P.lineSolve(hs.rowHints, hs.colHints, N, N);
+      var flips = 0;
+      if (!solved) {
+        var maxFlips = Math.round(N * N * 0.06);
+        /* 反転側の灰色距離は反転前と同じなので gray をそのまま渡す */
+        var rep = P.repair(bits, grayN, N, N, maxFlips);
+        if (rep) { bits = rep.bits; flips = rep.flips; }
+        else {
+          makeMsg.style.color = '#8a5a3c';
+          makeMsg.textContent = 'この写真は難しい。切り方かしきい値を変えてください。';
+          makeBtn.disabled = false;
+          return;
+        }
+      }
+      var filled = 0;
+      for (var i = 0; i < bits.length; i++) if (bits.charAt(i) === '1') filled++;
+      if (filled === 0 || filled === bits.length) {
+        makeMsg.style.color = '#8a5a3c';
+        makeMsg.textContent = '真っ白（真っ黒）になりました。しきい値を動かしてください。';
+        makeBtn.disabled = false;
+        return;
+      }
+      var title = (titleInput.value || '').trim() || '写真';
+      var fh = P.hints(bits, N, N);
+      var rt = P.rate(fh.rowHints, fh.colHints, N, N);
+      var id = idOf(bits, N, N);
+      sessionPhotos[id] = cropCanvas.toDataURL('image/jpeg', 0.7);
+      addMade({ bits: bits, w: N, h: N, title: title, tier: rt.tier || '上級', date: today() });
+      makeBtn.disabled = false;
+      makeMsg.textContent = '';
+      loadPuzzle({ bits: bits, w: N, h: N, title: title, tier: rt.tier || '上級' }, flips);
+    }, 30);
+  });
+
+  function today(){
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function idOf(bits, w, h){ return w + 'x' + h + '.' + P.encode(bits, w, h, '').split('.')[3]; }
+
+  function addMade(entry){
+    var id = idOf(entry.bits, entry.w, entry.h);
+    store.made = store.made.filter(function(m){ return idOf(m.bits, m.w, m.h) !== id; });
+    store.made.unshift(entry);
+    if (store.made.length > 20) {
+      var dropped = store.made.slice(20);
+      store.made = store.made.slice(0, 20);
+      for (var i = 0; i < dropped.length; i++) delete store.progress[idOf(dropped[i].bits, dropped[i].w, dropped[i].h)];
+    }
+    saveStore();
+  }
+
+  /* ================================================================
+     画面3: 遊ぶ（index.html と同じ操作・作法）
+     ================================================================ */
+  var currentPuzzle = null, currentId = '';
+  var gridState = [], history = [], isCleared = false;
+  var currentInputMode = 'fill', isZoomed = false;
+  var activeRow = -1, activeCol = -1;
+  var isDragging = false, dragAction = null, lastTargetCell = -1;
+
+  function loadPuzzle(pz, flips){
+    currentPuzzle = pz;
+    currentId = idOf(pz.bits, pz.w, pz.h);
+    var hs = P.hints(pz.bits, pz.w, pz.h);
+    currentPuzzle.rowHints = hs.rowHints;
+    currentPuzzle.colHints = hs.colHints;
+
+    history = []; isCleared = false; activeRow = -1; activeCol = -1;
+    elStageWrapper.classList.remove('cleared');
+    elClearBanner.hidden = true;
+    elCompare.hidden = true;
+    toast.textContent = (flips ? '写真を ' + flips + 'マス直して、解ける問題にしました。' : '');
+
+    setZoom(false);
+    elLevelName.textContent = pz.tier + ' (' + pz.w + '×' + pz.h + ')';
+
+    var total = pz.w * pz.h;
+    gridState = [];
+    for (var i = 0; i < total; i++) gridState.push(0);
+    var saved = store.progress[currentId];
+    if (typeof saved === 'string' && saved !== 'done') {
+      for (var j = 0; j < Math.min(total, saved.length); j++) gridState[j] = parseInt(saved.charAt(j), 10) || 0;
+    }
+
+    setupDOM();
+    renderBoard();
+    renderMadeList();
+    show('play');
+    persist();
+    judge();
+  }
+
+  function persist(){
+    if (!currentPuzzle) return;
+    if (!isCleared) store.progress[currentId] = gridState.join('');
+    else store.progress[currentId] = 'done';
+    saveStore();
+  }
+
+  function setZoom(zoomed){
+    isZoomed = zoomed;
+    elStageWrapper.classList.toggle('zoomed', isZoomed);
+    btnZoom.textContent = isZoomed ? '📱 全体' : '🔍 拡大';
+    calculateSizes();
+  }
+  btnZoom.addEventListener('click', function(){ setZoom(!isZoomed); });
+
+  function calculateSizes(){
+    if (!currentPuzzle) return;
+    var w = currentPuzzle.w;
+    var availWidth = Math.min(window.innerWidth - 32, 420);
+    var cs, fs;
+    if (isZoomed) { cs = 24; fs = 11; }
+    else if (w <= 15) { cs = Math.floor((availWidth - 85) / w); if (cs < 16) cs = 16; fs = 9.5; }
+    else { cs = Math.floor((availWidth - 95) / w); if (cs < 11) cs = 11; fs = 8; }
+    elStageWrapper.style.setProperty('--cs', cs + 'px');
+    elStageWrapper.style.setProperty('--hint-fs', fs + 'px');
+  }
+  window.addEventListener('resize', calculateSizes);
+
+  function setupDOM(){
+    var w = currentPuzzle.w, h = currentPuzzle.h;
+    calculateSizes();
+
+    elColHints.innerHTML = '';
+    elColHints.style.gridTemplateColumns = 'repeat(' + w + ', var(--cs))';
+    for (var c = 0; c < w; c++) {
+      var colDiv = document.createElement('div');
+      colDiv.className = 'colHint';
+      if ((c + 1) % 5 === 0 && c !== w - 1) colDiv.classList.add('b-r5');
+      appendHints(colDiv, currentPuzzle.colHints[c]);
+      elColHints.appendChild(colDiv);
+    }
+
+    elRowHints.innerHTML = '';
+    elRowHints.style.gridTemplateRows = 'repeat(' + h + ', var(--cs))';
+    for (var r = 0; r < h; r++) {
+      var rowDiv = document.createElement('div');
+      rowDiv.className = 'rowHint';
+      if ((r + 1) % 5 === 0 && r !== h - 1) rowDiv.classList.add('b-b5');
+      appendHints(rowDiv, currentPuzzle.rowHints[r]);
+      elRowHints.appendChild(rowDiv);
+    }
+
+    elGrid.innerHTML = '';
+    elGrid.style.gridTemplateColumns = 'repeat(' + w + ', var(--cs))';
+    elGrid.style.gridTemplateRows = 'repeat(' + h + ', var(--cs))';
+    for (var i = 0; i < h; i++) {
+      for (var j = 0; j < w; j++) {
+        var cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.idx = String(i * w + j);
+        cell.dataset.r = String(i);
+        cell.dataset.c = String(j);
+        if (j === w - 1) cell.classList.add('re');
+        if (i === h - 1) cell.classList.add('be');
+        if ((j + 1) % 5 === 0 && j !== w - 1) cell.classList.add('b-r5');
+        if ((i + 1) % 5 === 0 && i !== h - 1) cell.classList.add('b-b5');
+        elGrid.appendChild(cell);
+      }
+    }
+  }
+
+  function appendHints(box, arr){
+    if (arr.length === 1 && arr[0] === 0) {
+      var s = document.createElement('span');
+      s.className = 'hintNum'; s.textContent = '0'; s.style.opacity = '0.35';
+      box.appendChild(s);
+      return;
+    }
+    for (var i = 0; i < arr.length; i++) {
+      var n = document.createElement('span');
+      n.className = 'hintNum';
+      n.textContent = String(arr[i]);
+      n.addEventListener('click', function(e){ e.stopPropagation(); this.classList.toggle('checked'); });
+      box.appendChild(n);
+    }
+  }
+
+  function updateCrosshair(r, c){
+    if (r === activeRow && c === activeCol) return;
+    activeRow = r; activeCol = c;
+    var colNodes = elColHints.children, i, j, k;
+    for (j = 0; j < colNodes.length; j++) colNodes[j].classList.toggle('active', j === c);
+    var rowNodes = elRowHints.children;
+    for (i = 0; i < rowNodes.length; i++) rowNodes[i].classList.toggle('active', i === r);
+    var cells = elGrid.children, w = currentPuzzle.w;
+    for (k = 0; k < cells.length; k++) {
+      var cr = Math.floor(k / w), cc = k % w;
+      var isRow = (cr === r), isCol = (cc === c);
+      cells[k].classList.toggle('guide-row', isRow && !isCol);
+      cells[k].classList.toggle('guide-col', isCol && !isRow);
+      cells[k].classList.toggle('guide-cross', isRow && isCol);
+    }
+  }
+  function clearCrosshair(){
+    activeRow = -1; activeCol = -1;
+    var colNodes = elColHints.children, i, j, k;
+    for (j = 0; j < colNodes.length; j++) colNodes[j].classList.remove('active');
+    var rowNodes = elRowHints.children;
+    for (i = 0; i < rowNodes.length; i++) rowNodes[i].classList.remove('active');
+    var cells = elGrid.children;
+    for (k = 0; k < cells.length; k++) cells[k].classList.remove('guide-row', 'guide-col', 'guide-cross');
+  }
+
+  function renderBoard(){
+    var cells = elGrid.children;
+    for (var i = 0; i < cells.length; i++) {
+      cells[i].classList.toggle('fill', gridState[i] === 1);
+      cells[i].classList.toggle('x', gridState[i] === 2);
+    }
+  }
+  function pushHistory(){
+    history.push(gridState.slice());
+    if (history.length > 50) history.shift();
+  }
+
+  function isSolved(){
+    var bits = currentPuzzle.bits;
+    for (var i = 0; i < bits.length; i++) {
+      if ((bits.charAt(i) === '1') !== (gridState[i] === 1)) return false;
+    }
+    return true;
+  }
+
+  function judge(){
+    if (!currentPuzzle || !isSolved()) return;
+    isCleared = true;
+    persist();
+    clearCrosshair();
+    elStageWrapper.classList.add('cleared');
+    artTitle.innerHTML = escapeHtml(currentPuzzle.title) + ' <span>完成！</span>';
+    elClearBanner.hidden = false;
+    showCompare();
+    renderMadeList();
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(ch){
+      return ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[ch];
+    });
+  }
+
+  function showCompare(){
+    var w = currentPuzzle.w, h = currentPuzzle.h, bits = currentPuzzle.bits;
+    artCanvas.width = w; artCanvas.height = h;
+    var g = artCanvas.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#2b2b2b';
+    for (var r = 0; r < h; r++) {
+      for (var c = 0; c < w; c++) if (bits.charAt(r * w + c) === '1') g.fillRect(c, r, 1, 1);
+    }
+    var url = sessionPhotos[currentId];
+    if (url) {
+      var im = new Image();
+      im.onload = function(){
+        photoCanvas.width = 240; photoCanvas.height = 240;
+        photoCanvas.getContext('2d').drawImage(im, 0, 0, 240, 240);
+      };
+      im.src = url;
+      photoFig.hidden = false;
+    } else {
+      photoFig.hidden = true;
+    }
+    elCompare.hidden = false;
+  }
+
+  /* 入力 */
+  function getCellFromEvent(e){
+    var target = document.elementFromPoint(e.clientX, e.clientY);
+    if (!target) return null;
+    var cell = target.closest ? target.closest('.cell') : null;
+    if (!cell || !elGrid.contains(cell)) return null;
+    return cell;
+  }
+  elGrid.addEventListener('pointerdown', function(e){
+    if (isCleared || !currentPuzzle) return;
+    var cell = getCellFromEvent(e);
+    if (!cell) return;
+    var idx = parseInt(cell.dataset.idx, 10);
+    e.preventDefault();
+    isDragging = true; lastTargetCell = idx;
+    pushHistory();
+    updateCrosshair(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10));
+    var cur = gridState[idx];
+    dragAction = (currentInputMode === 'fill') ? (cur === 1 ? 0 : 1) : (cur === 2 ? 0 : 2);
+    gridState[idx] = dragAction;
+    renderBoard();
+  });
+  window.addEventListener('pointermove', function(e){
+    if (isCleared || !currentPuzzle || screenPlay.hidden) return;
+    var cell = getCellFromEvent(e);
+    if (!cell) return;
+    var idx = parseInt(cell.dataset.idx, 10);
+    updateCrosshair(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10));
+    if (!isDragging || idx === lastTargetCell) return;
+    lastTargetCell = idx;
+    gridState[idx] = dragAction;
+    renderBoard();
+  });
+  function endDrag(){
+    if (!isDragging) return;
+    isDragging = false; lastTargetCell = -1;
+    persist();
+    judge();
+  }
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+
+  btnModeFill.addEventListener('click', function(){
+    currentInputMode = 'fill';
+    btnModeFill.classList.add('active'); btnModeCross.classList.remove('active');
+  });
+  btnModeCross.addEventListener('click', function(){
+    currentInputMode = 'cross';
+    btnModeCross.classList.add('active'); btnModeFill.classList.remove('active');
+  });
+  btnUndo.addEventListener('click', function(){
+    if (isCleared || !history.length) return;
+    gridState = history.pop();
+    renderBoard();
+    persist();
+  });
+  btnReset.addEventListener('click', function(){
+    if (isCleared) return;
+    pushHistory();
+    for (var i = 0; i < gridState.length; i++) gridState[i] = 0;
+    renderBoard();
+    persist();
+  });
+  btnAgain.addEventListener('click', function(){
+    makeMsg.textContent = '';
+    if (img) { backToPlayBtn.hidden = false; show('crop'); redraw(); }
+    else show('pick');
+  });
+
+  btnShare.addEventListener('click', function(){
+    if (!currentPuzzle) return;
+    var hash = P.encode(currentPuzzle.bits, currentPuzzle.w, currentPuzzle.h, currentPuzzle.title);
+    var url = location.origin + location.pathname + hash;
+    var data = { title: 'ピクセル 写真', text: currentPuzzle.title + '（' + currentPuzzle.w + '×' + currentPuzzle.h + '）', url: url };
+    if (navigator.share) {
+      navigator.share(data).catch(function(){});
+      return;
+    }
+    copyText(url).then(function(ok){
+      toast.textContent = ok ? 'URLをコピーしました。' : 'コピーできませんでした: ' + url;
+    });
+  });
+  function copyText(t){
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(t).then(function(){ return true; }).catch(function(){ return legacy(); });
+    }
+    return Promise.resolve(legacy());
+    function legacy(){
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = t;
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch (e) { return false; }
+    }
+  }
+
+  /* 作った問題の一覧 */
+  function renderMadeList(){
+    elMadeList.innerHTML = '';
+    if (!store.made.length) { elMade.hidden = true; return; }
+    for (var i = 0; i < store.made.length; i++) {
+      (function(m){
+        var id = idOf(m.bits, m.w, m.h);
+        var row = document.createElement('button');
+        row.className = 'madeRow' + (id === currentId ? ' cur' : '');
+        var nm = document.createElement('span');
+        nm.className = 'mn'; nm.textContent = m.title;
+        var tt = document.createElement('span');
+        tt.className = 'mt'; tt.textContent = m.tier + ' ' + m.w + '×' + m.h;
+        var cc = document.createElement('span');
+        cc.className = 'mc'; cc.textContent = (store.progress[id] === 'done') ? '✓' : '';
+        row.appendChild(nm); row.appendChild(tt); row.appendChild(cc);
+        row.addEventListener('click', function(){
+          loadPuzzle({ bits: m.bits, w: m.w, h: m.h, title: m.title, tier: m.tier }, 0);
+        });
+        elMadeList.appendChild(row);
+      })(store.made[i]);
+    }
+  }
+
+  /* ---------------- 起動 ---------------- */
+  loadStore();
+  renderMadeList();
+
+  var fromHash = location.hash ? P.decode(location.hash) : null;
+  if (fromHash) {
+    var hs = P.hints(fromHash.bits, fromHash.w, fromHash.h);
+    var rt = P.rate(hs.rowHints, hs.colHints, fromHash.w, fromHash.h);
+    if (rt.ok) {
+      loadPuzzle({ bits: fromHash.bits, w: fromHash.w, h: fromHash.h, title: fromHash.title, tier: rt.tier }, 0);
+    } else {
+      show('pick');
+      pickMsg.textContent = 'この問題は開けません。';
+    }
+  } else if (location.hash && location.hash.length > 1) {
+    show('pick');
+    pickMsg.textContent = 'この問題は開けません。';
+  } else {
+    show('pick');
+  }
+})();
+</script>
+</body>
+</html>
