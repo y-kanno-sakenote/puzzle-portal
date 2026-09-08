@@ -10,8 +10,8 @@
     --ink:#2b2b2b; --sub:#77736c; --thick:#5d5952; --active:#3a3833;
     --highlight-bg:#e8e4db; --guide-bg:rgba(0,0,0,0.035); --guide-cross:rgba(0,0,0,0.07);
     --c1:#8a5a3c; --c2:#4a6b8a; --c3:#3a3833;
-    --i1:#8a5a3c; --i2:#4a6b8a; --i3:#3a3833;
-    --k1:#fff; --k2:#fff; --k3:#fff;
+    --f1:#eee3da; --f2:#e0e6ec; --f3:#e2e1de;
+    --cc:#3a3833; --ii:#3a3833;
   }
   *{box-sizing:border-box}
   [hidden]{display:none !important}
@@ -116,8 +116,7 @@
   .rowHint.active{background:var(--highlight-bg);border-radius:4px 0 0 4px}
   .hintNum{cursor:pointer;padding:0 1px;border-radius:2px;display:inline-block;white-space:nowrap}
   .hintNum.checked{opacity:.25;text-decoration:line-through}
-  .hintNum i{font-style:normal;font-size:.78em;margin-left:.5px}
-  .hintNum.h1{color:var(--i1)} .hintNum.h2{color:var(--i2)} .hintNum.h3{color:var(--i3)}
+  .hintNum{color:var(--ii)}
   .hintNum.h0{color:var(--sub);opacity:.35}
   #grid{grid-column:2;grid-row:2;position:relative;display:grid;border:1px solid var(--thick);background:var(--panel);touch-action:none}
   .cell{
@@ -131,14 +130,9 @@
   .cell.b-b5{border-bottom:2px solid var(--thick)}
   .cell.guide-col, .cell.guide-row{background-color:var(--guide-bg)}
   .cell.guide-cross{background-color:var(--guide-cross)}
+  .cell.on{background:var(--cc)}
+  .cell.d1{background:var(--f1)} .cell.d2{background:var(--f2)} .cell.d3{background:var(--f3)}
   .cell.v1{background:var(--c1)} .cell.v2{background:var(--c2)} .cell.v3{background:var(--c3)}
-  .cell.v1::before{content:"●";color:var(--k1)}
-  .cell.v2::before{content:"▲";color:var(--k2)}
-  .cell.v3::before{content:"■";color:var(--k3)}
-  .cell.v1::before, .cell.v2::before, .cell.v3::before{
-    font-size:calc(var(--cs, 26px) * 0.46);line-height:1;opacity:.8;pointer-events:none;
-  }
-  #stageWrapper.nosym .cell::before{content:none}
   .cell.x::after{content:"✕";font-size:calc(var(--cs, 26px) * 0.58);color:var(--sub);line-height:1;opacity:.7}
   #stageWrapper.cleared #colHints, #stageWrapper.cleared #rowHints{opacity:.25}
   #stageWrapper.cleared .cell.x::after{display:none}
@@ -157,17 +151,22 @@
   }
   #compare figcaption{font-size:11.5px;color:var(--sub);margin-top:3px}
 
-  /* ---- パレット ---- */
-  #palette{display:flex;gap:6px;margin-top:10px}
-  .pbtn{
-    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-    padding:8px 0 7px;font:inherit;font-size:11px;font-weight:700;
-    border:1.5px solid var(--frame);border-radius:8px;background:var(--panel);color:var(--sub);
-    cursor:pointer;-webkit-tap-highlight-color:transparent;
+  /* ---- いま塗る色 ---- */
+  #layerLine{display:flex;align-items:center;gap:7px;margin-bottom:3px}
+  #layerSw{width:15px;height:15px;border-radius:3px;background:var(--cc);border:1px solid var(--frame);flex:0 0 auto;display:block}
+  #layerText{font-size:13.5px;font-weight:700;color:var(--ink)}
+  #layerSub{font-size:12px;color:var(--sub)}
+
+  #controls{display:flex;gap:8px;margin-top:10px}
+  .modeBtn{
+    flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+    padding:11px 0;font:inherit;font-size:15px;font-weight:700;
+    border:1.5px solid var(--frame);border-radius:8px;
+    background:var(--panel);color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent;
   }
-  .pbtn .sw{width:22px;height:16px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1}
-  .pbtn .big{font-size:17px;line-height:16px;height:16px;display:block}
-  .pbtn.on{border-color:var(--active);background:var(--highlight-bg);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--active)}
+  .modeBtn.active{background:var(--active);color:#ffffff;border-color:var(--active)}
+  .modeBtn .dot{width:14px;height:14px;background:var(--cc);border-radius:3px;box-shadow:0 0 0 1.5px rgba(255,255,255,.85)}
+  .modeBtn .xmark{font-size:16px;line-height:1}
 
   #boardZoom{display:flex;align-items:center;gap:10px;margin-top:8px}
   #boardZoom .zlabel{font-size:12px;color:var(--sub);font-weight:700;white-space:nowrap}
@@ -452,15 +451,112 @@
     return out;
   }
 
+  /* ---------------- 層（色ごとに1枚ずつ解く） ----------------
+     層0 = いちばん濃い色（値3）→ 層1（値2）→ 層2 = いちばん明るい色（値1）
+     どの層も「その色か、その色でないか」の白黒ノノグラム。
+     前の層で確定した色のマスは「既知の空き」として与える。 */
+  var LAYER_COLOR = [3, 2, 1];
+
+  /* その色だけのヒント（長さの数字だけ。色は付かない） */
+  function layerHints(cells, w, h, color){
+    var rowHints = [], colHints = [], r, c, len, arr;
+    for (r = 0; r < h; r++) {
+      arr = []; len = 0;
+      for (c = 0; c < w; c++) {
+        if ((cells[r * w + c] | 0) === color) len++;
+        else { if (len) arr.push(len); len = 0; }
+      }
+      if (len) arr.push(len);
+      rowHints.push(arr);
+    }
+    for (c = 0; c < w; c++) {
+      arr = []; len = 0;
+      for (r = 0; r < h; r++) {
+        if ((cells[r * w + c] | 0) === color) len++;
+        else { if (len) arr.push(len); len = 0; }
+      }
+      if (len) arr.push(len);
+      colHints.push(arr);
+    }
+    return { rowHints: rowHints, colHints: colHints };
+  }
+
+  function toBlocks(arr){
+    var out = [], i;
+    for (i = 0; i < arr.length; i++) out.push([arr[i], 1]);
+    return out;
+  }
+
+  /* 層 layerIndex を白黒ノノグラムとして、行・列の伝播だけで解く。
+     knownMask[i] = 1 … 前の層で確定した（この層では空）
+     戻り: { ok, fill, undet, first, open, passes, hints } */
+  function layerSolve(cells, w, h, layerIndex, knownMask){
+    var color = LAYER_COLOR[layerIndex | 0];
+    var n = w * h, i, r, c;
+    var hs = layerHints(cells, w, h, color);
+    var rb = [], cb = [];
+    for (r = 0; r < h; r++) rb.push(toBlocks(hs.rowHints[r]));
+    for (c = 0; c < w; c++) cb.push(toBlocks(hs.colHints[c]));
+
+    var mask = new Int32Array(n), open = 0;
+    for (i = 0; i < n; i++) {
+      if (knownMask && knownMask[i]) mask[i] = 1;
+      else { mask[i] = 3; open++; }
+    }
+    var changed = true, passes = 0, first = -1, bad = false, line, res;
+    while (changed && passes < 200) {
+      changed = false; passes++;
+      for (r = 0; r < h; r++) {
+        line = new Array(w);
+        for (c = 0; c < w; c++) line[c] = mask[r * w + c];
+        res = lineDeduce(line, rb[r], 1);
+        if (!res) { bad = true; break; }
+        for (c = 0; c < w; c++) if (res[c] !== mask[r * w + c]) { mask[r * w + c] = res[c]; changed = true; }
+      }
+      if (!bad) for (c = 0; c < w; c++) {
+        line = new Array(h);
+        for (r = 0; r < h; r++) line[r] = mask[r * w + c];
+        res = lineDeduce(line, cb[c], 1);
+        if (!res) { bad = true; break; }
+        for (r = 0; r < h; r++) if (res[r] !== mask[r * w + c]) { mask[r * w + c] = res[r]; changed = true; }
+      }
+      if (first < 0) {
+        first = 0;
+        for (i = 0; i < n; i++) if (!(knownMask && knownMask[i]) && single(mask[i])) first++;
+      }
+      if (bad) break;
+    }
+    var fill = new Uint8Array(n), undet = new Uint8Array(n), done = !bad;
+    for (i = 0; i < n; i++) {
+      if (knownMask && knownMask[i]) continue;
+      if (single(mask[i])) { if (mask[i] === 2) fill[i] = 1; }
+      else { undet[i] = 1; done = false; }
+    }
+    return { ok: done, fill: fill, undet: undet, first: first < 0 ? 0 : first, open: open, passes: passes, hints: hs };
+  }
+
+  /* 3層を順に解く（層 i には層 0..i-1 の色を既知の空きとして渡す） */
+  function layersSolve(cells, w, h){
+    var n = w * h, known = new Uint8Array(n), layers = [], i, li, L;
+    for (li = 0; li < 3; li++) {
+      L = layerSolve(cells, w, h, li, known);
+      layers.push(L);
+      if (!L.ok) return { ok: false, layers: layers, failAt: li, undet: L.undet };
+      for (i = 0; i < n; i++) if ((cells[i] | 0) === LAYER_COLOR[li]) known[i] = 1;
+    }
+    return { ok: true, layers: layers, failAt: -1, undet: null };
+  }
+
+  /* 各層が順に解けるか（これが問題として成り立つ条件） */
+  function layersSolvable(cells, w, h){ return layersSolve(cells, w, h).ok; }
+
   /* ---------------- 修復 ----------------
-     境界（2番目に近いクラスタとの差が小さい）マスから順に付け替えて、解けるまで。
-     戻り: {cells, flips} / 無理なら null */
+     境界（2番目に近いクラスタとの差が小さい）マスから順に付け替えて、
+     「各層が順に解ける」ようになるまで。戻り: {cells, flips} / 無理なら null */
   function repair(cells, second, dist2nd, w, h, k, maxFlips){
-    k = k || 3;
     var n = w * h, i;
     var cur = cells.slice();
-    var hs = hints(cur, w, h);
-    var st = solveMasks(hs.rowHints, hs.colHints, w, h, k);
+    var st = layersSolve(cur, w, h);
     if (st.ok) return { cells: cur, flips: 0 };
 
     var order = [];
@@ -469,20 +565,19 @@
 
     var used = {}, limit = Math.min(maxFlips | 0, n);
     for (var f = 0; f < limit; f++) {
-      /* 同じ並び順の中では「まだ確定していないマス」を先に付け替える */
+      /* 同じ並び順の中では「詰まっている層でまだ確定していないマス」を先に付け替える */
       var pick = -1, fb = -1, idx;
       for (i = 0; i < order.length; i++) {
         idx = order[i];
         if (used[idx]) continue;
         if (fb < 0) fb = idx;
-        if (!single(st.mask[idx])) { pick = idx; break; }
+        if (st.undet && st.undet[idx]) { pick = idx; break; }
       }
       if (pick < 0) pick = fb;
       if (pick < 0) break;
       used[pick] = 1;
       cur[pick] = second[pick];
-      hs = hints(cur, w, h);
-      st = solveMasks(hs.rowHints, hs.colHints, w, h, k);
+      st = layersSolve(cur, w, h);
       if (st.ok) return { cells: cur, flips: f + 1 };
     }
     return null;
@@ -556,6 +651,11 @@
     lineDeduce: lineDeduce,
     lineSolve: lineSolve,
     solveMasks: solveMasks,
+    layerHints: layerHints,
+    layerSolve: layerSolve,
+    layersSolve: layersSolve,
+    layersSolvable: layersSolvable,
+    LAYER_COLOR: LAYER_COLOR,
     repair: repair,
     isComplete: isComplete,
     encode: encode,
@@ -637,8 +737,9 @@
   <!-- 画面3 遊ぶ -->
   <section id="screenPlay" hidden>
     <div class="note">
-      <div>数字の色と数だけ、その色で続けて塗る</div>
-      <div>同じ色が続くときは1マス以上あける（ちがう色はとなり合ってよい）</div>
+      <div id="layerLine"><i id="layerSw"></i><span id="layerText"></span><span id="layerSub"></span></div>
+      <div>数字の数だけ、この色を続けて塗る（数字と数字の間は1マス以上あける）</div>
+      <div id="layerHelp" hidden>うすい色は前の色で決まったマス。この色では塗れません</div>
     </div>
 
     <div id="stageWrapper">
@@ -659,12 +760,9 @@
       <figure id="photoFig"><canvas id="photoCanvas"></canvas><figcaption>元の写真</figcaption></figure>
     </div>
 
-    <div id="palette">
-      <button class="pbtn on" data-v="1"><span class="sw" id="sw1">●</span>色1</button>
-      <button class="pbtn" data-v="2"><span class="sw" id="sw2">▲</span>色2</button>
-      <button class="pbtn" data-v="3"><span class="sw" id="sw3">■</span>色3</button>
-      <button class="pbtn" data-v="0"><span class="big">⌫</span>消す</button>
-      <button class="pbtn" data-v="4"><span class="big">✕</span>印</button>
+    <div id="controls">
+      <button id="modeFill" class="modeBtn active"><span class="dot"></span>塗る</button>
+      <button id="modeCross" class="modeBtn"><span class="xmark">✕</span>印</button>
     </div>
 
     <div id="boardZoom" hidden>
@@ -691,7 +789,9 @@
 (function(){
   'use strict';
   var P = window.PixelColor;
-  var SYM = ['', '●', '▲', '■'];
+  /* 層0 = いちばん濃い色（値3）→ 層1（値2）→ 層2 = いちばん明るい色（値1） */
+  var LAYER_COLOR = [3, 2, 1];
+  var LAYER_LABEL = ['1まいめ', '2まいめ', '3まいめ'];
 
   var $ = function(id){ return document.getElementById(id); };
   var screenPick = $('screenPick'), screenCrop = $('screenCrop'), screenPlay = $('screenPlay');
@@ -704,7 +804,8 @@
   var elStageWrapper = $('stageWrapper'), elGrid = $('grid'), elColHints = $('colHints'), elRowHints = $('rowHints');
   var elClearBanner = $('clearBanner'), artTitle = $('artTitle'), elCompare = $('compare');
   var artCanvas = $('artCanvas'), photoCanvas = $('photoCanvas'), photoFig = $('photoFig');
-  var elPalette = $('palette');
+  var btnModeFill = $('modeFill'), btnModeCross = $('modeCross');
+  var elLayerText = $('layerText'), elLayerSub = $('layerSub'), elLayerHelp = $('layerHelp');
   var btnUndo = $('undoBtn'), btnReset = $('resetBtn'), btnShare = $('shareBtn'), btnAgain = $('againBtn');
   var toast = $('toast'), elMade = $('made'), elMadeList = $('madeList');
 
@@ -933,8 +1034,7 @@
     makeBtn.disabled = true;
     setTimeout(function(){
       var cells = quant.cells.slice(), palette = quant.palette.slice(), flips = 0;
-      var hs = P.hints(cells, N, N);
-      if (!P.lineSolve(hs.rowHints, hs.colHints, N, N, 3)) {
+      if (!P.layersSolvable(cells, N, N)) {
         var rep = P.repair(cells, quant.second, quant.dist2nd, N, N, 3, Math.round(N * N * 0.06));
         if (!rep) {
           makeMsg.style.color = '#8a5a3c';
@@ -985,7 +1085,8 @@
      画面3: 遊ぶ
      ================================================================ */
   var currentPuzzle = null, currentId = '';
-  var gridState = [], history = [], isCleared = false;
+  var layerIdx = 0, locked = [], layerState = [], history = [];
+  var isCleared = false, advancing = false;
   var selValue = 1, isZoomed = false, bigCell = 18;
   var activeRow = -1, activeCol = -1;
   var isDragging = false, dragAction = null, lastTargetCell = -1;
@@ -996,32 +1097,32 @@
     if (l > 150) f = 150 / l;             /* 白地で読める濃さまで落とす */
     return 'rgb(' + Math.round(c[0]*f) + ',' + Math.round(c[1]*f) + ',' + Math.round(c[2]*f) + ')';
   }
-  function markOf(hex){
-    var c = P.hexToRgb(hex) || [0,0,0];
-    return P.lumOf(c) > 150 ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.85)';
+  /* 済んだ層のマスは、色みを残したまま同じ薄さまで白に寄せる */
+  function fadeOf(hex){
+    var c = P.hexToRgb(hex) || [60,60,60], l = P.lumOf(c);
+    var a = (l >= 224) ? 0 : (224 - l) / (255 - l), i, o = [];
+    for (i = 0; i < 3; i++) o.push(Math.round(c[i] + (255 - c[i]) * a));
+    return 'rgb(' + o[0] + ',' + o[1] + ',' + o[2] + ')';
   }
   function applyPalette(pal){
-    var st = elStageWrapper.style, i;
+    var st = document.documentElement.style, i;
     for (i = 0; i < 3; i++) {
       st.setProperty('--c' + (i + 1), pal[i]);
-      st.setProperty('--i' + (i + 1), inkOf(pal[i]));
-      st.setProperty('--k' + (i + 1), markOf(pal[i]));
+      st.setProperty('--f' + (i + 1), fadeOf(pal[i]));
     }
-    for (i = 0; i < 3; i++) {
-      var sw = $('sw' + (i + 1));
-      sw.style.background = pal[i];
-      sw.style.color = markOf(pal[i]);
-    }
+  }
+  function applyLayerColor(){
+    var hex = currentPuzzle.palette[LAYER_COLOR[layerIdx] - 1];
+    var st = document.documentElement.style;
+    st.setProperty('--cc', hex);
+    st.setProperty('--ii', inkOf(hex));
   }
 
   function loadPuzzle(pz, flips){
     currentPuzzle = pz;
     currentId = idOf(pz.cells, pz.w, pz.h);
-    var hs = P.hints(pz.cells, pz.w, pz.h);
-    currentPuzzle.rowHints = hs.rowHints;
-    currentPuzzle.colHints = hs.colHints;
 
-    history = []; isCleared = false; activeRow = -1; activeCol = -1;
+    isCleared = false; advancing = false; activeRow = -1; activeCol = -1;
     elStageWrapper.classList.remove('cleared');
     elClearBanner.hidden = true;
     elCompare.hidden = true;
@@ -1031,32 +1132,60 @@
     setZoom(false);
     elLevelName.textContent = pz.w + '×' + pz.h;
     boardZoomRange.value = String(bigCell);
-    setSel(1);
 
-    var total = pz.w * pz.h, i;
-    gridState = [];
-    for (i = 0; i < total; i++) gridState.push(0);
+    /* 続き（層番号｜その層の塗り） */
+    var total = pz.w * pz.h, li = 0, restore = null, i;
     var saved = store.progress[currentId];
-    if (typeof saved === 'string' && saved !== 'done' && saved.length === total) {
-      for (i = 0; i < total; i++) {
-        var v = saved.charCodeAt(i) - 48;
-        gridState[i] = (v >= 0 && v <= 4) ? v : 0;
+    if (typeof saved === 'string' && saved !== 'done') {
+      var m = /^([0-2])\|([0-4]*)$/.exec(saved);
+      if (m && m[2].length === total) {
+        li = parseInt(m[1], 10);
+        restore = [];
+        for (i = 0; i < total; i++) restore.push(m[2].charCodeAt(i) - 48);
       }
     }
 
-    setupDOM();
-    renderBoard();
+    startLayer(li, restore);
     renderMadeList();
     show('play');
     try { elStageWrapper.scrollTop = 0; elStageWrapper.scrollLeft = 0; } catch (e) {}
-    pinHintBands();
     persist();
     judge();
   }
 
+  /* 層をひらく。前の層で確定した色は locked に入れて、薄く表示・塗れなくする */
+  function startLayer(idx, restore){
+    var pz = currentPuzzle, n = pz.w * pz.h, i, li;
+    layerIdx = Math.max(0, Math.min(2, idx | 0));
+    history = [];
+    locked = new Array(n);
+    for (i = 0; i < n; i++) locked[i] = 0;
+    for (li = 0; li < layerIdx; li++) {
+      for (i = 0; i < n; i++) if ((pz.cells[i] | 0) === LAYER_COLOR[li]) locked[i] = LAYER_COLOR[li];
+    }
+    layerState = new Array(n);
+    for (i = 0; i < n; i++) {
+      var v = (restore && !locked[i]) ? restore[i] : 0;
+      layerState[i] = (v === 1 || v === 4) ? v : 0;
+    }
+
+    var hs = P.layerHints(pz.cells, pz.w, pz.h, LAYER_COLOR[layerIdx]);
+    pz.rowHints = hs.rowHints;
+    pz.colHints = hs.colHints;
+
+    applyLayerColor();
+    elLayerText.textContent = LAYER_LABEL[layerIdx] + ' ／ 3まい';
+    elLayerSub.textContent = layerIdx === 0 ? 'いちばん濃い色から' : (layerIdx === 2 ? 'さいごの色' : '');
+    elLayerHelp.hidden = (layerIdx === 0);
+    setSel(1);
+    setupDOM();
+    renderBoard();
+    pinHintBands();
+  }
+
   function persist(){
     if (!currentPuzzle) return;
-    store.progress[currentId] = isCleared ? 'done' : gridState.join('');
+    store.progress[currentId] = isCleared ? 'done' : (layerIdx + '|' + layerState.join(''));
     saveStore();
   }
 
@@ -1077,10 +1206,9 @@
     var cs, fs;
     if (big) { cs = bigCell; fs = (cs >= 18) ? 11 : 10; }
     else if (isZoomed) { cs = 24; fs = 11; }
-    else { cs = Math.floor((availWidth - 95) / w); if (cs < 11) cs = 11; fs = 8.5; }
+    else { cs = Math.floor((availWidth - 84) / w); if (cs < 11) cs = 11; fs = 9; }
     elStageWrapper.style.setProperty('--cs', cs + 'px');
     elStageWrapper.style.setProperty('--hint-fs', fs + 'px');
-    elStageWrapper.classList.toggle('nosym', cs < 18);
   }
 
   function pinHintBands(){
@@ -1119,11 +1247,8 @@
     }
     for (var i = 0; i < arr.length; i++) {
       var n = document.createElement('span');
-      n.className = 'hintNum h' + arr[i][1];
-      n.appendChild(document.createTextNode(String(arr[i][0])));
-      var sym = document.createElement('i');
-      sym.textContent = SYM[arr[i][1]];
-      n.appendChild(sym);
+      n.className = 'hintNum';
+      n.textContent = String(arr[i]);
       n.addEventListener('click', function(e){ e.stopPropagation(); this.classList.toggle('checked'); });
       box.appendChild(n);
     }
@@ -1196,29 +1321,56 @@
     for (k = 0; k < cells.length; k++) cells[k].classList.remove('guide-row', 'guide-col', 'guide-cross');
   }
 
+  var CELL_CLASSES = ['on','d1','d2','d3','v1','v2','v3','x'];
   function renderBoard(){
-    var cells = elGrid.children, i, v;
+    var cells = elGrid.children, i, j, cl, v;
     for (i = 0; i < cells.length; i++) {
-      v = gridState[i];
-      cells[i].classList.toggle('v1', v === 1);
-      cells[i].classList.toggle('v2', v === 2);
-      cells[i].classList.toggle('v3', v === 3);
-      cells[i].classList.toggle('x', v === 4);
+      cl = cells[i].classList;
+      for (j = 0; j < CELL_CLASSES.length; j++) cl.remove(CELL_CLASSES[j]);
+      if (isCleared) { v = currentPuzzle.cells[i] | 0; if (v) cl.add('v' + v); continue; }
+      if (locked[i]) { cl.add('d' + locked[i]); continue; }
+      if (layerState[i] === 1) cl.add('on');
+      else if (layerState[i] === 4) cl.add('x');
     }
   }
   function pushHistory(){
-    history.push(gridState.slice());
+    history.push(layerState.slice());
     if (history.length > 50) history.shift();
   }
 
+  /* いまの層が正解と一致したか（✕メモは空あつかい） */
+  function layerComplete(){
+    var cells = currentPuzzle.cells, want = LAYER_COLOR[layerIdx], i;
+    for (i = 0; i < cells.length; i++) {
+      if (locked[i]) continue;
+      if (((layerState[i] === 1) ? 1 : 0) !== (((cells[i] | 0) === want) ? 1 : 0)) return false;
+    }
+    return true;
+  }
+
   function judge(){
-    if (!currentPuzzle || !P.isComplete(currentPuzzle.cells, gridState)) return;
+    if (!currentPuzzle || isCleared || advancing || !layerComplete()) return;
+    if (layerIdx < 2) {
+      var next = layerIdx + 1;
+      advancing = true;
+      toast.textContent = (layerIdx + 1) + '/3 できた';
+      setTimeout(function(){
+        advancing = false;
+        startLayer(next, null);
+        toast.textContent = LAYER_LABEL[next] + 'へ';
+        persist();
+        judge();                      /* その色が1マスも無い層はすぐ次へ */
+      }, 800);
+      return;
+    }
     isCleared = true;
     persist();
     clearCrosshair();
+    renderBoard();
     elStageWrapper.classList.add('cleared');
     artTitle.innerHTML = escapeHtml(currentPuzzle.title) + ' <span>完成！</span>';
     elClearBanner.hidden = false;
+    toast.textContent = '';
     showCompare();
     renderMadeList();
   }
@@ -1246,17 +1398,14 @@
     elCompare.hidden = false;
   }
 
-  /* ---- パレット ---- */
+  /* ---- 塗る / ✕ ---- */
   function setSel(v){
     selValue = v;
-    for (var i = 0; i < elPalette.children.length; i++) {
-      var b = elPalette.children[i];
-      b.classList.toggle('on', parseInt(b.dataset.v, 10) === v);
-    }
+    btnModeFill.classList.toggle('active', v !== 4);
+    btnModeCross.classList.toggle('active', v === 4);
   }
-  for (var pi = 0; pi < elPalette.children.length; pi++) {
-    elPalette.children[pi].addEventListener('click', function(){ setSel(parseInt(this.dataset.v, 10)); });
-  }
+  btnModeFill.addEventListener('click', function(){ setSel(1); });
+  btnModeCross.addEventListener('click', function(){ setSel(4); });
 
   /* ---- 入力 ---- */
   function getCellFromEvent(e){
@@ -1267,28 +1416,28 @@
     return cell;
   }
   elGrid.addEventListener('pointerdown', function(e){
-    if (isCleared || !currentPuzzle) return;
+    if (isCleared || advancing || !currentPuzzle) return;
     var cell = getCellFromEvent(e);
     if (!cell) return;
     var idx = parseInt(cell.dataset.idx, 10);
     e.preventDefault();
+    updateCrosshair(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10));
+    if (locked[idx]) return;          /* 前の層で決まったマスは触れない */
     isDragging = true; lastTargetCell = idx;
     pushHistory();
-    updateCrosshair(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10));
-    var cur = gridState[idx];
-    dragAction = (selValue === 0) ? 0 : (cur === selValue ? 0 : selValue);
-    gridState[idx] = dragAction;
+    dragAction = (layerState[idx] === selValue) ? 0 : selValue;
+    layerState[idx] = dragAction;
     renderBoard();
   });
   window.addEventListener('pointermove', function(e){
-    if (isCleared || !currentPuzzle || screenPlay.hidden) return;
+    if (isCleared || advancing || !currentPuzzle || screenPlay.hidden) return;
     var cell = getCellFromEvent(e);
     if (!cell) return;
     var idx = parseInt(cell.dataset.idx, 10);
     updateCrosshair(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10));
-    if (!isDragging || idx === lastTargetCell) return;
+    if (!isDragging || idx === lastTargetCell || locked[idx]) return;
     lastTargetCell = idx;
-    gridState[idx] = dragAction;
+    layerState[idx] = dragAction;
     renderBoard();
   });
   function endDrag(){
@@ -1301,16 +1450,15 @@
   window.addEventListener('pointercancel', endDrag);
 
   btnUndo.addEventListener('click', function(){
-    if (isCleared || !history.length) return;
-    gridState = history.pop();
+    if (isCleared || advancing || !history.length) return;
+    layerState = history.pop();
     renderBoard();
     persist();
   });
   btnReset.addEventListener('click', function(){
-    if (isCleared) return;
-    pushHistory();
-    for (var i = 0; i < gridState.length; i++) gridState[i] = 0;
-    renderBoard();
+    if (isCleared || advancing || !currentPuzzle) return;
+    startLayer(0, null);            /* 3枚とも最初から */
+    toast.textContent = '';
     persist();
   });
   btnAgain.addEventListener('click', function(){
@@ -1387,8 +1535,7 @@
 
   var fromHash = location.hash ? P.decode(location.hash) : null;
   if (fromHash) {
-    var hs2 = P.hints(fromHash.cells, fromHash.w, fromHash.h);
-    if (P.lineSolve(hs2.rowHints, hs2.colHints, fromHash.w, fromHash.h, 3)) {
+    if (P.layersSolvable(fromHash.cells, fromHash.w, fromHash.h)) {
       loadPuzzle(fromHash, 0);
     } else {
       show('pick');
