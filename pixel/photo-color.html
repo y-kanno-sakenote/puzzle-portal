@@ -101,15 +101,15 @@
   #colHints{grid-column:2;grid-row:1;display:grid;align-items:end;background:var(--panel);position:sticky;top:0;z-index:5}
   .colHint{
     display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
-    font-size:var(--hint-fs, 11px);font-weight:700;padding-bottom:3px;line-height:1.15;
+    font-size:var(--hint-fs, 9px);font-weight:700;padding-bottom:2px;line-height:1.1;
     border-right:1px solid transparent;transition:background-color .15s;
   }
   .colHint.b-r5{border-right:2px solid var(--thick)}
   .colHint.active{background:var(--highlight-bg);border-radius:4px 4px 0 0}
   #rowHints{grid-column:1;grid-row:2;display:grid;justify-items:end;background:var(--panel);position:sticky;left:0;z-index:5}
   .rowHint{
-    display:flex;align-items:center;justify-content:flex-end;gap:3px;
-    font-size:var(--hint-fs, 11px);font-weight:700;padding-right:5px;white-space:nowrap;
+    display:flex;align-items:center;justify-content:flex-end;gap:2px;
+    font-size:var(--hint-fs, 9px);font-weight:700;padding-right:4px;white-space:nowrap;
     border-bottom:1px solid transparent;transition:background-color .15s;
   }
   .rowHint.b-b5{border-bottom:2px solid var(--thick)}
@@ -150,6 +150,15 @@
     border:1.5px solid var(--frame);border-radius:6px;background:#fff;image-rendering:pixelated;
   }
   #compare figcaption{font-size:11.5px;color:var(--sub);margin-top:3px}
+
+  /* ---- いま触っている行・列（タップ／なぞり中に大きく出す） ---- */
+  #activeBand{
+    display:flex;align-items:baseline;gap:16px;margin:8px 0;
+    padding:6px 10px;border:1.5px solid var(--frame);border-radius:8px;background:var(--panel);
+  }
+  #activeBand .abGroup{display:flex;align-items:baseline;gap:6px;min-width:0;overflow:hidden}
+  #activeBand .abLabel{font-size:11px;font-weight:700;color:var(--sub);flex:0 0 auto}
+  #activeBand .abNums{font-size:16px;font-weight:700;color:var(--ii);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
   /* ---- いま塗る色 ---- */
   #layerLine{display:flex;align-items:center;gap:7px;margin-bottom:3px}
@@ -742,6 +751,11 @@
       <div id="layerHelp" hidden>うすい色は前の色で決まったマス。この色では塗れません</div>
     </div>
 
+    <div id="activeBand" hidden>
+      <span class="abGroup"><span class="abLabel">行</span><span class="abNums" id="abRow"></span></span>
+      <span class="abGroup"><span class="abLabel">列</span><span class="abNums" id="abCol"></span></span>
+    </div>
+
     <div id="stageWrapper">
       <div id="boardWrapper">
         <div id="corner"></div>
@@ -806,6 +820,7 @@
   var artCanvas = $('artCanvas'), photoCanvas = $('photoCanvas'), photoFig = $('photoFig');
   var btnModeFill = $('modeFill'), btnModeCross = $('modeCross');
   var elLayerText = $('layerText'), elLayerSub = $('layerSub'), elLayerHelp = $('layerHelp');
+  var elActiveBand = $('activeBand'), elAbRow = $('abRow'), elAbCol = $('abCol');
   var btnUndo = $('undoBtn'), btnReset = $('resetBtn'), btnShare = $('shareBtn'), btnAgain = $('againBtn');
   var toast = $('toast'), elMade = $('made'), elMadeList = $('madeList');
 
@@ -1181,6 +1196,7 @@
     setupDOM();
     renderBoard();
     pinHintBands();
+    renderActiveBand();
   }
 
   function persist(){
@@ -1204,25 +1220,25 @@
     elStageWrapper.classList.toggle('big', big);
     var availWidth = Math.min(window.innerWidth - 32, 420);
     var cs, fs;
-    if (big) { cs = bigCell; fs = (cs >= 18) ? 11 : 10; }
-    else if (isZoomed) { cs = 24; fs = 11; }
+    if (big) { cs = bigCell; fs = 9; }
+    else if (isZoomed) { cs = 24; fs = 10; }
     else { cs = Math.floor((availWidth - 84) / w); if (cs < 11) cs = 11; fs = 9; }
     elStageWrapper.style.setProperty('--cs', cs + 'px');
     elStageWrapper.style.setProperty('--hint-fs', fs + 'px');
   }
 
+  /* 帯（行・列の数字のかたまり）は常に小さくたたむ。盤の大きさによらず同じ見せ方 */
   function pinHintBands(){
     try {
       elRowHints.classList.remove('clip'); elRowHints.style.width = '';
       elColHints.classList.remove('clip'); elColHints.style.height = '';
-      if (!isBig()) return;
-      var rowCap = Math.min(Math.round(window.innerWidth * 0.44), 150);
+      var rowCap = Math.min(Math.round(window.innerWidth * 0.28), 110);
       if (elRowHints.offsetWidth > rowCap) {
         elRowHints.style.width = rowCap + 'px';
         elRowHints.classList.add('clip');
         elRowHints.scrollLeft = elRowHints.scrollWidth;
       }
-      var colCap = 104;
+      var colCap = 64;
       if (elColHints.offsetHeight > colCap) {
         elColHints.style.height = colCap + 'px';
         elColHints.classList.add('clip');
@@ -1297,6 +1313,15 @@
     }
   }
 
+  /* 触っている行・列の数字を大きく出す帯。指を離しても最後の行・列を出し続ける */
+  function hintsText(arr){ return (arr && arr.length) ? arr.join(' ') : '0'; }
+  function renderActiveBand(){
+    if (activeRow < 0 || activeCol < 0 || !currentPuzzle) { elActiveBand.hidden = true; return; }
+    elAbRow.textContent = hintsText(currentPuzzle.rowHints[activeRow]);
+    elAbCol.textContent = hintsText(currentPuzzle.colHints[activeCol]);
+    elActiveBand.hidden = false;
+  }
+
   function updateCrosshair(r, c){
     if (r === activeRow && c === activeCol) return;
     activeRow = r; activeCol = c;
@@ -1311,6 +1336,7 @@
       cells[k].classList.toggle('guide-col', isCol && !isRow);
       cells[k].classList.toggle('guide-cross', isRow && isCol);
     }
+    renderActiveBand();
   }
   function clearCrosshair(){
     activeRow = -1; activeCol = -1;
@@ -1319,6 +1345,7 @@
     for (i = 0; i < rowNodes.length; i++) rowNodes[i].classList.remove('active');
     var cells = elGrid.children;
     for (k = 0; k < cells.length; k++) cells[k].classList.remove('guide-row', 'guide-col', 'guide-cross');
+    renderActiveBand();
   }
 
   var CELL_CLASSES = ['on','d1','d2','d3','v1','v2','v3','x'];
