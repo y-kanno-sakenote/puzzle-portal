@@ -1,0 +1,1406 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>ピクセル 写真4色</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --thick:#5d5952; --active:#3a3833;
+    --highlight-bg:#e8e4db; --guide-bg:rgba(0,0,0,0.035); --guide-cross:rgba(0,0,0,0.07);
+    --c1:#8a5a3c; --c2:#4a6b8a; --c3:#3a3833;
+    --i1:#8a5a3c; --i2:#4a6b8a; --i3:#3a3833;
+    --k1:#fff; --k2:#fff; --k3:#fff;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none !important}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:15px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  #app{max-width:440px;margin:0 auto;padding:10px 8px 40px}
+  header{display:flex;align-items:baseline;justify-content:space-between;padding:2px 4px 6px}
+  #titleWrap{display:flex;align-items:baseline;gap:8px}
+  #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+  #levelName{font-size:13.5px;color:var(--sub);font-weight:600}
+  #headerActions{display:flex;align-items:center;gap:10px}
+  #zoomBtn{
+    font-size:12px;font-weight:700;padding:3px 8px;border-radius:6px;
+    border:1px solid var(--frame);background:var(--panel);color:var(--ink);
+    cursor:pointer;-webkit-tap-highlight-color:transparent;
+  }
+  #zoomBtn:active{background:#eeece7}
+  #portalLink{font-size:13px;color:var(--sub);text-decoration:none}
+  #portalLink:hover{text-decoration:underline}
+  .note{padding:0 4px 8px;font-size:12px;line-height:1.5;color:var(--sub)}
+
+  /* ---- 画面1 選ぶ ---- */
+  #pickBox{background:var(--panel);border:2px solid var(--thick);border-radius:8px;padding:22px 16px;text-align:center}
+  #pickBox p{margin:0 0 14px;font-size:13.5px;color:var(--sub);line-height:1.6}
+  .bigBtn{
+    display:inline-block;font:inherit;font-weight:700;font-size:16px;
+    padding:13px 26px;border-radius:8px;border:none;background:#44413c;color:#fff;
+    cursor:pointer;-webkit-tap-highlight-color:transparent;
+  }
+  .bigBtn:active{background:#2a2825}
+  #fileInput{display:none}
+
+  /* ---- 画面2 切る ---- */
+  #cropRow{display:flex;gap:8px;align-items:flex-start}
+  .sq{flex:1 1 0;min-width:0}
+  .sqLabel{font-size:11.5px;color:var(--sub);font-weight:700;margin:0 0 3px 2px}
+  #cropCanvas{
+    width:100%;aspect-ratio:1/1;display:block;background:#e6e4df;
+    border:2px solid var(--thick);border-radius:6px;touch-action:none;cursor:grab;
+  }
+  #previewCanvas{
+    width:100%;aspect-ratio:1/1;display:block;background:#fff;
+    border:2px solid var(--thick);border-radius:6px;
+    image-rendering:pixelated;image-rendering:crisp-edges;
+  }
+  #swatches{display:flex;gap:5px;margin-top:5px}
+  #swatches div{flex:1;height:16px;border-radius:4px;border:1px solid var(--frame)}
+  .ctrl{margin-top:12px}
+  .ctrlLabel{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:5px}
+  .seg{display:flex;gap:6px}
+  .seg button{
+    flex:1;font:inherit;font-weight:700;padding:9px 0;
+    border:1.5px solid var(--frame);border-radius:8px;
+    background:var(--panel);color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent;
+  }
+  .seg button.on{background:var(--active);color:#fff;border-color:var(--active)}
+  input[type=range]{width:100%;margin:0}
+  #titleInput{
+    width:100%;font:inherit;padding:9px 10px;
+    border:1.5px solid var(--frame);border-radius:8px;background:var(--panel);color:var(--ink);
+  }
+  #cropButtons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+  #makeBtn{grid-column:span 2;background:#44413c;color:#fff;border-color:#44413c;font-weight:700;padding:13px 0}
+  #makeBtn:active{background:#2a2825}
+  #makeMsg{margin-top:10px;font-size:13px;line-height:1.6;color:#8a5a3c;min-height:1.2em}
+
+  /* ---- 盤面 ---- */
+  #stageWrapper{
+    position:relative;width:100%;background:var(--panel);
+    border:2px solid var(--thick);border-radius:8px;overflow:hidden;
+    user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;
+    box-shadow:0 1px 4px rgba(0,0,0,0.04);
+  }
+  #stageWrapper.zoomed{overflow:auto;-webkit-overflow-scrolling:touch;max-height:68vh;touch-action:pan-x pan-y}
+  #stageWrapper.big{overflow:auto;-webkit-overflow-scrolling:touch;max-height:70vh;touch-action:pan-x pan-y}
+  #rowHints.clip{overflow-x:auto;overscroll-behavior:contain}
+  #colHints.clip{overflow-y:auto;overscroll-behavior:contain}
+  #boardWrapper{
+    display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto 1fr;
+    padding:6px;width:fit-content;min-width:100%;margin:0 auto;
+  }
+  #corner{grid-column:1;grid-row:1;background:var(--panel);position:sticky;top:0;left:0;z-index:10}
+  #colHints{grid-column:2;grid-row:1;display:grid;align-items:end;background:var(--panel);position:sticky;top:0;z-index:5}
+  .colHint{
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+    font-size:var(--hint-fs, 11px);font-weight:700;padding-bottom:3px;line-height:1.15;
+    border-right:1px solid transparent;transition:background-color .15s;
+  }
+  .colHint.b-r5{border-right:2px solid var(--thick)}
+  .colHint.active{background:var(--highlight-bg);border-radius:4px 4px 0 0}
+  #rowHints{grid-column:1;grid-row:2;display:grid;justify-items:end;background:var(--panel);position:sticky;left:0;z-index:5}
+  .rowHint{
+    display:flex;align-items:center;justify-content:flex-end;gap:3px;
+    font-size:var(--hint-fs, 11px);font-weight:700;padding-right:5px;white-space:nowrap;
+    border-bottom:1px solid transparent;transition:background-color .15s;
+  }
+  .rowHint.b-b5{border-bottom:2px solid var(--thick)}
+  .rowHint.active{background:var(--highlight-bg);border-radius:4px 0 0 4px}
+  .hintNum{cursor:pointer;padding:0 1px;border-radius:2px;display:inline-block;white-space:nowrap}
+  .hintNum.checked{opacity:.25;text-decoration:line-through}
+  .hintNum i{font-style:normal;font-size:.78em;margin-left:.5px}
+  .hintNum.h1{color:var(--i1)} .hintNum.h2{color:var(--i2)} .hintNum.h3{color:var(--i3)}
+  .hintNum.h0{color:var(--sub);opacity:.35}
+  #grid{grid-column:2;grid-row:2;position:relative;display:grid;border:1px solid var(--thick);background:var(--panel);touch-action:none}
+  .cell{
+    position:relative;border-right:1px solid var(--line);border-bottom:1px solid var(--line);
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+    width:var(--cs, 26px);height:var(--cs, 26px);
+  }
+  .cell.re{border-right:0}
+  .cell.be{border-bottom:0}
+  .cell.b-r5{border-right:2px solid var(--thick)}
+  .cell.b-b5{border-bottom:2px solid var(--thick)}
+  .cell.guide-col, .cell.guide-row{background-color:var(--guide-bg)}
+  .cell.guide-cross{background-color:var(--guide-cross)}
+  .cell.v1{background:var(--c1)} .cell.v2{background:var(--c2)} .cell.v3{background:var(--c3)}
+  .cell.v1::before{content:"●";color:var(--k1)}
+  .cell.v2::before{content:"▲";color:var(--k2)}
+  .cell.v3::before{content:"■";color:var(--k3)}
+  .cell.v1::before, .cell.v2::before, .cell.v3::before{
+    font-size:calc(var(--cs, 26px) * 0.46);line-height:1;opacity:.8;pointer-events:none;
+  }
+  #stageWrapper.nosym .cell::before{content:none}
+  .cell.x::after{content:"✕";font-size:calc(var(--cs, 26px) * 0.58);color:var(--sub);line-height:1;opacity:.7}
+  #stageWrapper.cleared #colHints, #stageWrapper.cleared #rowHints{opacity:.25}
+  #stageWrapper.cleared .cell.x::after{display:none}
+  #stageWrapper.cleared #grid{border-color:var(--ink)}
+  #stageWrapper.cleared .cell{border-color:transparent}
+  #stageWrapper.cleared .cell.guide-col, #stageWrapper.cleared .cell.guide-row, #stageWrapper.cleared .cell.guide-cross{background-color:transparent}
+
+  #clearBanner{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;margin-top:10px;background:#ebe7df;border-radius:8px}
+  #artTitle{font-size:16px;font-weight:700;color:var(--ink)}
+  #artTitle span{font-size:13px;font-weight:400;color:var(--sub);margin-left:6px}
+  #compare{display:flex;gap:8px;margin-top:10px}
+  #compare figure{flex:1 1 0;min-width:0;margin:0;text-align:center}
+  #compare canvas{
+    width:100%;aspect-ratio:1/1;display:block;object-fit:cover;
+    border:1.5px solid var(--frame);border-radius:6px;background:#fff;image-rendering:pixelated;
+  }
+  #compare figcaption{font-size:11.5px;color:var(--sub);margin-top:3px}
+
+  /* ---- パレット ---- */
+  #palette{display:flex;gap:6px;margin-top:10px}
+  .pbtn{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    padding:8px 0 7px;font:inherit;font-size:11px;font-weight:700;
+    border:1.5px solid var(--frame);border-radius:8px;background:var(--panel);color:var(--sub);
+    cursor:pointer;-webkit-tap-highlight-color:transparent;
+  }
+  .pbtn .sw{width:22px;height:16px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1}
+  .pbtn .big{font-size:17px;line-height:16px;height:16px;display:block}
+  .pbtn.on{border-color:var(--active);background:var(--highlight-bg);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--active)}
+
+  #boardZoom{display:flex;align-items:center;gap:10px;margin-top:8px}
+  #boardZoom .zlabel{font-size:12px;color:var(--sub);font-weight:700;white-space:nowrap}
+  #boardZoom input[type=range]{flex:1}
+  #buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  button.actionBtn{
+    font:inherit;padding:10px 0;border:1px solid var(--frame);border-radius:8px;
+    background:var(--panel);color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent;font-weight:500;
+  }
+  button.actionBtn:active{background:#eeece7}
+  #againBtn{background:#44413c;color:#fff;border-color:#44413c;font-weight:700}
+  #againBtn:active{background:#2a2825}
+  #toast{margin-top:8px;font-size:12.5px;color:var(--sub);min-height:1.2em}
+
+  #made{margin-top:24px;border-top:1px solid var(--line);padding-top:14px}
+  #madeTitle{font-size:12px;font-weight:700;color:var(--sub);margin-bottom:8px;letter-spacing:.04em}
+  .madeRow{
+    display:flex;align-items:center;gap:8px;width:100%;font:inherit;text-align:left;
+    padding:9px 10px;margin-bottom:6px;border:1px solid var(--frame);border-radius:8px;
+    background:var(--panel);color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent;
+  }
+  .madeRow.cur{border-color:var(--ink);background:#eeece7}
+  .madeRow .mn{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .madeRow .mt{font-size:12px;color:var(--sub)}
+  .madeRow .mc{font-size:12px;color:#5b784a;font-weight:700;width:1.2em;text-align:right}
+  .madeRow .mp{display:flex;gap:2px}
+  .madeRow .mp i{width:9px;height:9px;border-radius:2px;display:block}
+</style>
+</head>
+<body>
+
+<script>
+/* ================================================================
+   純粋ロジック（DOM 非依存・window.PixelColor として公開）
+   ・k-means 量子化 / 色つきヒント / 色つきラインソルバー / 修復 / 共有ハッシュ
+   ・マスの値: 0=空（最も明るいクラスタ）, 1..3=色
+   ・同じ色のブロックの間は1マス以上あける。ちがう色は隣り合ってよい
+   ================================================================ */
+(function(){
+  'use strict';
+
+  /* ---------------- 色の下ごしらえ ---------------- */
+  function lumOf(c){ return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]; }
+  function cl(v){ return v < 0 ? 0 : (v > 255 ? 255 : v); }
+  function hexOf(c){
+    var s = '#', i, v;
+    for (i = 0; i < 3; i++) { v = Math.round(cl(c[i])); s += (v < 16 ? '0' : '') + v.toString(16); }
+    return s;
+  }
+  function hexToRgb(s){
+    if (typeof s !== 'string' || !/^#?[0-9a-fA-F]{6}$/.test(s)) return null;
+    var t = s.charAt(0) === '#' ? s.slice(1) : s;
+    return [parseInt(t.slice(0,2),16), parseInt(t.slice(2,4),16), parseInt(t.slice(4,6),16)];
+  }
+  /* 彩度が低ければ少し上げる（灰色は灰色のまま） */
+  function boost(c){
+    var mx = Math.max(c[0], c[1], c[2]), mn = Math.min(c[0], c[1], c[2]);
+    var span = mx - mn;
+    if (span <= 6 || span >= 58) return [c[0], c[1], c[2]];
+    var f = Math.min(2.4, 58 / span), m = lumOf(c);
+    return [cl(m + (c[0] - m) * f), cl(m + (c[1] - m) * f), cl(m + (c[2] - m) * f)];
+  }
+  /* 3色が似すぎていたら明るさを離す（見分けがつかない盤にしない） */
+  function separate(pal){
+    var idx = [0,1,2].sort(function(a,b){ return lumOf(pal[a]) - lumOf(pal[b]); });
+    var out = [pal[0].slice(), pal[1].slice(), pal[2].slice()];
+    for (var s = 1; s < 3; s++) {
+      var a = out[idx[s-1]], b = out[idx[s]];
+      var d = Math.sqrt((a[0]-b[0])*(a[0]-b[0]) + (a[1]-b[1])*(a[1]-b[1]) + (a[2]-b[2])*(a[2]-b[2]));
+      if (d >= 52) continue;
+      var need = (52 - d), la = lumOf(a), lb = lumOf(b), k;
+      /* 暗い方をさらに暗く、明るい方をさらに明るくする（色みは保つ） */
+      for (k = 0; k < 3; k++) {
+        a[k] = cl(a[k] - need * 0.55 * (la > 20 ? 1 : 0));
+        b[k] = cl(b[k] + need * 0.55 * (lb < 220 ? 1 : 0));
+      }
+    }
+    return out;
+  }
+
+  /* ---------------- k-means 量子化 ----------------
+     rgb: [r,g,b] の配列（長さ w*h）か、長さ 3*w*h の平坦配列
+     戻り: {cells, palette, dist2nd, second, empty}
+       cells   … 0=空 / 1..k-1=色
+       palette … 色の hex（k-1 個・明るい順）
+       dist2nd … 2番目に近いクラスタとの距離差（小さいほど境界＝付け替えやすい）
+       second  … 2番目に近いクラスタのマス値（付け替え先） */
+  function quantize(rgb, w, h, k){
+    k = k || 4;
+    var n = w * h, i, j, t, flat = !(rgb[0] && rgb[0].length === 3);
+    var px = new Array(n);
+    for (i = 0; i < n; i++) px[i] = flat ? [rgb[i*3], rgb[i*3+1], rgb[i*3+2]] : rgb[i];
+
+    /* 初期値は明るさの分位（毎回同じ結果） */
+    var lum = new Array(n), ord = [];
+    for (i = 0; i < n; i++) { lum[i] = lumOf(px[i]); ord.push(i); }
+    ord.sort(function(a, b){ return lum[a] - lum[b] || a - b; });
+    var cen = [];
+    for (j = 0; j < k; j++) {
+      var src = px[ord[Math.min(n - 1, Math.floor(n * (j * 2 + 1) / (k * 2)))]];
+      cen.push([src[0], src[1], src[2]]);
+    }
+
+    var asg = new Array(n), d1 = new Float64Array(n), s2 = new Array(n), d2 = new Float64Array(n);
+    for (t = 0; t < 10; t++) {
+      for (i = 0; i < n; i++) {
+        var b1 = 0, bd1 = Infinity, b2 = 0, bd2 = Infinity;
+        for (j = 0; j < k; j++) {
+          var dr = px[i][0] - cen[j][0], dg = px[i][1] - cen[j][1], db = px[i][2] - cen[j][2];
+          var d = dr*dr + dg*dg + db*db;
+          if (d < bd1) { bd2 = bd1; b2 = b1; bd1 = d; b1 = j; }
+          else if (d < bd2) { bd2 = d; b2 = j; }
+        }
+        asg[i] = b1; d1[i] = bd1; s2[i] = b2; d2[i] = bd2;
+      }
+      if (t === 9) break;
+      var sums = [];
+      for (j = 0; j < k; j++) sums.push([0,0,0,0]);
+      for (i = 0; i < n; i++) { var a = sums[asg[i]]; a[0]+=px[i][0]; a[1]+=px[i][1]; a[2]+=px[i][2]; a[3]++; }
+      for (j = 0; j < k; j++) if (sums[j][3]) cen[j] = [sums[j][0]/sums[j][3], sums[j][1]/sums[j][3], sums[j][2]/sums[j][3]];
+    }
+
+    /* 最も明るいクラスタ = 空。残りは明るい順に 1,2,3 */
+    var order = [];
+    for (j = 0; j < k; j++) order.push(j);
+    order.sort(function(a, b){ return lumOf(cen[b]) - lumOf(cen[a]); });
+    var map = new Array(k);
+    for (j = 0; j < k; j++) map[order[j]] = j;   /* 0=空, 1..k-1=色 */
+
+    var pal = [];
+    for (j = 1; j < k; j++) pal.push(boost(cen[order[j]]));
+    pal = separate(pal);
+    var palette = [];
+    for (j = 0; j < pal.length; j++) palette.push(hexOf(pal[j]));
+
+    var cells = new Array(n), second = new Array(n), dist2nd = new Float64Array(n);
+    for (i = 0; i < n; i++) {
+      cells[i] = map[asg[i]];
+      second[i] = map[s2[i]];
+      dist2nd[i] = Math.sqrt(d2[i]) - Math.sqrt(d1[i]);
+    }
+    return { cells: cells, palette: palette, dist2nd: dist2nd, second: second };
+  }
+
+  /* ---------------- ヒント（行・列の (長さ,色)） ---------------- */
+  function hints(cells, w, h){
+    var rowHints = [], colHints = [], r, c, v, cur, len, arr;
+    for (r = 0; r < h; r++) {
+      arr = []; cur = 0; len = 0;
+      for (c = 0; c < w; c++) {
+        v = cells[r * w + c] | 0;
+        if (v === cur) { if (v) len++; }
+        else { if (cur) arr.push([len, cur]); cur = v; len = v ? 1 : 0; }
+      }
+      if (cur) arr.push([len, cur]);
+      rowHints.push(arr);
+    }
+    for (c = 0; c < w; c++) {
+      arr = []; cur = 0; len = 0;
+      for (r = 0; r < h; r++) {
+        v = cells[r * w + c] | 0;
+        if (v === cur) { if (v) len++; }
+        else { if (cur) arr.push([len, cur]); cur = v; len = v ? 1 : 0; }
+      }
+      if (cur) arr.push([len, cur]);
+      colHints.push(arr);
+    }
+    return { rowHints: rowHints, colHints: colHints };
+  }
+
+  /* ---------------- 1ライン分の確定推論 ----------------
+     mask[i]: ビット v が立っていれば値 v の可能性あり（v = 0..k）
+     blocks:  [[長さ,色], ...]
+     戻り: 絞り込んだ mask の配列（矛盾なら null）
+     前後到達可能性の DP。全パターン列挙と同じ結論を出す */
+  function lineDeduce(mask, blocks, k){
+    var L = mask.length, m = blocks.length, i, j, t, b, col, cb, e, ni;
+    var W = m + 1;
+
+    /* okZero[i]: i..L-1 をすべて空にできるか */
+    var okZero = new Uint8Array(L + 1);
+    okZero[L] = 1;
+    for (i = L - 1; i >= 0; i--) okZero[i] = (okZero[i + 1] && (mask[i] & 1)) ? 1 : 0;
+
+    /* back[i][j]: i..L-1 にブロック j..m-1 を置けるか */
+    var back = new Uint8Array((L + 1) * W);
+    for (i = 0; i <= L; i++) back[i * W + m] = okZero[i];
+    for (j = m - 1; j >= 0; j--) {
+      b = blocks[j][0]; col = blocks[j][1]; cb = 1 << col;
+      var sameNext = (j + 1 < m) && (blocks[j + 1][1] === col);
+      for (i = L; i >= 0; i--) {
+        var ok = 0;
+        if (i < L && (mask[i] & 1) && back[(i + 1) * W + j]) ok = 1;
+        if (!ok && i + b <= L) {
+          var fits = 1;
+          for (t = i; t < i + b; t++) { if (!(mask[t] & cb)) { fits = 0; break; } }
+          if (fits) {
+            e = i + b;
+            if (sameNext) { if (e < L && (mask[e] & 1) && back[(e + 1) * W + j + 1]) ok = 1; }
+            else if (back[e * W + j + 1]) ok = 1;
+          }
+        }
+        back[i * W + j] = ok;
+      }
+    }
+    if (!back[0]) return null;
+
+    /* 前向きに到達しながら、各マスで取りうる値を集める */
+    var can = new Int32Array(L);
+    var reach = new Uint8Array((L + 1) * W);
+    reach[0] = 1;
+    for (i = 0; i <= L; i++) {
+      for (j = 0; j <= m; j++) {
+        if (!reach[i * W + j] || !back[i * W + j]) continue;
+        if (i < L && (mask[i] & 1) && back[(i + 1) * W + j]) { can[i] |= 1; reach[(i + 1) * W + j] = 1; }
+        if (j < m) {
+          b = blocks[j][0]; col = blocks[j][1]; cb = 1 << col;
+          if (i + b <= L) {
+            var fit = 1;
+            for (t = i; t < i + b; t++) { if (!(mask[t] & cb)) { fit = 0; break; } }
+            if (fit) {
+              e = i + b; ni = -1;
+              var same = (j + 1 < m) && (blocks[j + 1][1] === col);
+              if (same) { if (e < L && (mask[e] & 1) && back[(e + 1) * W + j + 1]) ni = e + 1; }
+              else if (back[e * W + j + 1]) ni = e;
+              if (ni >= 0) {
+                for (t = i; t < e; t++) can[t] |= cb;
+                if (same) can[e] |= 1;
+                reach[ni * W + j + 1] = 1;
+              }
+            }
+          }
+        }
+      }
+    }
+    var out = new Array(L);
+    for (i = 0; i < L; i++) {
+      out[i] = can[i] & mask[i];
+      if (!out[i]) return null;
+    }
+    return out;
+  }
+
+  function single(v){ return v && (v & (v - 1)) === 0; }
+  function bitVal(v){ var i = 0; while (v > 1) { v >>= 1; i++; } return i; }
+
+  /* ---------------- 盤面のラインソルバー ---------------- */
+  function solveMasks(rowHints, colHints, w, h, k){
+    k = k || 3;
+    var FULL = (1 << (k + 1)) - 1, n = w * h, i, r, c;
+    var mask = new Int32Array(n);
+    for (i = 0; i < n; i++) mask[i] = FULL;
+    var changed = true, passes = 0, line, res;
+    while (changed && passes < 200) {
+      changed = false; passes++;
+      for (r = 0; r < h; r++) {
+        line = new Array(w);
+        for (c = 0; c < w; c++) line[c] = mask[r * w + c];
+        res = lineDeduce(line, rowHints[r], k);
+        if (!res) return { ok: false, mask: mask, passes: passes };
+        for (c = 0; c < w; c++) if (res[c] !== mask[r * w + c]) { mask[r * w + c] = res[c]; changed = true; }
+      }
+      for (c = 0; c < w; c++) {
+        line = new Array(h);
+        for (r = 0; r < h; r++) line[r] = mask[r * w + c];
+        res = lineDeduce(line, colHints[c], k);
+        if (!res) return { ok: false, mask: mask, passes: passes };
+        for (r = 0; r < h; r++) if (res[r] !== mask[r * w + c]) { mask[r * w + c] = res[r]; changed = true; }
+      }
+    }
+    var done = true;
+    for (i = 0; i < n; i++) if (!single(mask[i])) { done = false; break; }
+    return { ok: done, mask: mask, passes: passes };
+  }
+
+  /* 仮定なしで解ければマスの値の配列、無理なら null */
+  function lineSolve(rowHints, colHints, w, h, k){
+    var m = solveMasks(rowHints, colHints, w, h, k);
+    if (!m.ok) return null;
+    var out = new Array(w * h);
+    for (var i = 0; i < out.length; i++) out[i] = bitVal(m.mask[i]);
+    return out;
+  }
+
+  /* ---------------- 修復 ----------------
+     境界（2番目に近いクラスタとの差が小さい）マスから順に付け替えて、解けるまで。
+     戻り: {cells, flips} / 無理なら null */
+  function repair(cells, second, dist2nd, w, h, k, maxFlips){
+    k = k || 3;
+    var n = w * h, i;
+    var cur = cells.slice();
+    var hs = hints(cur, w, h);
+    var st = solveMasks(hs.rowHints, hs.colHints, w, h, k);
+    if (st.ok) return { cells: cur, flips: 0 };
+
+    var order = [];
+    for (i = 0; i < n; i++) if (second[i] !== cur[i]) order.push(i);
+    order.sort(function(a, b){ return dist2nd[a] - dist2nd[b] || a - b; });
+
+    var used = {}, limit = Math.min(maxFlips | 0, n);
+    for (var f = 0; f < limit; f++) {
+      /* 同じ並び順の中では「まだ確定していないマス」を先に付け替える */
+      var pick = -1, fb = -1, idx;
+      for (i = 0; i < order.length; i++) {
+        idx = order[i];
+        if (used[idx]) continue;
+        if (fb < 0) fb = idx;
+        if (!single(st.mask[idx])) { pick = idx; break; }
+      }
+      if (pick < 0) pick = fb;
+      if (pick < 0) break;
+      used[pick] = 1;
+      cur[pick] = second[pick];
+      hs = hints(cur, w, h);
+      st = solveMasks(hs.rowHints, hs.colHints, w, h, k);
+      if (st.ok) return { cells: cur, flips: f + 1 };
+    }
+    return null;
+  }
+
+  /* ---------------- 完成判定 ----------------
+     state: 0=空 / 1..3=色 / 4=✕メモ（空あつかい） */
+  function isComplete(cells, state){
+    if (!cells || !state || cells.length !== state.length) return false;
+    for (var i = 0; i < cells.length; i++) {
+      var s = state[i] === 4 ? 0 : state[i];
+      if ((cells[i] | 0) !== (s | 0)) return false;
+    }
+    return true;
+  }
+
+  /* ---------------- 共有ハッシュ ----------------
+     #c1.<w>.<h>.<3色hex 18文字>.<2bit×N² base64url>.<題名> */
+  var B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  function cellsToB64(cells){
+    var out = '', i, n = cells.length, v;
+    for (i = 0; i < n; i += 3) {
+      v = ((cells[i] & 3) << 4);
+      if (i + 1 < n) v |= ((cells[i + 1] & 3) << 2);
+      if (i + 2 < n) v |= (cells[i + 2] & 3);
+      out += B64.charAt(v);
+    }
+    return out;
+  }
+  function b64ToCells(s, n){
+    var out = [], i, v;
+    for (i = 0; i < s.length; i++) {
+      v = B64.indexOf(s.charAt(i));
+      if (v < 0) return null;
+      out.push((v >> 4) & 3); out.push((v >> 2) & 3); out.push(v & 3);
+    }
+    if (out.length < n) return null;
+    return out.slice(0, n);
+  }
+  function encode(cells, w, h, palette, title){
+    var hex = '', i;
+    for (i = 0; i < 3; i++) {
+      var c = hexToRgb((palette && palette[i]) || '#000000') || [0,0,0];
+      hex += hexOf(c).slice(1);
+    }
+    var t = '';
+    try { t = encodeURIComponent(title || ''); } catch (e) { t = ''; }
+    return '#c1.' + w + '.' + h + '.' + hex + '.' + cellsToB64(cells) + '.' + t;
+  }
+  function decode(hash){
+    if (typeof hash !== 'string') return null;
+    var s = hash.charAt(0) === '#' ? hash.slice(1) : hash;
+    var p = s.split('.');
+    if (p.length < 5 || p[0] !== 'c1') return null;
+    var w = parseInt(p[1], 10), h = parseInt(p[2], 10);
+    if (!(w >= 5 && w <= 60 && h >= 5 && h <= 60)) return null;
+    if (!/^[0-9a-fA-F]{18}$/.test(p[3])) return null;
+    var palette = [];
+    for (var i = 0; i < 3; i++) palette.push('#' + p[3].slice(i * 6, i * 6 + 6).toLowerCase());
+    var cells = b64ToCells(p[4], w * h);
+    if (!cells) return null;
+    var title = '写真';
+    if (p.length > 5) { try { title = decodeURIComponent(p.slice(5).join('.')); } catch (e) { title = '写真'; } }
+    if (!title) title = '写真';
+    return { cells: cells, w: w, h: h, palette: palette, title: title.slice(0, 30) };
+  }
+
+  var PixelColor = {
+    quantize: quantize,
+    hints: hints,
+    lineDeduce: lineDeduce,
+    lineSolve: lineSolve,
+    solveMasks: solveMasks,
+    repair: repair,
+    isComplete: isComplete,
+    encode: encode,
+    decode: decode,
+    hexToRgb: hexToRgb,
+    lumOf: lumOf
+  };
+  if (typeof window !== 'undefined') window.PixelColor = PixelColor;
+  if (typeof globalThis !== 'undefined') globalThis.PixelColor = PixelColor;
+  if (typeof module !== 'undefined' && module.exports) module.exports = PixelColor;
+})();
+</script>
+
+<div id="app">
+  <header>
+    <div id="titleWrap">
+      <span id="title">ピクセル 4色</span>
+      <span id="levelName"></span>
+    </div>
+    <div id="headerActions">
+      <button id="zoomBtn" hidden>🔍 拡大</button>
+      <a id="portalLink" href="../">パズル箱</a>
+    </div>
+  </header>
+
+  <!-- 画面1 選ぶ -->
+  <section id="screenPick">
+    <div class="note">写真はこの端末から出ません。</div>
+    <div id="pickBox">
+      <p>写真を1枚えらんでください<br>空と3色に分けて、色つきの問題にします<br>色がはっきり分かれた写真が向いています</p>
+      <button id="pickBtn" class="bigBtn">写真をえらぶ</button>
+      <input type="file" id="fileInput" accept="image/*">
+    </div>
+    <div id="pickMsg" class="note" style="padding-top:10px"></div>
+  </section>
+
+  <!-- 画面2 切る -->
+  <section id="screenCrop" hidden>
+    <div class="note">枠の中で写真をドラッグして位置を決めます</div>
+    <div id="cropRow">
+      <div class="sq">
+        <div class="sqLabel">写真</div>
+        <canvas id="cropCanvas" width="600" height="600"></canvas>
+      </div>
+      <div class="sq">
+        <div class="sqLabel">4色の下絵</div>
+        <canvas id="previewCanvas" width="30" height="30"></canvas>
+        <div id="swatches"><div></div><div></div><div></div></div>
+      </div>
+    </div>
+
+    <div class="ctrl">
+      <div class="ctrlLabel">大きさ（ズーム）</div>
+      <input type="range" id="zoomRange" min="100" max="400" value="100">
+    </div>
+
+    <div class="ctrl">
+      <div class="ctrlLabel">マス数</div>
+      <div class="seg" id="sizeSeg">
+        <button data-n="20">20</button>
+        <button data-n="30" class="on">30</button>
+        <button data-n="40">40</button>
+      </div>
+    </div>
+
+    <div class="ctrl">
+      <div class="ctrlLabel">題名</div>
+      <input type="text" id="titleInput" maxlength="20" placeholder="写真">
+    </div>
+
+    <div id="cropButtons">
+      <button id="makeBtn" class="actionBtn">これで作る</button>
+      <button id="rePickBtn" class="actionBtn">写真をえらび直す</button>
+      <button id="backToPlayBtn" class="actionBtn" hidden>やめる</button>
+    </div>
+    <div id="makeMsg"></div>
+  </section>
+
+  <!-- 画面3 遊ぶ -->
+  <section id="screenPlay" hidden>
+    <div class="note">
+      <div>数字の色と数だけ、その色で続けて塗る</div>
+      <div>同じ色が続くときは1マス以上あける（ちがう色はとなり合ってよい）</div>
+    </div>
+
+    <div id="stageWrapper">
+      <div id="boardWrapper">
+        <div id="corner"></div>
+        <div id="colHints"></div>
+        <div id="rowHints"></div>
+        <div id="grid"></div>
+      </div>
+    </div>
+
+    <div id="clearBanner" hidden>
+      <div id="artTitle"></div>
+    </div>
+
+    <div id="compare" hidden>
+      <figure><canvas id="artCanvas"></canvas><figcaption>絵</figcaption></figure>
+      <figure id="photoFig"><canvas id="photoCanvas"></canvas><figcaption>元の写真</figcaption></figure>
+    </div>
+
+    <div id="palette">
+      <button class="pbtn on" data-v="1"><span class="sw" id="sw1">●</span>色1</button>
+      <button class="pbtn" data-v="2"><span class="sw" id="sw2">▲</span>色2</button>
+      <button class="pbtn" data-v="3"><span class="sw" id="sw3">■</span>色3</button>
+      <button class="pbtn" data-v="0"><span class="big">⌫</span>消す</button>
+      <button class="pbtn" data-v="4"><span class="big">✕</span>印</button>
+    </div>
+
+    <div id="boardZoom" hidden>
+      <span class="zlabel">1マスの大きさ</span>
+      <input type="range" id="boardZoomRange" min="12" max="28" step="1" value="18">
+    </div>
+
+    <div id="buttons">
+      <button id="undoBtn" class="actionBtn">もどす</button>
+      <button id="resetBtn" class="actionBtn">はじめから</button>
+      <button id="shareBtn" class="actionBtn">共有</button>
+      <button id="againBtn" class="actionBtn">もう一枚</button>
+    </div>
+    <div id="toast"></div>
+  </section>
+
+  <div id="made" hidden>
+    <div id="madeTitle">作った問題</div>
+    <div id="madeList"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var P = window.PixelColor;
+  var SYM = ['', '●', '▲', '■'];
+
+  var $ = function(id){ return document.getElementById(id); };
+  var screenPick = $('screenPick'), screenCrop = $('screenCrop'), screenPlay = $('screenPlay');
+  var elLevelName = $('levelName'), btnZoom = $('zoomBtn');
+  var elBoardZoom = $('boardZoom'), boardZoomRange = $('boardZoomRange');
+  var fileInput = $('fileInput'), pickBtn = $('pickBtn'), pickMsg = $('pickMsg');
+  var cropCanvas = $('cropCanvas'), previewCanvas = $('previewCanvas'), swatches = $('swatches');
+  var zoomRange = $('zoomRange'), sizeSeg = $('sizeSeg'), titleInput = $('titleInput');
+  var makeBtn = $('makeBtn'), rePickBtn = $('rePickBtn'), backToPlayBtn = $('backToPlayBtn'), makeMsg = $('makeMsg');
+  var elStageWrapper = $('stageWrapper'), elGrid = $('grid'), elColHints = $('colHints'), elRowHints = $('rowHints');
+  var elClearBanner = $('clearBanner'), artTitle = $('artTitle'), elCompare = $('compare');
+  var artCanvas = $('artCanvas'), photoCanvas = $('photoCanvas'), photoFig = $('photoFig');
+  var elPalette = $('palette');
+  var btnUndo = $('undoBtn'), btnReset = $('resetBtn'), btnShare = $('shareBtn'), btnAgain = $('againBtn');
+  var toast = $('toast'), elMade = $('made'), elMadeList = $('madeList');
+
+  /* ---------------- 保存 ---------------- */
+  var STORE_KEY = 'pixel-photo-color';
+  var store = { made: [], progress: {} };
+  var sessionPhotos = {};   /* id -> dataURL（この端末・このセッションだけ。保存しない） */
+
+  function loadStore(){
+    try {
+      var s = localStorage.getItem(STORE_KEY);
+      if (!s) return;
+      var p = JSON.parse(s);
+      if (p && typeof p === 'object') {
+        store.made = Array.isArray(p.made) ? p.made.filter(function(m){
+          return m && typeof m.cells === 'string' && m.cells.length === (m.w | 0) * (m.h | 0) &&
+                 m.w > 0 && Array.isArray(m.palette) && m.palette.length === 3;
+        }).slice(0, 20) : [];
+        store.progress = (p.progress && typeof p.progress === 'object') ? p.progress : {};
+      }
+    } catch (e) { store = { made: [], progress: {} }; }
+  }
+  function saveStore(){
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ made: store.made.slice(0, 20), progress: store.progress })); }
+    catch (e) {}
+  }
+  function cellsStr(a){ return a.join(''); }
+  function cellsArr(s){ var a = [], i; for (i = 0; i < s.length; i++) a.push(s.charCodeAt(i) - 48); return a; }
+
+  function show(which){
+    screenPick.hidden = (which !== 'pick');
+    screenCrop.hidden = (which !== 'crop');
+    screenPlay.hidden = (which !== 'play');
+    btnZoom.hidden = (which !== 'play') || isBig();
+    elBoardZoom.hidden = (which !== 'play') || !isBig();
+    elMade.hidden = (which === 'crop') || !store.made.length;
+    if (which !== 'play') elLevelName.textContent = '';
+    window.scrollTo(0, 0);
+  }
+
+  /* ================================================================
+     画面1・2: 写真 → 4色の下絵
+     ================================================================ */
+  var img = null, imgW = 0, imgH = 0;
+  var cx = 0, cy = 0, zoom = 1, N = 30;
+  var rgbN = null, quant = null;
+
+  pickBtn.addEventListener('click', function(){ fileInput.click(); });
+  rePickBtn.addEventListener('click', function(){ fileInput.click(); });
+
+  fileInput.addEventListener('change', function(){
+    var f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    pickMsg.textContent = '読み込んでいます…';
+    loadImage(f).then(function(bmp){
+      img = bmp; imgW = bmp.width; imgH = bmp.height;
+      zoom = 1; cx = imgW / 2; cy = imgH / 2;
+      zoomRange.value = '100';
+      titleInput.value = '';
+      makeMsg.textContent = '';
+      pickMsg.textContent = '';
+      backToPlayBtn.hidden = !currentPuzzle;
+      show('crop');
+      redraw();
+    }).catch(function(){
+      pickMsg.textContent = 'この写真は読み込めませんでした。別の写真を選んでください。';
+    });
+    fileInput.value = '';
+  });
+
+  function loadImage(file){
+    if (typeof createImageBitmap === 'function') {
+      try {
+        return createImageBitmap(file, { imageOrientation: 'from-image' }).catch(function(){
+          return createImageBitmap(file).catch(fallbackImage);
+        });
+      } catch (e) { /* 下へ */ }
+    }
+    return fallbackImage();
+    function fallbackImage(){
+      return new Promise(function(res, rej){
+        var url = URL.createObjectURL(file);
+        var im = new Image();
+        im.onload = function(){ res(im); };
+        im.onerror = function(){ URL.revokeObjectURL(url); rej(new Error('load')); };
+        im.src = url;
+      });
+    }
+  }
+
+  function cropSide(){ return Math.min(imgW, imgH) / zoom; }
+  function clampCenter(){
+    var s = cropSide();
+    cx = Math.max(s / 2, Math.min(imgW - s / 2, cx));
+    cy = Math.max(s / 2, Math.min(imgH - s / 2, cy));
+  }
+
+  var tmp = document.createElement('canvas');
+  function computeRgb(){
+    if (!img) { rgbN = null; return; }
+    var block = 6, size = N * block;
+    tmp.width = size; tmp.height = size;
+    var tg = tmp.getContext('2d');
+    tg.imageSmoothingEnabled = true;
+    tg.fillStyle = '#fff'; tg.fillRect(0, 0, size, size);
+    var s = cropSide();
+    tg.drawImage(img, cx - s / 2, cy - s / 2, s, s, 0, 0, size, size);
+    var data;
+    try { data = tg.getImageData(0, 0, size, size).data; } catch (e) { rgbN = null; return; }
+    rgbN = new Array(N * N);
+    var r, c, by, bx, i, sr, sg, sb, nb = block * block;
+    for (r = 0; r < N; r++) {
+      for (c = 0; c < N; c++) {
+        sr = 0; sg = 0; sb = 0;
+        for (by = 0; by < block; by++) {
+          for (bx = 0; bx < block; bx++) {
+            i = ((r * block + by) * size + (c * block + bx)) * 4;
+            sr += data[i]; sg += data[i + 1]; sb += data[i + 2];
+          }
+        }
+        rgbN[r * N + c] = [sr / nb, sg / nb, sb / nb];
+      }
+    }
+  }
+
+  function drawCrop(){
+    var g = cropCanvas.getContext('2d');
+    g.fillStyle = '#e6e4df';
+    g.fillRect(0, 0, cropCanvas.width, cropCanvas.height);
+    if (!img) return;
+    var s = cropSide();
+    g.drawImage(img, cx - s / 2, cy - s / 2, s, s, 0, 0, cropCanvas.width, cropCanvas.height);
+  }
+
+  function paintCells(canvas, w, h, cells, palette){
+    canvas.width = w; canvas.height = h;
+    var g = canvas.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h);
+    for (var r = 0; r < h; r++) {
+      for (var c = 0; c < w; c++) {
+        var v = cells[r * w + c] | 0;
+        if (!v) continue;
+        g.fillStyle = palette[v - 1];
+        g.fillRect(c, r, 1, 1);
+      }
+    }
+  }
+
+  function redraw(){
+    clampCenter();
+    drawCrop();
+    computeRgb();
+    if (!rgbN) return;
+    quant = P.quantize(rgbN, N, N, 4);
+    paintCells(previewCanvas, N, N, quant.cells, quant.palette);
+    for (var i = 0; i < 3; i++) swatches.children[i].style.background = quant.palette[i];
+  }
+
+  /* パン & ピンチ */
+  var pointers = {}, dragLast = null, pinchStart = null;
+  cropCanvas.addEventListener('pointerdown', function(e){
+    if (!img) return;
+    cropCanvas.setPointerCapture(e.pointerId);
+    pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var ids = Object.keys(pointers);
+    if (ids.length === 1) dragLast = { x: e.clientX, y: e.clientY };
+    else if (ids.length === 2) { pinchStart = { d: pointerDist(), zoom: zoom }; dragLast = null; }
+    e.preventDefault();
+  });
+  cropCanvas.addEventListener('pointermove', function(e){
+    if (!img || !pointers[e.pointerId]) return;
+    pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var ids = Object.keys(pointers);
+    if (ids.length >= 2 && pinchStart) {
+      var d = pointerDist();
+      if (d > 0 && pinchStart.d > 0) {
+        zoom = Math.max(1, Math.min(4, pinchStart.zoom * (d / pinchStart.d)));
+        zoomRange.value = String(Math.round(zoom * 100));
+        redraw();
+      }
+    } else if (dragLast) {
+      var rect = cropCanvas.getBoundingClientRect();
+      var k = cropSide() / rect.width;
+      cx -= (e.clientX - dragLast.x) * k;
+      cy -= (e.clientY - dragLast.y) * k;
+      dragLast = { x: e.clientX, y: e.clientY };
+      redraw();
+    }
+    e.preventDefault();
+  });
+  function endPointer(e){
+    delete pointers[e.pointerId];
+    var ids = Object.keys(pointers);
+    if (ids.length < 2) pinchStart = null;
+    if (ids.length === 1) dragLast = { x: pointers[ids[0]].x, y: pointers[ids[0]].y };
+    if (ids.length === 0) dragLast = null;
+  }
+  cropCanvas.addEventListener('pointerup', endPointer);
+  cropCanvas.addEventListener('pointercancel', endPointer);
+  function pointerDist(){
+    var ids = Object.keys(pointers);
+    if (ids.length < 2) return 0;
+    var a = pointers[ids[0]], b = pointers[ids[1]];
+    return Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
+  }
+
+  zoomRange.addEventListener('input', function(){
+    zoom = Math.max(1, Math.min(4, parseInt(zoomRange.value, 10) / 100));
+    redraw();
+  });
+  for (var si = 0; si < sizeSeg.children.length; si++) {
+    sizeSeg.children[si].addEventListener('click', function(){
+      N = parseInt(this.dataset.n, 10);
+      for (var k = 0; k < sizeSeg.children.length; k++) sizeSeg.children[k].classList.remove('on');
+      this.classList.add('on');
+      redraw();
+    });
+  }
+  backToPlayBtn.addEventListener('click', function(){ if (currentPuzzle) show('play'); });
+
+  /* 「これで作る」 */
+  makeBtn.addEventListener('click', function(){
+    if (!quant) { makeMsg.textContent = 'まず写真を選んでください。'; return; }
+    makeMsg.style.color = 'var(--sub)';
+    makeMsg.textContent = '作っています…';
+    makeBtn.disabled = true;
+    setTimeout(function(){
+      var cells = quant.cells.slice(), palette = quant.palette.slice(), flips = 0;
+      var hs = P.hints(cells, N, N);
+      if (!P.lineSolve(hs.rowHints, hs.colHints, N, N, 3)) {
+        var rep = P.repair(cells, quant.second, quant.dist2nd, N, N, 3, Math.round(N * N * 0.06));
+        if (!rep) {
+          makeMsg.style.color = '#8a5a3c';
+          makeMsg.textContent = 'この写真は難しい。切り方を変えてください。';
+          makeBtn.disabled = false;
+          return;
+        }
+        cells = rep.cells; flips = rep.flips;
+      }
+      var used = [0, 0, 0, 0], i;
+      for (i = 0; i < cells.length; i++) used[cells[i]]++;
+      if (used[0] === cells.length || used[1] + used[2] + used[3] === 0) {
+        makeMsg.style.color = '#8a5a3c';
+        makeMsg.textContent = '色が出ませんでした。切り方を変えてください。';
+        makeBtn.disabled = false;
+        return;
+      }
+      var title = (titleInput.value || '').trim() || '写真';
+      var id = idOf(cells, N, N);
+      try { sessionPhotos[id] = cropCanvas.toDataURL('image/jpeg', 0.7); } catch (e) {}
+      var entry = { cells: cellsStr(cells), w: N, h: N, palette: palette, title: title, date: today() };
+      addMade(entry);
+      makeBtn.disabled = false;
+      makeMsg.textContent = '';
+      loadPuzzle({ cells: cells, w: N, h: N, palette: palette, title: title }, flips);
+    }, 30);
+  });
+
+  function today(){
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function idOf(cells, w, h){ return w + 'x' + h + '.' + P.encode(cells, w, h, ['#000000','#000000','#000000'], '').split('.')[4]; }
+
+  function addMade(entry){
+    var id = idOf(cellsArr(entry.cells), entry.w, entry.h);
+    store.made = store.made.filter(function(m){ return idOf(cellsArr(m.cells), m.w, m.h) !== id; });
+    store.made.unshift(entry);
+    if (store.made.length > 20) {
+      var dropped = store.made.slice(20);
+      store.made = store.made.slice(0, 20);
+      for (var i = 0; i < dropped.length; i++) delete store.progress[idOf(cellsArr(dropped[i].cells), dropped[i].w, dropped[i].h)];
+    }
+    saveStore();
+  }
+
+  /* ================================================================
+     画面3: 遊ぶ
+     ================================================================ */
+  var currentPuzzle = null, currentId = '';
+  var gridState = [], history = [], isCleared = false;
+  var selValue = 1, isZoomed = false, bigCell = 18;
+  var activeRow = -1, activeCol = -1;
+  var isDragging = false, dragAction = null, lastTargetCell = -1;
+
+  function inkOf(hex){
+    var c = P.hexToRgb(hex) || [60, 60, 60];
+    var l = P.lumOf(c), f = 1;
+    if (l > 150) f = 150 / l;             /* 白地で読める濃さまで落とす */
+    return 'rgb(' + Math.round(c[0]*f) + ',' + Math.round(c[1]*f) + ',' + Math.round(c[2]*f) + ')';
+  }
+  function markOf(hex){
+    var c = P.hexToRgb(hex) || [0,0,0];
+    return P.lumOf(c) > 150 ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.85)';
+  }
+  function applyPalette(pal){
+    var st = elStageWrapper.style, i;
+    for (i = 0; i < 3; i++) {
+      st.setProperty('--c' + (i + 1), pal[i]);
+      st.setProperty('--i' + (i + 1), inkOf(pal[i]));
+      st.setProperty('--k' + (i + 1), markOf(pal[i]));
+    }
+    for (i = 0; i < 3; i++) {
+      var sw = $('sw' + (i + 1));
+      sw.style.background = pal[i];
+      sw.style.color = markOf(pal[i]);
+    }
+  }
+
+  function loadPuzzle(pz, flips){
+    currentPuzzle = pz;
+    currentId = idOf(pz.cells, pz.w, pz.h);
+    var hs = P.hints(pz.cells, pz.w, pz.h);
+    currentPuzzle.rowHints = hs.rowHints;
+    currentPuzzle.colHints = hs.colHints;
+
+    history = []; isCleared = false; activeRow = -1; activeCol = -1;
+    elStageWrapper.classList.remove('cleared');
+    elClearBanner.hidden = true;
+    elCompare.hidden = true;
+    toast.textContent = flips ? ('写真を ' + flips + 'マス直して、解ける問題にしました。') : '';
+
+    applyPalette(pz.palette);
+    setZoom(false);
+    elLevelName.textContent = pz.w + '×' + pz.h;
+    boardZoomRange.value = String(bigCell);
+    setSel(1);
+
+    var total = pz.w * pz.h, i;
+    gridState = [];
+    for (i = 0; i < total; i++) gridState.push(0);
+    var saved = store.progress[currentId];
+    if (typeof saved === 'string' && saved !== 'done' && saved.length === total) {
+      for (i = 0; i < total; i++) {
+        var v = saved.charCodeAt(i) - 48;
+        gridState[i] = (v >= 0 && v <= 4) ? v : 0;
+      }
+    }
+
+    setupDOM();
+    renderBoard();
+    renderMadeList();
+    show('play');
+    try { elStageWrapper.scrollTop = 0; elStageWrapper.scrollLeft = 0; } catch (e) {}
+    pinHintBands();
+    persist();
+    judge();
+  }
+
+  function persist(){
+    if (!currentPuzzle) return;
+    store.progress[currentId] = isCleared ? 'done' : gridState.join('');
+    saveStore();
+  }
+
+  function setZoom(zoomed){
+    isZoomed = zoomed;
+    elStageWrapper.classList.toggle('zoomed', isZoomed);
+    btnZoom.textContent = isZoomed ? '📱 全体' : '🔍 拡大';
+    calculateSizes();
+  }
+  btnZoom.addEventListener('click', function(){ if (!isBig()) setZoom(!isZoomed); });
+  function isBig(){ return !!currentPuzzle && Math.max(currentPuzzle.w, currentPuzzle.h) >= 30; }
+
+  function calculateSizes(){
+    if (!currentPuzzle) return;
+    var w = currentPuzzle.w, big = isBig();
+    elStageWrapper.classList.toggle('big', big);
+    var availWidth = Math.min(window.innerWidth - 32, 420);
+    var cs, fs;
+    if (big) { cs = bigCell; fs = (cs >= 18) ? 11 : 10; }
+    else if (isZoomed) { cs = 24; fs = 11; }
+    else { cs = Math.floor((availWidth - 95) / w); if (cs < 11) cs = 11; fs = 8.5; }
+    elStageWrapper.style.setProperty('--cs', cs + 'px');
+    elStageWrapper.style.setProperty('--hint-fs', fs + 'px');
+    elStageWrapper.classList.toggle('nosym', cs < 18);
+  }
+
+  function pinHintBands(){
+    try {
+      elRowHints.classList.remove('clip'); elRowHints.style.width = '';
+      elColHints.classList.remove('clip'); elColHints.style.height = '';
+      if (!isBig()) return;
+      var rowCap = Math.min(Math.round(window.innerWidth * 0.44), 150);
+      if (elRowHints.offsetWidth > rowCap) {
+        elRowHints.style.width = rowCap + 'px';
+        elRowHints.classList.add('clip');
+        elRowHints.scrollLeft = elRowHints.scrollWidth;
+      }
+      var colCap = 104;
+      if (elColHints.offsetHeight > colCap) {
+        elColHints.style.height = colCap + 'px';
+        elColHints.classList.add('clip');
+        elColHints.scrollTop = elColHints.scrollHeight;
+      }
+    } catch (e) {}
+  }
+
+  boardZoomRange.addEventListener('input', function(){
+    bigCell = Math.max(12, Math.min(28, parseInt(boardZoomRange.value, 10) || 18));
+    calculateSizes();
+    pinHintBands();
+  });
+  window.addEventListener('resize', function(){ calculateSizes(); pinHintBands(); });
+
+  function appendHints(box, arr){
+    if (!arr.length) {
+      var s = document.createElement('span');
+      s.className = 'hintNum h0'; s.textContent = '0';
+      box.appendChild(s);
+      return;
+    }
+    for (var i = 0; i < arr.length; i++) {
+      var n = document.createElement('span');
+      n.className = 'hintNum h' + arr[i][1];
+      n.appendChild(document.createTextNode(String(arr[i][0])));
+      var sym = document.createElement('i');
+      sym.textContent = SYM[arr[i][1]];
+      n.appendChild(sym);
+      n.addEventListener('click', function(e){ e.stopPropagation(); this.classList.toggle('checked'); });
+      box.appendChild(n);
+    }
+  }
+
+  function setupDOM(){
+    var w = currentPuzzle.w, h = currentPuzzle.h, r, c, i, j;
+    calculateSizes();
+
+    elColHints.innerHTML = '';
+    elColHints.style.gridTemplateColumns = 'repeat(' + w + ', var(--cs))';
+    for (c = 0; c < w; c++) {
+      var colDiv = document.createElement('div');
+      colDiv.className = 'colHint';
+      if ((c + 1) % 5 === 0 && c !== w - 1) colDiv.classList.add('b-r5');
+      appendHints(colDiv, currentPuzzle.colHints[c]);
+      elColHints.appendChild(colDiv);
+    }
+
+    elRowHints.innerHTML = '';
+    elRowHints.style.gridTemplateRows = 'repeat(' + h + ', var(--cs))';
+    for (r = 0; r < h; r++) {
+      var rowDiv = document.createElement('div');
+      rowDiv.className = 'rowHint';
+      if ((r + 1) % 5 === 0 && r !== h - 1) rowDiv.classList.add('b-b5');
+      appendHints(rowDiv, currentPuzzle.rowHints[r]);
+      elRowHints.appendChild(rowDiv);
+    }
+
+    elGrid.innerHTML = '';
+    elGrid.style.gridTemplateColumns = 'repeat(' + w + ', var(--cs))';
+    elGrid.style.gridTemplateRows = 'repeat(' + h + ', var(--cs))';
+    for (i = 0; i < h; i++) {
+      for (j = 0; j < w; j++) {
+        var cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.idx = String(i * w + j);
+        cell.dataset.r = String(i);
+        cell.dataset.c = String(j);
+        if (j === w - 1) cell.classList.add('re');
+        if (i === h - 1) cell.classList.add('be');
+        if ((j + 1) % 5 === 0 && j !== w - 1) cell.classList.add('b-r5');
+        if ((i + 1) % 5 === 0 && i !== h - 1) cell.classList.add('b-b5');
+        elGrid.appendChild(cell);
+      }
+    }
+  }
+
+  function updateCrosshair(r, c){
+    if (r === activeRow && c === activeCol) return;
+    activeRow = r; activeCol = c;
+    var colNodes = elColHints.children, rowNodes = elRowHints.children, i, j, k;
+    for (j = 0; j < colNodes.length; j++) colNodes[j].classList.toggle('active', j === c);
+    for (i = 0; i < rowNodes.length; i++) rowNodes[i].classList.toggle('active', i === r);
+    var cells = elGrid.children, w = currentPuzzle.w;
+    for (k = 0; k < cells.length; k++) {
+      var cr = Math.floor(k / w), cc = k % w;
+      var isRow = (cr === r), isCol = (cc === c);
+      cells[k].classList.toggle('guide-row', isRow && !isCol);
+      cells[k].classList.toggle('guide-col', isCol && !isRow);
+      cells[k].classList.toggle('guide-cross', isRow && isCol);
+    }
+  }
+  function clearCrosshair(){
+    activeRow = -1; activeCol = -1;
+    var colNodes = elColHints.children, rowNodes = elRowHints.children, i, j, k;
+    for (j = 0; j < colNodes.length; j++) colNodes[j].classList.remove('active');
+    for (i = 0; i < rowNodes.length; i++) rowNodes[i].classList.remove('active');
+    var cells = elGrid.children;
+    for (k = 0; k < cells.length; k++) cells[k].classList.remove('guide-row', 'guide-col', 'guide-cross');
+  }
+
+  function renderBoard(){
+    var cells = elGrid.children, i, v;
+    for (i = 0; i < cells.length; i++) {
+      v = gridState[i];
+      cells[i].classList.toggle('v1', v === 1);
+      cells[i].classList.toggle('v2', v === 2);
+      cells[i].classList.toggle('v3', v === 3);
+      cells[i].classList.toggle('x', v === 4);
+    }
+  }
+  function pushHistory(){
+    history.push(gridState.slice());
+    if (history.length > 50) history.shift();
+  }
+
+  function judge(){
+    if (!currentPuzzle || !P.isComplete(currentPuzzle.cells, gridState)) return;
+    isCleared = true;
+    persist();
+    clearCrosshair();
+    elStageWrapper.classList.add('cleared');
+    artTitle.innerHTML = escapeHtml(currentPuzzle.title) + ' <span>完成！</span>';
+    elClearBanner.hidden = false;
+    showCompare();
+    renderMadeList();
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(ch){
+      return ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[ch];
+    });
+  }
+
+  function showCompare(){
+    paintCells(artCanvas, currentPuzzle.w, currentPuzzle.h, currentPuzzle.cells, currentPuzzle.palette);
+    var url = sessionPhotos[currentId];
+    if (url) {
+      var im = new Image();
+      im.onload = function(){
+        photoCanvas.width = 240; photoCanvas.height = 240;
+        photoCanvas.getContext('2d').drawImage(im, 0, 0, 240, 240);
+      };
+      im.src = url;
+      photoFig.hidden = false;
+    } else {
+      photoFig.hidden = true;
+    }
+    elCompare.hidden = false;
+  }
+
+  /* ---- パレット ---- */
+  function setSel(v){
+    selValue = v;
+    for (var i = 0; i < elPalette.children.length; i++) {
+      var b = elPalette.children[i];
+      b.classList.toggle('on', parseInt(b.dataset.v, 10) === v);
+    }
+  }
+  for (var pi = 0; pi < elPalette.children.length; pi++) {
+    elPalette.children[pi].addEventListener('click', function(){ setSel(parseInt(this.dataset.v, 10)); });
+  }
+
+  /* ---- 入力 ---- */
+  function getCellFromEvent(e){
+    var target = document.elementFromPoint(e.clientX, e.clientY);
+    if (!target) return null;
+    var cell = target.closest ? target.closest('.cell') : null;
+    if (!cell || !elGrid.contains(cell)) return null;
+    return cell;
+  }
+  elGrid.addEventListener('pointerdown', function(e){
+    if (isCleared || !currentPuzzle) return;
+    var cell = getCellFromEvent(e);
+    if (!cell) return;
+    var idx = parseInt(cell.dataset.idx, 10);
+    e.preventDefault();
+    isDragging = true; lastTargetCell = idx;
+    pushHistory();
+    updateCrosshair(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10));
+    var cur = gridState[idx];
+    dragAction = (selValue === 0) ? 0 : (cur === selValue ? 0 : selValue);
+    gridState[idx] = dragAction;
+    renderBoard();
+  });
+  window.addEventListener('pointermove', function(e){
+    if (isCleared || !currentPuzzle || screenPlay.hidden) return;
+    var cell = getCellFromEvent(e);
+    if (!cell) return;
+    var idx = parseInt(cell.dataset.idx, 10);
+    updateCrosshair(parseInt(cell.dataset.r, 10), parseInt(cell.dataset.c, 10));
+    if (!isDragging || idx === lastTargetCell) return;
+    lastTargetCell = idx;
+    gridState[idx] = dragAction;
+    renderBoard();
+  });
+  function endDrag(){
+    if (!isDragging) return;
+    isDragging = false; lastTargetCell = -1;
+    persist();
+    judge();
+  }
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+
+  btnUndo.addEventListener('click', function(){
+    if (isCleared || !history.length) return;
+    gridState = history.pop();
+    renderBoard();
+    persist();
+  });
+  btnReset.addEventListener('click', function(){
+    if (isCleared) return;
+    pushHistory();
+    for (var i = 0; i < gridState.length; i++) gridState[i] = 0;
+    renderBoard();
+    persist();
+  });
+  btnAgain.addEventListener('click', function(){
+    makeMsg.textContent = '';
+    if (img) { backToPlayBtn.hidden = false; show('crop'); redraw(); }
+    else show('pick');
+  });
+
+  btnShare.addEventListener('click', function(){
+    if (!currentPuzzle) return;
+    var hash = P.encode(currentPuzzle.cells, currentPuzzle.w, currentPuzzle.h, currentPuzzle.palette, currentPuzzle.title);
+    var url = location.origin + location.pathname + hash;
+    var data = { title: 'ピクセル 写真4色', text: currentPuzzle.title + '（4色 ' + currentPuzzle.w + '×' + currentPuzzle.h + '）', url: url };
+    if (navigator.share) { navigator.share(data).catch(function(){}); return; }
+    copyText(url).then(function(ok){
+      toast.textContent = ok ? 'URLをコピーしました。' : 'コピーできませんでした: ' + url;
+    });
+  });
+  function copyText(t){
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(t).then(function(){ return true; }).catch(function(){ return legacy(); });
+    }
+    return Promise.resolve(legacy());
+    function legacy(){
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = t;
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch (e) { return false; }
+    }
+  }
+
+  /* ---- 作った問題の一覧 ---- */
+  function renderMadeList(){
+    elMadeList.innerHTML = '';
+    if (!store.made.length) { elMade.hidden = true; return; }
+    for (var i = 0; i < store.made.length; i++) {
+      (function(m){
+        var cells = cellsArr(m.cells);
+        var id = idOf(cells, m.w, m.h);
+        var row = document.createElement('button');
+        row.className = 'madeRow' + (id === currentId ? ' cur' : '');
+        var nm = document.createElement('span');
+        nm.className = 'mn'; nm.textContent = m.title;
+        var pp = document.createElement('span');
+        pp.className = 'mp';
+        for (var k = 0; k < 3; k++) {
+          var sw = document.createElement('i');
+          sw.style.background = m.palette[k];
+          pp.appendChild(sw);
+        }
+        var tt = document.createElement('span');
+        tt.className = 'mt'; tt.textContent = m.w + '×' + m.h;
+        var cc = document.createElement('span');
+        cc.className = 'mc'; cc.textContent = (store.progress[id] === 'done') ? '✓' : '';
+        row.appendChild(nm); row.appendChild(pp); row.appendChild(tt); row.appendChild(cc);
+        row.addEventListener('click', function(){
+          loadPuzzle({ cells: cells, w: m.w, h: m.h, palette: m.palette, title: m.title }, 0);
+        });
+        elMadeList.appendChild(row);
+      })(store.made[i]);
+    }
+    elMade.hidden = false;
+  }
+
+  /* ---------------- 起動 ---------------- */
+  loadStore();
+  renderMadeList();
+
+  var fromHash = location.hash ? P.decode(location.hash) : null;
+  if (fromHash) {
+    var hs2 = P.hints(fromHash.cells, fromHash.w, fromHash.h);
+    if (P.lineSolve(hs2.rowHints, hs2.colHints, fromHash.w, fromHash.h, 3)) {
+      loadPuzzle(fromHash, 0);
+    } else {
+      show('pick');
+      pickMsg.textContent = 'この問題は開けません。';
+    }
+  } else if (location.hash && location.hash.length > 1) {
+    show('pick');
+    pickMsg.textContent = 'この問題は開けません。';
+  } else {
+    show('pick');
+  }
+})();
+</script>
+</body>
+</html>
