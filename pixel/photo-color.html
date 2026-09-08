@@ -72,6 +72,9 @@
     background:var(--panel);color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent;
   }
   .seg button.on{background:var(--active);color:#fff;border-color:var(--active)}
+  #playSeg button{padding:7px 0;line-height:1.25;font-size:13.5px}
+  #playSeg small{display:block;font-size:10.5px;font-weight:600;opacity:.78;margin-top:1px}
+  .segNote{font-size:11.5px;color:var(--sub);margin-top:5px;line-height:1.4}
   input[type=range]{width:100%;margin:0}
   #titleInput{
     width:100%;font:inherit;padding:9px 10px;
@@ -559,6 +562,20 @@
   /* 各層が順に解けるか（これが問題として成り立つ条件） */
   function layersSolvable(cells, w, h){ return layersSolve(cells, w, h).ok; }
 
+  /* 層 layerIndex の「1パス目（行→列を一巡）で確定するマスの割合」。
+     母数は前の層で既知になったマスを除いた「その層で解くべきマス」。
+     0..1 を返す（解くべきマスが無い層は 1）。DOM 非依存 */
+  function layerFirstPassRate(cells, w, h, layerIndex){
+    var n = w * h, li = Math.max(0, Math.min(2, layerIndex | 0));
+    var known = new Uint8Array(n), i, k;
+    for (k = 0; k < li; k++) {
+      for (i = 0; i < n; i++) if ((cells[i] | 0) === LAYER_COLOR[k]) known[i] = 1;
+    }
+    var L = layerSolve(cells, w, h, li, known);
+    if (!L.open) return 1;
+    return L.first / L.open;
+  }
+
   /* ---------------- 修復 ----------------
      境界（2番目に近いクラスタとの差が小さい）マスから順に付け替えて、
      「各層が順に解ける」ようになるまで。戻り: {cells, flips} / 無理なら null */
@@ -626,20 +643,28 @@
     if (out.length < n) return null;
     return out.slice(0, n);
   }
-  function encode(cells, w, h, palette, title){
+  function encode(cells, w, h, palette, title, play){
     var hex = '', i;
     for (i = 0; i < 3; i++) {
       var c = hexToRgb((palette && palette[i]) || '#000000') || [0,0,0];
       hex += hexOf(c).slice(1);
     }
     var t = '';
-    try { t = encodeURIComponent(title || ''); } catch (e) { t = ''; }
-    return '#c1.' + w + '.' + h + '.' + hex + '.' + cellsToB64(cells) + '.' + t;
+    /* 題名の「.」は %2E にする（末尾の .p1〜.p3 と混ざらないように。復号は従来どおり） */
+    try { t = encodeURIComponent(title || '').replace(/\./g, '%2E'); } catch (e) { t = ''; }
+    var pp = (play === 1 || play === 2 || play === 3) ? ('.p' + play) : '';
+    return '#c1.' + w + '.' + h + '.' + hex + '.' + cellsToB64(cells) + '.' + t + pp;
   }
   function decode(hash){
     if (typeof hash !== 'string') return null;
     var s = hash.charAt(0) === '#' ? hash.slice(1) : hash;
     var p = s.split('.');
+    /* 末尾の .p1〜.p3（解く枚数）は任意。無ければ3枚 */
+    var play = 3;
+    if (p.length > 5 && /^p[1-3]$/.test(p[p.length - 1])) {
+      play = parseInt(p[p.length - 1].charAt(1), 10);
+      p = p.slice(0, p.length - 1);
+    }
     if (p.length < 5 || p[0] !== 'c1') return null;
     var w = parseInt(p[1], 10), h = parseInt(p[2], 10);
     if (!(w >= 5 && w <= 60 && h >= 5 && h <= 60)) return null;
@@ -651,7 +676,7 @@
     var title = '写真';
     if (p.length > 5) { try { title = decodeURIComponent(p.slice(5).join('.')); } catch (e) { title = '写真'; } }
     if (!title) title = '写真';
-    return { cells: cells, w: w, h: h, palette: palette, title: title.slice(0, 30) };
+    return { cells: cells, w: w, h: h, palette: palette, title: title.slice(0, 30), play: play };
   }
 
   var PixelColor = {
@@ -664,6 +689,7 @@
     layerSolve: layerSolve,
     layersSolve: layersSolve,
     layersSolvable: layersSolvable,
+    layerFirstPassRate: layerFirstPassRate,
     LAYER_COLOR: LAYER_COLOR,
     repair: repair,
     isComplete: isComplete,
@@ -728,6 +754,16 @@
         <button data-n="30" class="on">30</button>
         <button data-n="40">40</button>
       </div>
+    </div>
+
+    <div class="ctrl">
+      <div class="ctrlLabel">解く枚数</div>
+      <div class="seg" id="playSeg">
+        <button data-p="1" class="on">1枚<small>3枚目だけ</small></button>
+        <button data-p="2">2枚<small>2・3枚目</small></button>
+        <button data-p="3">3枚<small>全部</small></button>
+      </div>
+      <div class="segNote">少ないほどやさしい。塗ってある所から始まる</div>
     </div>
 
     <div class="ctrl">
@@ -814,6 +850,7 @@
   var fileInput = $('fileInput'), pickBtn = $('pickBtn'), pickMsg = $('pickMsg');
   var cropCanvas = $('cropCanvas'), previewCanvas = $('previewCanvas'), swatches = $('swatches');
   var zoomRange = $('zoomRange'), sizeSeg = $('sizeSeg'), titleInput = $('titleInput');
+  var playSeg = $('playSeg');
   var makeBtn = $('makeBtn'), rePickBtn = $('rePickBtn'), backToPlayBtn = $('backToPlayBtn'), makeMsg = $('makeMsg');
   var elStageWrapper = $('stageWrapper'), elGrid = $('grid'), elColHints = $('colHints'), elRowHints = $('rowHints');
   var elClearBanner = $('clearBanner'), artTitle = $('artTitle'), elCompare = $('compare');
@@ -836,8 +873,10 @@
       var p = JSON.parse(s);
       if (p && typeof p === 'object') {
         store.made = Array.isArray(p.made) ? p.made.filter(function(m){
-          return m && typeof m.cells === 'string' && m.cells.length === (m.w | 0) * (m.h | 0) &&
-                 m.w > 0 && Array.isArray(m.palette) && m.palette.length === 3;
+          if (!(m && typeof m.cells === 'string' && m.cells.length === (m.w | 0) * (m.h | 0) &&
+                m.w > 0 && Array.isArray(m.palette) && m.palette.length === 3)) return false;
+          m.play = playOf(m.play);
+          return true;
         }).slice(0, 20) : [];
         store.progress = (p.progress && typeof p.progress === 'object') ? p.progress : {};
       }
@@ -847,6 +886,12 @@
     try { localStorage.setItem(STORE_KEY, JSON.stringify({ made: store.made.slice(0, 20), progress: store.progress })); }
     catch (e) {}
   }
+  /* 解く枚数（1〜3・既定は3＝全部。古いデータ・古いハッシュは3枚あつかい） */
+  function playOf(v){ v = v | 0; return (v === 1 || v === 2) ? v : 3; }
+  function startOf(play){ return 3 - playOf(play); }
+  /* 途中経過のキー。3枚は従来どおり id そのまま（古い保存をそのまま読む） */
+  function progKey(id, play){ return playOf(play) === 3 ? id : (id + '|p' + playOf(play)); }
+
   function cellsStr(a){ return a.join(''); }
   function cellsArr(s){ var a = [], i; for (i = 0; i < s.length; i++) a.push(s.charCodeAt(i) - 48); return a; }
 
@@ -865,7 +910,7 @@
      画面1・2: 写真 → 4色の下絵
      ================================================================ */
   var img = null, imgW = 0, imgH = 0;
-  var cx = 0, cy = 0, zoom = 1, N = 30;
+  var cx = 0, cy = 0, zoom = 1, N = 30, playN = 1;
   var rgbN = null, quant = null;
 
   pickBtn.addEventListener('click', function(){ fileInput.click(); });
@@ -1039,6 +1084,13 @@
       redraw();
     });
   }
+  for (var pi = 0; pi < playSeg.children.length; pi++) {
+    playSeg.children[pi].addEventListener('click', function(){
+      playN = playOf(parseInt(this.dataset.p, 10));
+      for (var k = 0; k < playSeg.children.length; k++) playSeg.children[k].classList.remove('on');
+      this.classList.add('on');
+    });
+  }
   backToPlayBtn.addEventListener('click', function(){ if (currentPuzzle) show('play'); });
 
   /* 「これで作る」 */
@@ -1070,11 +1122,11 @@
       var title = (titleInput.value || '').trim() || '写真';
       var id = idOf(cells, N, N);
       try { sessionPhotos[id] = cropCanvas.toDataURL('image/jpeg', 0.7); } catch (e) {}
-      var entry = { cells: cellsStr(cells), w: N, h: N, palette: palette, title: title, date: today() };
+      var entry = { cells: cellsStr(cells), w: N, h: N, palette: palette, title: title, play: playN, date: today() };
       addMade(entry);
       makeBtn.disabled = false;
       makeMsg.textContent = '';
-      loadPuzzle({ cells: cells, w: N, h: N, palette: palette, title: title }, flips);
+      loadPuzzle({ cells: cells, w: N, h: N, palette: palette, title: title, play: playN }, flips);
     }, 30);
   });
 
@@ -1091,7 +1143,10 @@
     if (store.made.length > 20) {
       var dropped = store.made.slice(20);
       store.made = store.made.slice(0, 20);
-      for (var i = 0; i < dropped.length; i++) delete store.progress[idOf(cellsArr(dropped[i].cells), dropped[i].w, dropped[i].h)];
+      for (var i = 0; i < dropped.length; i++) {
+        var did = idOf(cellsArr(dropped[i].cells), dropped[i].w, dropped[i].h);
+        delete store.progress[did]; delete store.progress[did + '|p1']; delete store.progress[did + '|p2'];
+      }
     }
     saveStore();
   }
@@ -1099,7 +1154,7 @@
   /* ================================================================
      画面3: 遊ぶ
      ================================================================ */
-  var currentPuzzle = null, currentId = '';
+  var currentPuzzle = null, currentId = '', currentKey = '';
   var layerIdx = 0, locked = [], layerState = [], history = [];
   var isCleared = false, advancing = false;
   var selValue = 1, isZoomed = false, bigCell = 18;
@@ -1133,9 +1188,22 @@
     st.setProperty('--ii', inkOf(hex));
   }
 
+  /* 解く層それぞれの「1パス目で確定するマスの割合」の最小値で、難しさの目安を出す。
+     閾値は叩き台（docs/spec_photo_color.md）*/
+  function diffLabel(pz){
+    var st = startOf(pz.play), i, r, min = 1;
+    for (i = st; i < 3; i++) {
+      r = P.layerFirstPassRate(pz.cells, pz.w, pz.h, i);
+      if (r < min) min = r;
+    }
+    return min >= 0.75 ? '入門' : (min >= 0.60 ? '初級' : (min >= 0.45 ? '中級' : '上級'));
+  }
+
   function loadPuzzle(pz, flips){
     currentPuzzle = pz;
+    pz.play = playOf(pz.play);
     currentId = idOf(pz.cells, pz.w, pz.h);
+    currentKey = progKey(currentId, pz.play);
 
     isCleared = false; advancing = false; activeRow = -1; activeCol = -1;
     elStageWrapper.classList.remove('cleared');
@@ -1145,16 +1213,16 @@
 
     applyPalette(pz.palette);
     setZoom(false);
-    elLevelName.textContent = pz.w + '×' + pz.h;
+    elLevelName.textContent = pz.w + '×' + pz.h + ' ・' + pz.play + '枚 ・' + diffLabel(pz);
     boardZoomRange.value = String(bigCell);
 
     /* 続き（層番号｜その層の塗り） */
-    var total = pz.w * pz.h, li = 0, restore = null, i;
-    var saved = store.progress[currentId];
+    var total = pz.w * pz.h, li = startOf(pz.play), restore = null, i;
+    var saved = store.progress[currentKey];
     if (typeof saved === 'string' && saved !== 'done') {
       var m = /^([0-2])\|([0-4]*)$/.exec(saved);
       if (m && m[2].length === total) {
-        li = parseInt(m[1], 10);
+        li = Math.max(li, parseInt(m[1], 10));
         restore = [];
         for (i = 0; i < total; i++) restore.push(m[2].charCodeAt(i) - 48);
       }
@@ -1170,8 +1238,8 @@
 
   /* 層をひらく。前の層で確定した色は locked に入れて、薄く表示・塗れなくする */
   function startLayer(idx, restore){
-    var pz = currentPuzzle, n = pz.w * pz.h, i, li;
-    layerIdx = Math.max(0, Math.min(2, idx | 0));
+    var pz = currentPuzzle, n = pz.w * pz.h, i, li, st = startOf(pz.play);
+    layerIdx = Math.max(st, Math.min(2, idx | 0));
     history = [];
     locked = new Array(n);
     for (i = 0; i < n; i++) locked[i] = 0;
@@ -1189,8 +1257,10 @@
     pz.colHints = hs.colHints;
 
     applyLayerColor();
-    elLayerText.textContent = LAYER_LABEL[layerIdx] + ' ／ 3まい';
-    elLayerSub.textContent = layerIdx === 0 ? 'いちばん濃い色から' : (layerIdx === 2 ? 'さいごの色' : '');
+    elLayerText.textContent = LAYER_LABEL[layerIdx - st] + ' ／ ' + pz.play + 'まい';
+    elLayerSub.textContent = (layerIdx === st)
+      ? (layerIdx === 0 ? 'いちばん濃い色から' : (layerIdx === 1 ? '中くらいの色から' : 'いちばん明るい色'))
+      : (layerIdx === 2 ? 'さいごの色' : '');
     elLayerHelp.hidden = (layerIdx === 0);
     setSel(1);
     setupDOM();
@@ -1201,7 +1271,7 @@
 
   function persist(){
     if (!currentPuzzle) return;
-    store.progress[currentId] = isCleared ? 'done' : (layerIdx + '|' + layerState.join(''));
+    store.progress[currentKey] = isCleared ? 'done' : (layerIdx + '|' + layerState.join(''));
     saveStore();
   }
 
@@ -1380,11 +1450,12 @@
     if (layerIdx < 2) {
       var next = layerIdx + 1;
       advancing = true;
-      toast.textContent = (layerIdx + 1) + '/3 できた';
+      var st = startOf(currentPuzzle.play);
+      toast.textContent = (layerIdx - st + 1) + '/' + currentPuzzle.play + ' できた';
       setTimeout(function(){
         advancing = false;
         startLayer(next, null);
-        toast.textContent = LAYER_LABEL[next] + 'へ';
+        toast.textContent = LAYER_LABEL[next - st] + 'へ';
         persist();
         judge();                      /* その色が1マスも無い層はすぐ次へ */
       }, 800);
@@ -1484,7 +1555,7 @@
   });
   btnReset.addEventListener('click', function(){
     if (isCleared || advancing || !currentPuzzle) return;
-    startLayer(0, null);            /* 3枚とも最初から */
+    startLayer(startOf(currentPuzzle.play), null);   /* 解く枚数ぶん最初から */
     toast.textContent = '';
     persist();
   });
@@ -1496,9 +1567,9 @@
 
   btnShare.addEventListener('click', function(){
     if (!currentPuzzle) return;
-    var hash = P.encode(currentPuzzle.cells, currentPuzzle.w, currentPuzzle.h, currentPuzzle.palette, currentPuzzle.title);
+    var hash = P.encode(currentPuzzle.cells, currentPuzzle.w, currentPuzzle.h, currentPuzzle.palette, currentPuzzle.title, currentPuzzle.play);
     var url = location.origin + location.pathname + hash;
-    var data = { title: 'ピクセル 写真4色', text: currentPuzzle.title + '（4色 ' + currentPuzzle.w + '×' + currentPuzzle.h + '）', url: url };
+    var data = { title: 'ピクセル 写真4色', text: currentPuzzle.title + '（4色 ' + currentPuzzle.w + '×' + currentPuzzle.h + '・' + currentPuzzle.play + '枚）', url: url };
     if (navigator.share) { navigator.share(data).catch(function(){}); return; }
     copyText(url).then(function(ok){
       toast.textContent = ok ? 'URLをコピーしました。' : 'コピーできませんでした: ' + url;
@@ -1531,6 +1602,7 @@
       (function(m){
         var cells = cellsArr(m.cells);
         var id = idOf(cells, m.w, m.h);
+        var mplay = playOf(m.play);
         var row = document.createElement('button');
         row.className = 'madeRow' + (id === currentId ? ' cur' : '');
         var nm = document.createElement('span');
@@ -1543,12 +1615,12 @@
           pp.appendChild(sw);
         }
         var tt = document.createElement('span');
-        tt.className = 'mt'; tt.textContent = m.w + '×' + m.h;
+        tt.className = 'mt'; tt.textContent = m.w + '×' + m.h + ' ' + mplay + '枚';
         var cc = document.createElement('span');
-        cc.className = 'mc'; cc.textContent = (store.progress[id] === 'done') ? '✓' : '';
+        cc.className = 'mc'; cc.textContent = (store.progress[progKey(id, mplay)] === 'done') ? '✓' : '';
         row.appendChild(nm); row.appendChild(pp); row.appendChild(tt); row.appendChild(cc);
         row.addEventListener('click', function(){
-          loadPuzzle({ cells: cells, w: m.w, h: m.h, palette: m.palette, title: m.title }, 0);
+          loadPuzzle({ cells: cells, w: m.w, h: m.h, palette: m.palette, title: m.title, play: mplay }, 0);
         });
         elMadeList.appendChild(row);
       })(store.made[i]);
