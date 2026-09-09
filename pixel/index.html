@@ -8,7 +8,8 @@
   :root{
     --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
     --ink:#2b2b2b; --sub:#77736c; --thick:#5d5952; --active:#3a3833;
-    --hint-bg:#eae8e1; --clear-gold:#9c782b;
+    --hint-bg:#eae8e1; --highlight-bg:#e8e4db; --guide-bg:rgba(0,0,0,0.035);
+    --guide-cross:rgba(0,0,0,0.07);
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
@@ -17,71 +18,107 @@
     font:15px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
     -webkit-text-size-adjust:100%;
   }
-  #app{max-width:420px;margin:0 auto;padding:10px 10px 40px}
+  #app{max-width:440px;margin:0 auto;padding:10px 8px 40px}
   header{display:flex;align-items:baseline;justify-content:space-between;padding:2px 4px 6px}
   #titleWrap{display:flex;align-items:baseline;gap:8px}
   #title{font-size:20px;font-weight:700;letter-spacing:.02em}
-  #levelName{font-size:14px;color:var(--sub);font-weight:600}
+  #levelName{font-size:13.5px;color:var(--sub);font-weight:600}
+  #headerActions{display:flex;align-items:center;gap:10px}
+  #zoomBtn{
+    font-size:12px;font-weight:700;padding:3px 8px;border-radius:6px;
+    border:1px solid var(--frame);background:var(--panel);color:var(--ink);
+    cursor:pointer;-webkit-tap-highlight-color:transparent;
+  }
+  #zoomBtn:active{background:#eeece7}
   #portalLink{font-size:13px;color:var(--sub);text-decoration:none}
   #portalLink:hover{text-decoration:underline}
 
-  #rules{padding:0 4px 10px;font-size:12.5px;line-height:1.6;color:var(--sub)}
+  #rules{padding:0 4px 8px;font-size:12px;line-height:1.5;color:var(--sub)}
   #rules div{white-space:nowrap}
 
-  /* 盤面エリア */
-  #stage{
-    position:relative;margin:0 auto;
-    background:var(--panel);border:2px solid var(--thick);border-radius:6px;
-    padding:8px;touch-action:none;user-select:none;-webkit-user-select:none;
+  /* 盤面スクロールコンテナ */
+  #stageWrapper{
+    position:relative;width:100%;
+    background:var(--panel);border:2px solid var(--thick);border-radius:8px;
+    overflow:hidden;user-select:none;-webkit-user-select:none;
     -webkit-tap-highlight-color:transparent;
+    box-shadow:0 1px 4px rgba(0,0,0,0.04);
   }
+  /* ズーム拡大モード時 */
+  #stageWrapper.zoomed{
+    overflow:auto;-webkit-overflow-scrolling:touch;
+    max-height:68vh;
+  }
+
   #boardWrapper{
     display:grid;
     grid-template-columns:auto 1fr;
     grid-template-rows:auto 1fr;
-    gap:4px;
+    padding:6px;
+    width:fit-content;min-width:100%;
+    margin:0 auto;
   }
-  #corner{grid-column:1;grid-row:1}
+  #corner{
+    grid-column:1;grid-row:1;
+    background:var(--panel);
+    position:sticky;top:0;left:0;z-index:10;
+  }
 
   /* 列ヒント（上部） */
   #colHints{
     grid-column:2;grid-row:1;
-    display:grid;
-    align-items:end;
+    display:grid;align-items:end;
+    background:var(--panel);
+    position:sticky;top:0;z-index:5;
   }
   .colHint{
     display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
-    font-size:11px;font-weight:700;color:var(--ink);padding-bottom:3px;
-    line-height:1.2;transition:opacity .2s;
+    font-size:var(--hint-fs, 11px);font-weight:700;color:var(--ink);
+    padding-bottom:3px;line-height:1.15;
+    border-right:1px solid transparent;
+    transition:background-color .15s;
   }
+  .colHint.b-r5{border-right:2px solid var(--thick)}
+  .colHint.active{background:var(--highlight-bg);border-radius:4px 4px 0 0}
 
   /* 行ヒント（左部） */
   #rowHints{
     grid-column:1;grid-row:2;
-    display:grid;
-    justify-items:end;
+    display:grid;justify-items:end;
+    background:var(--panel);
+    position:sticky;left:0;z-index:5;
   }
   .rowHint{
     display:flex;align-items:center;justify-content:flex-end;gap:3px;
-    font-size:11px;font-weight:700;color:var(--ink);padding-right:4px;
-    white-space:nowrap;transition:opacity .2s;
+    font-size:var(--hint-fs, 11px);font-weight:700;color:var(--ink);
+    padding-right:5px;white-space:nowrap;
+    border-bottom:1px solid transparent;
+    transition:background-color .15s;
+  }
+  .rowHint.b-b5{border-bottom:2px solid var(--thick)}
+  .rowHint.active{background:var(--highlight-bg);border-radius:4px 0 0 4px}
+
+  /* ヒント数字の個別スパン（タップでチェック可能） */
+  .hintNum{
+    cursor:pointer;padding:0 1px;border-radius:2px;display:inline-block;
+  }
+  .hintNum.checked{
+    opacity:.25;text-decoration:line-through;
   }
 
   /* グリッド本体 */
   #grid{
     grid-column:2;grid-row:2;
-    position:relative;
-    display:grid;
-    border:1px solid var(--thick);
-    background:var(--panel);
-    aspect-ratio:1/1;
+    position:relative;display:grid;
+    border:1px solid var(--thick);background:var(--panel);
+    touch-action:none;
   }
   .cell{
     position:relative;
-    border-right:1px solid var(--line);
-    border-bottom:1px solid var(--line);
+    border-right:1px solid var(--line);border-bottom:1px solid var(--line);
     cursor:pointer;
     display:flex;align-items:center;justify-content:center;
+    width:var(--cs, 26px);height:var(--cs, 26px);
   }
   .cell.re{border-right:0}
   .cell.be{border-bottom:0}
@@ -89,21 +126,25 @@
   .cell.b-r5{border-right:2px solid var(--thick)}
   .cell.b-b5{border-bottom:2px solid var(--thick)}
 
+  /* 十字ガイドハイライト */
+  .cell.guide-col, .cell.guide-row{background-color:var(--guide-bg)}
+  .cell.guide-cross{background-color:var(--guide-cross)}
+
   /* セルの状態 */
   .cell.fill{background:var(--ink)}
+  .cell.fill.guide-cross{background:#111111}
   .cell.x::after{
     content:"✕";
-    font-size:calc(var(--cell-size, 26px) * 0.55);
-    color:var(--sub);
-    line-height:1;
-    opacity:.7;
+    font-size:calc(var(--cs, 26px) * 0.58);
+    color:var(--sub);line-height:1;opacity:.7;
   }
 
   /* クリア時の演出 */
-  #stage.cleared #colHints, #stage.cleared #rowHints{opacity:.25}
-  #stage.cleared .cell.fill{background:var(--ink)}
-  #stage.cleared .cell.x::after{display:none}
-  #stage.cleared #grid{border-color:var(--ink)}
+  #stageWrapper.cleared #colHints, #stageWrapper.cleared #rowHints{opacity:.25}
+  #stageWrapper.cleared .cell.fill{background:var(--ink)}
+  #stageWrapper.cleared .cell.x::after{display:none}
+  #stageWrapper.cleared #grid{border-color:var(--ink)}
+  #stageWrapper.cleared .cell.guide-col, #stageWrapper.cleared .cell.guide-row, #stageWrapper.cleared .cell.guide-cross{background-color:transparent}
 
   /* 完成メッセージバー */
   #clearBanner{
@@ -111,11 +152,11 @@
     padding:10px 14px;margin-top:10px;
     background:#ebe7df;border-radius:8px;
   }
-  #artTitle{font-size:17px;font-weight:700;color:var(--ink)}
+  #artTitle{font-size:16px;font-weight:700;color:var(--ink)}
   #artTitle span{font-size:13px;font-weight:400;color:var(--sub);margin-left:6px}
 
   /* モード切り替え & ボタン */
-  #controls{display:flex;gap:8px;margin-top:12px}
+  #controls{display:flex;gap:8px;margin-top:10px}
   .modeBtn{
     flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
     padding:11px 0;font-size:15px;font-weight:700;
@@ -164,7 +205,10 @@
       <span id="title">ピクセル</span>
       <span id="levelName"></span>
     </div>
-    <a id="portalLink" href="../">パズル箱</a>
+    <div id="headerActions">
+      <button id="zoomBtn" hidden>🔍 拡大</button>
+      <a id="portalLink" href="../">パズル箱</a>
+    </div>
   </header>
 
   <div id="rules">
@@ -172,7 +216,7 @@
     <div>数字が複数のときは、間に1マス以上あける</div>
   </div>
 
-  <div id="stage">
+  <div id="stageWrapper">
     <div id="boardWrapper">
       <div id="corner"></div>
       <div id="colHints"></div>
@@ -219,21 +263,22 @@ var Pixel = {
 if (typeof window !== 'undefined') window.Pixel = Pixel;
 
 /* ----------------------------------------------------------------
-   問題データ（全40問・一意解・仮定なし解決を検証済み）
+   問題データ（入門5x5、初級・中級10x10、上級15x15、達人25x25 をサポート）
 ---------------------------------------------------------------- */
-var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1], [1], [5], [1], [1]], "colHints": [[1], [1], [5], [1], [1]], "solution": "0010000100111110010000100"}, {"no": 2, "title": "リボン", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1, 1], [2, 2], [3], [2, 2], [1, 1]], "colHints": [[2, 2], [3], [1], [3], [2, 2]], "solution": "1000111011011101101110001"}, {"no": 3, "title": "さんかく", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1], [1], [3], [3], [5]], "colHints": [[1], [3], [5], [3], [1]], "solution": "0010000100011100111011111"}, {"no": 4, "title": "はた", "tier": "入門", "w": 5, "h": 5, "rowHints": [[4], [4], [4], [1], [1]], "colHints": [[5], [3], [3], [3], [0]], "solution": "1111011110111101000010000"}, {"no": 5, "title": "チューリップ", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1, 1, 1], [5], [3], [1], [3]], "colHints": [[2], [2, 1], [5], [2, 1], [2]], "solution": "1010111111011100010001110"}, {"no": 6, "title": "ばつ", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1, 1], [2, 2], [1], [2, 2], [1, 1]], "colHints": [[2, 2], [1, 1], [1], [1, 1], [2, 2]], "solution": "1000111011001001101110001"}, {"no": 7, "title": "やじるし", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1], [3], [5], [1], [1]], "colHints": [[1], [2], [5], [2], [1]], "solution": "0010001110111110010000100"}, {"no": 8, "title": "ハート", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1, 1], [5], [5], [3], [1]], "colHints": [[2], [4], [4], [4], [2]], "solution": "0101011111111110111000100"}, {"no": 9, "title": "ダイヤ", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1], [3], [5], [3], [1]], "colHints": [[1], [3], [5], [3], [1]], "solution": "0010001110111110111000100"}, {"no": 10, "title": "ほし", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1], [5], [3], [1, 1], [1, 1]], "colHints": [[1, 1], [3], [3], [3], [1, 1]], "solution": "0010011111011100101010001"}, {"no": 11, "title": "かんむり", "tier": "初級", "w": 10, "h": 10, "rowHints": [[0], [1, 2, 1], [1, 4, 1], [8], [8], [2, 2, 2], [8], [8], [8], [0]], "colHints": [[0], [8], [6], [3, 3], [8], [8], [3, 3], [6], [8], [0]], "solution": "0000000000010011001001011110100111111110011111111001101101100111111110011111111001111111100000000000"}, {"no": 12, "title": "おちょこ", "tier": "初級", "w": 10, "h": 10, "rowHints": [[0], [0], [10], [10], [8], [8], [6], [6], [4], [0]], "colHints": [[2], [4], [6], [7], [7], [7], [7], [6], [4], [2]], "solution": "0000000000000000000011111111111111111111011111111001111111100011111100001111110000011110000000000000"}, {"no": 13, "title": "さかな", "tier": "初級", "w": 10, "h": 10, "rowHints": [[0], [3], [1, 5], [2, 7], [8, 1], [10], [2, 7], [1, 5], [3], [0]], "colHints": [[6], [4], [2], [4], [6], [8], [8], [8], [2, 3], [4]], "solution": "0000000000000001110010001111101101111111111111110111111111111101111111100011111000000111000000000000"}, {"no": 14, "title": "カップ", "tier": "初級", "w": 10, "h": 10, "rowHints": [[1, 1], [1, 1], [1, 1], [0], [7], [7, 2], [7, 1], [7, 2], [7], [5]], "colHints": [[5], [6], [1, 1, 6], [1, 6], [6], [1, 1, 6], [1, 5], [0], [1, 1], [3]], "solution": "0010010000000100100000100100000000000000111111100011111110111111111001111111101111111110000111110000"}, {"no": 15, "title": "ちょうちょ", "tier": "初級", "w": 10, "h": 10, "rowHints": [[1, 1], [1, 1], [2, 2], [4, 4], [10], [2, 2, 2], [10], [4, 4], [2, 2], [0]], "colHints": [[1, 2, 2], [8], [7], [2, 2], [3], [3], [2, 2], [7], [8], [1, 2, 2]], "solution": "1000000001010000001001100001101111001111111111111101101101101111111111111100111101100001100000000000"}, {"no": 16, "title": "ゆきのけっしょう", "tier": "初級", "w": 10, "h": 10, "rowHints": [[2], [2], [1, 6, 1], [8], [1, 2, 1], [1, 2, 1], [8], [1, 6, 1], [2], [2]], "colHints": [[1, 1], [1, 1], [6], [2, 2], [10], [10], [2, 2], [6], [1, 1], [1, 1]], "solution": "0000110000000011000010111111010111111110001011010000101101000111111110101111110100001100000000110000"}, {"no": 17, "title": "てんとうむし", "tier": "初級", "w": 10, "h": 10, "rowHints": [[0], [1, 1], [4], [6], [3, 3], [8], [2, 2, 2], [8], [6], [0]], "colHints": [[0], [4], [1, 6], [4, 2], [2, 4], [2, 4], [4, 2], [1, 6], [4], [0]], "solution": "0000000000001000010000011110000011111100011100111001111111100110110110011111111000111111000000000000"}, {"no": 18, "title": "かに", "tier": "初級", "w": 10, "h": 10, "rowHints": [[2, 2], [2, 2], [1, 2, 1], [8], [10], [10], [8], [1, 6, 1], [1, 1], [0]], "colHints": [[1, 2, 2], [2, 4], [7], [5], [6], [6], [5], [7], [2, 4], [1, 2, 2]], "solution": "1100000011011000011000101101000111111110111111111111111111110111111110101111110110000000010000000000"}, {"no": 19, "title": "ネコ", "tier": "初級", "w": 10, "h": 10, "rowHints": [[1, 1], [2, 2], [6], [8], [1, 4, 1], [8], [2, 2, 2], [8], [6], [0]], "colHints": [[0], [5], [4, 4], [5, 2], [7], [7], [5, 2], [4, 4], [5], [0]], "solution": "0010000100001100110000111111000111111110010111101001111111100110110110011111111000111111000000000000"}, {"no": 20, "title": "ロケット", "tier": "初級", "w": 10, "h": 10, "rowHints": [[2], [4], [4], [4], [6], [6], [2, 4, 2], [2, 4, 2], [4], [2]], "colHints": [[2], [2], [2], [8], [10], [10], [8], [2], [2], [2]], "solution": "0000110000000111100000011110000001111000001111110000111111001101111011110111101100011110000000110000"}, {"no": 21, "title": "ろうそく", "tier": "中級", "w": 10, "h": 10, "rowHints": [[1], [2], [3], [2], [1], [6], [6], [6], [6], [8]], "colHints": [[0], [1], [5], [2, 5], [4, 5], [8], [5], [5], [1], [0]], "solution": "0000100000000110000000011100000000110000000001000000111111000011111100001111110000111111000111111110"}, {"no": 22, "title": "かさ", "tier": "中級", "w": 10, "h": 10, "rowHints": [[2], [6], [8], [10], [10], [2], [2], [2], [4], [2]], "colHints": [[2], [3], [4, 2], [4, 2], [9], [9], [4], [4], [3], [2]], "solution": "0000110000001111110001111111101111111111111111111100001100000000110000000011000000111100000011000000"}, {"no": 23, "title": "ゆきだるま", "tier": "中級", "w": 10, "h": 10, "rowHints": [[4], [4], [6], [4], [1, 2, 1], [4], [1, 6, 1], [8], [3, 3], [6]], "colHints": [[1], [2], [1, 1, 4], [4, 5], [8, 1], [8, 1], [4, 5], [1, 1, 4], [2], [1]], "solution": "0001111000000111100000111111000001111000001011010000011110001011111101011111111001110011100011111100"}, {"no": 24, "title": "りんご", "tier": "中級", "w": 10, "h": 10, "rowHints": [[3], [1], [6], [8], [10], [10], [8], [8], [2, 2], [0]], "colHints": [[2], [5], [7], [7], [8], [1, 6], [1, 7], [7], [5], [2]], "solution": "0000111000000010000000111111000111111110111111111111111111110111111110011111111000110011000000000000"}, {"no": 25, "title": "いえ", "tier": "中級", "w": 10, "h": 10, "rowHints": [[2], [4], [6], [8], [10], [6], [6], [2, 2], [2, 2], [2, 2]], "colHints": [[1], [2], [8], [9], [7], [7], [9], [8], [2], [1]], "solution": "0000110000000111100000111111000111111110111111111100111111000011111100001100110000110011000011001100"}, {"no": 26, "title": "きのこ", "tier": "中級", "w": 10, "h": 10, "rowHints": [[4], [6], [8], [2, 5, 1], [10], [2], [2], [4], [4], [6]], "colHints": [[2], [3], [2, 1, 1], [5, 3], [10], [10], [5, 3], [4, 1], [1, 1], [2]], "solution": "0001111000001111110001111111101101111101111111111100001100000000110000000111100000011110000011111100"}, {"no": 27, "title": "とっくり", "tier": "中級", "w": 10, "h": 10, "rowHints": [[4], [4], [2], [2], [4], [6], [8], [8], [8], [6]], "colHints": [[0], [3], [5], [2, 6], [10], [10], [2, 6], [5], [3], [0]], "solution": "0001111000000111100000001100000000110000000111100000111111000111111110011111111001111111100011111100"}, {"no": 28, "title": "ちょうちん", "tier": "中級", "w": 10, "h": 10, "rowHints": [[2], [4], [6], [8], [1, 4, 1], [1, 4, 1], [8], [6], [4], [2]], "colHints": [[0], [4], [2, 2], [8], [10], [10], [8], [2, 2], [4], [0]], "solution": "0000110000000111100000111111000111111110010111101001011110100111111110001111110000011110000000110000"}, {"no": 29, "title": "くるま", "tier": "中級", "w": 10, "h": 10, "rowHints": [[0], [0], [4], [6], [8], [10], [10], [2, 2, 2], [2, 2], [0]], "colHints": [[2], [6], [7], [5], [6], [6], [4], [5], [5], [2]], "solution": "0000000000000000000000111100000111111000011111111011111111111111111111011011011001100001100000000000"}, {"no": 30, "title": "かぎ", "tier": "中級", "w": 10, "h": 10, "rowHints": [[5], [2, 2], [2, 2], [5], [3], [3], [3], [5], [3], [5]], "colHints": [[0], [4], [10], [1, 7], [10], [4, 1, 1], [1, 1], [0], [0], [0]], "solution": "0111110000011011000001101100000111110000001110000000111000000011100000001111100000111000000011111000"}, {"no": 31, "title": "いかり", "tier": "上級", "w": 10, "h": 10, "rowHints": [[4], [1, 1], [4], [8], [2], [2], [1, 2, 1], [1, 2, 1], [2, 4, 2], [8]], "colHints": [[3], [1, 2], [1, 1], [4, 2], [1, 8], [1, 8], [4, 2], [1, 1], [1, 2], [3]], "solution": "0001111000000100100000011110000111111110000011000000001100001000110001100011000111011110110111111110"}, {"no": 32, "title": "とり", "tier": "上級", "w": 10, "h": 10, "rowHints": [[0], [3], [5], [4], [6], [7], [8], [6], [1, 1], [0]], "colHints": [[0], [1], [3], [5], [4], [6], [8], [7], [6], [1]], "solution": "0000000000000000111000000111110000011110000111111000111111100111111110001111110000010010000000000000"}, {"no": 33, "title": "つき", "tier": "上級", "w": 10, "h": 10, "rowHints": [[4], [6], [5], [4], [4], [4], [4], [5], [6], [4]], "colHints": [[0], [6], [8], [10], [10], [3, 3], [2, 2], [1, 1], [0], [0]], "solution": "0001111000001111110001111100000111100000011110000001111000000111100000011111000000111111000001111000"}, {"no": 34, "title": "き", "tier": "上級", "w": 10, "h": 10, "rowHints": [[2], [4], [6], [8], [10], [8], [6], [2], [2], [6]], "colHints": [[1], [3], [5, 1], [6, 1], [10], [10], [6, 1], [5, 1], [3], [1]], "solution": "0000110000000111100000111111000111111110111111111101111111100011111100000011000000001100000011111100"}, {"no": 35, "title": "ギター", "tier": "上級", "w": 10, "h": 10, "rowHints": [[2], [2], [2], [4], [6], [3, 3], [8], [8], [6], [4]], "colHints": [[0], [3], [5], [7], [5, 4], [5, 4], [7], [5], [3], [0]], "solution": "0000110000000011000000001100000001111000001111110001110011100111111110011111111000111111000001111000"}, {"no": 36, "title": "ヨット", "tier": "上級", "w": 10, "h": 10, "rowHints": [[1], [2], [3], [4], [5], [6], [1], [8], [6], [0]], "colHints": [[0], [1], [2], [2], [9], [5, 2], [4, 2], [3, 2], [2, 1], [1]], "solution": "0000100000000011000000001110000000111100000011111000001111110000100000011111111000111111000000000000"}, {"no": 37, "title": "アイスクリーム", "tier": "上級", "w": 10, "h": 10, "rowHints": [[4], [6], [8], [6], [6], [4], [4], [2], [2], [1]], "colHints": [[0], [1], [4], [7], [9], [10], [7], [4], [1], [0]], "solution": "0001111000001111110001111111100011111100001111110000011110000001111000000011000000001100000000010000"}, {"no": 38, "title": "ペンギン", "tier": "上級", "w": 10, "h": 10, "rowHints": [[4], [6], [1, 2, 1], [6], [4], [8], [2, 2], [2, 2], [8], [1, 1]], "colHints": [[0], [4], [3, 5], [2, 3, 1], [6, 1], [6, 1], [2, 3, 1], [3, 5], [4], [0]], "solution": "0001111000001111110000101101000011111100000111100001111111100110000110011000011001111111100010000100"}, {"no": 39, "title": "おんぷ", "tier": "上級", "w": 10, "h": 10, "rowHints": [[5], [2, 1], [2, 2], [4], [2], [2], [2], [5], [6], [5]], "colHints": [[0], [1], [3], [3], [3], [10], [10], [1, 1], [1, 2], [3]], "solution": "0000011111000001100100000110110000011110000001100000000110000000011000001111100001111110000011111000"}, {"no": 40, "title": "かお", "tier": "上級", "w": 10, "h": 10, "rowHints": [[6], [2, 2], [2, 2], [2, 1, 1, 2], [2, 2], [2, 1, 1, 2], [2, 4, 2], [2, 2], [6], [0]], "colHints": [[5], [7], [2, 2], [1, 1, 2, 1], [1, 1, 1], [1, 1, 1], [1, 1, 2, 1], [2, 2], [7], [5]], "solution": "0011111100011000011011000000111101001011110000001111010010111101111011011000011000111111000000000000"}];
+var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1], [1], [5], [1], [1]], "colHints": [[1], [1], [5], [1], [1]], "solution": "0010000100111110010000100"}, {"no": 2, "title": "リボン", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1, 1], [2, 2], [3], [2, 2], [1, 1]], "colHints": [[2, 2], [3], [1], [3], [2, 2]], "solution": "1000111011011101101110001"}, {"no": 3, "title": "さんかく", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1], [1], [3], [3], [5]], "colHints": [[1], [3], [5], [3], [1]], "solution": "0010000100011100111011111"}, {"no": 4, "title": "はた", "tier": "入門", "w": 5, "h": 5, "rowHints": [[4], [4], [4], [1], [1]], "colHints": [[5], [3], [3], [3], [0]], "solution": "1111011110111101000010000"}, {"no": 5, "title": "チューリップ", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1, 1, 1], [5], [3], [1], [3]], "colHints": [[2], [2, 1], [5], [2, 1], [2]], "solution": "1010111111011100010001110"}, {"no": 6, "title": "ばつ", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1, 1], [2, 2], [1], [2, 2], [1, 1]], "colHints": [[2, 2], [1, 1], [1], [1, 1], [2, 2]], "solution": "1000111011001001101110001"}, {"no": 7, "title": "やじるし", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1], [3], [5], [1], [1]], "colHints": [[1], [2], [5], [2], [1]], "solution": "0010001110111110010000100"}, {"no": 8, "title": "ハート", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1, 1], [5], [5], [3], [1]], "colHints": [[2], [4], [4], [4], [2]], "solution": "0101011111111110111000100"}, {"no": 9, "title": "ダイヤ", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1], [3], [5], [3], [1]], "colHints": [[1], [3], [5], [3], [1]], "solution": "0010001110111110111000100"}, {"no": 10, "title": "ほし", "tier": "入門", "w": 5, "h": 5, "rowHints": [[1], [5], [3], [1, 1], [1, 1]], "colHints": [[1, 1], [3], [3], [3], [1, 1]], "solution": "0010011111011100101010001"}, {"no": 11, "title": "かんむり", "tier": "初級", "w": 10, "h": 10, "rowHints": [[0], [1, 2, 1], [1, 4, 1], [8], [8], [2, 2, 2], [8], [8], [8], [0]], "colHints": [[0], [8], [6], [3, 3], [8], [8], [3, 3], [6], [8], [0]], "solution": "0000000000010011001001011110100111111110011111111001101101100111111110011111111001111111100000000000"}, {"no": 12, "title": "おちょこ", "tier": "初級", "w": 10, "h": 10, "rowHints": [[0], [0], [10], [10], [8], [8], [6], [6], [4], [0]], "colHints": [[2], [4], [6], [7], [7], [7], [7], [6], [4], [2]], "solution": "0000000000000000000011111111111111111111011111111001111111100011111100001111110000011110000000000000"}, {"no": 13, "title": "さかな", "tier": "初級", "w": 10, "h": 10, "rowHints": [[0], [3], [1, 5], [2, 7], [8, 1], [10], [2, 7], [1, 5], [3], [0]], "colHints": [[6], [4], [2], [4], [6], [8], [8], [8], [2, 3], [4]], "solution": "0000000000000001110010001111101101111111111111110111111111111101111111100011111000000111000000000000"}, {"no": 14, "title": "カップ", "tier": "初級", "w": 10, "h": 10, "rowHints": [[1, 1], [1, 1], [1, 1], [0], [7], [7, 2], [7, 1], [7, 2], [7], [5]], "colHints": [[5], [6], [1, 1, 6], [1, 6], [6], [1, 1, 6], [1, 5], [0], [1, 1], [3]], "solution": "0010010000000100100000100100000000000000111111100011111110111111111001111111101111111110000111110000"}, {"no": 15, "title": "ちょうちょ", "tier": "初級", "w": 10, "h": 10, "rowHints": [[1, 1], [1, 1], [2, 2], [4, 4], [10], [2, 2, 2], [10], [4, 4], [2, 2], [0]], "colHints": [[1, 2, 2], [8], [7], [2, 2], [3], [3], [2, 2], [7], [8], [1, 2, 2]], "solution": "1000000001010000001001100001101111001111111111111101101101101111111111111100111101100001100000000000"}, {"no": 16, "title": "ゆきのけっしょう", "tier": "初級", "w": 10, "h": 10, "rowHints": [[2], [2], [1, 6, 1], [8], [1, 2, 1], [1, 2, 1], [8], [1, 6, 1], [2], [2]], "colHints": [[1, 1], [1, 1], [6], [2, 2], [10], [10], [2, 2], [6], [1, 1], [1, 1]], "solution": "0000110000000011000010111111010111111110001011010000101101000111111110101111110100001100000000110000"}, {"no": 17, "title": "てんとうむし", "tier": "初級", "w": 10, "h": 10, "rowHints": [[0], [1, 1], [4], [6], [3, 3], [8], [2, 2, 2], [8], [6], [0]], "colHints": [[0], [4], [1, 6], [4, 2], [2, 4], [2, 4], [4, 2], [1, 6], [4], [0]], "solution": "0000000000001000010000011110000011111100011100111001111111100110110110011111111000111111000000000000"}, {"no": 18, "title": "かに", "tier": "初級", "w": 10, "h": 10, "rowHints": [[2, 2], [2, 2], [1, 2, 1], [8], [10], [10], [8], [1, 6, 1], [1, 1], [0]], "colHints": [[1, 2, 2], [2, 4], [7], [5], [6], [6], [5], [7], [2, 4], [1, 2, 2]], "solution": "1100000011011000011000101101000111111110111111111111111111110111111110101111110110000000010000000000"}, {"no": 19, "title": "ネコ", "tier": "初級", "w": 10, "h": 10, "rowHints": [[1, 1], [2, 2], [6], [8], [1, 4, 1], [8], [2, 2, 2], [8], [6], [0]], "colHints": [[0], [5], [4, 4], [5, 2], [7], [7], [5, 2], [4, 4], [5], [0]], "solution": "0010000100001100110000111111000111111110010111101001111111100110110110011111111000111111000000000000"}, {"no": 20, "title": "ロケット", "tier": "初級", "w": 10, "h": 10, "rowHints": [[2], [4], [4], [4], [6], [6], [2, 4, 2], [2, 4, 2], [4], [2]], "colHints": [[2], [2], [2], [8], [10], [10], [8], [2], [2], [2]], "solution": "0000110000000111100000011110000001111000001111110000111111001101111011110111101100011110000000110000"}, {"no": 21, "title": "ろうそく", "tier": "中級", "w": 10, "h": 10, "rowHints": [[1], [2], [3], [2], [1], [6], [6], [6], [6], [8]], "colHints": [[0], [1], [5], [2, 5], [4, 5], [8], [5], [5], [1], [0]], "solution": "0000100000000110000000011100000000110000000001000000111111000011111100001111110000111111000111111110"}, {"no": 22, "title": "かさ", "tier": "中級", "w": 10, "h": 10, "rowHints": [[2], [6], [8], [10], [10], [2], [2], [2], [4], [2]], "colHints": [[2], [3], [4, 2], [4, 2], [9], [9], [4], [4], [3], [2]], "solution": "0000110000001111110001111111101111111111111111111100001100000000110000000011000000111100000011000000"}, {"no": 23, "title": "ゆきだるま", "tier": "中級", "w": 10, "h": 10, "rowHints": [[4], [4], [6], [4], [1, 2, 1], [4], [1, 6, 1], [8], [3, 3], [6]], "colHints": [[1], [2], [1, 1, 4], [4, 5], [8, 1], [8, 1], [4, 5], [1, 1, 4], [2], [1]], "solution": "0001111000000111100000111111000001111000001011010000011110001011111101011111111001110011100011111100"}, {"no": 24, "title": "りんご", "tier": "中級", "w": 10, "h": 10, "rowHints": [[3], [1], [6], [8], [10], [10], [8], [8], [2, 2], [0]], "colHints": [[2], [5], [7], [7], [8], [1, 6], [1, 7], [7], [5], [2]], "solution": "0000111000000010000000111111000111111110111111111111111111110111111110011111111000110011000000000000"}, {"no": 25, "title": "いえ", "tier": "中級", "w": 10, "h": 10, "rowHints": [[2], [4], [6], [8], [10], [6], [6], [2, 2], [2, 2], [2, 2]], "colHints": [[1], [2], [8], [9], [7], [7], [9], [8], [2], [1]], "solution": "0000110000000111100000111111000111111110111111111100111111000011111100001100110000110011000011001100"}, {"no": 26, "title": "きのこ", "tier": "中級", "w": 10, "h": 10, "rowHints": [[4], [6], [8], [2, 5, 1], [10], [2], [2], [4], [4], [6]], "colHints": [[2], [3], [2, 1, 1], [5, 3], [10], [10], [5, 3], [4, 1], [1, 1], [2]], "solution": "0001111000001111110001111111101101111101111111111100001100000000110000000111100000011110000011111100"}, {"no": 27, "title": "とっくり", "tier": "中級", "w": 10, "h": 10, "rowHints": [[4], [4], [2], [2], [4], [6], [8], [8], [8], [6]], "colHints": [[0], [3], [5], [2, 6], [10], [10], [2, 6], [5], [3], [0]], "solution": "0001111000000111100000001100000000110000000111100000111111000111111110011111111001111111100011111100"}, {"no": 28, "title": "ちょうちん", "tier": "中級", "w": 10, "h": 10, "rowHints": [[2], [4], [6], [8], [1, 4, 1], [1, 4, 1], [8], [6], [4], [2]], "colHints": [[0], [4], [2, 2], [8], [10], [10], [8], [2, 2], [4], [0]], "solution": "0000110000000111100000111111000111111110010111101001011110100111111110001111110000011110000000110000"}, {"no": 29, "title": "くるま", "tier": "中級", "w": 10, "h": 10, "rowHints": [[0], [0], [4], [6], [8], [10], [10], [2, 2, 2], [2, 2], [0]], "colHints": [[2], [6], [7], [5], [6], [6], [4], [5], [5], [2]], "solution": "0000000000000000000000111100000111111000011111111011111111111111111111011011011001100001100000000000"}, {"no": 30, "title": "かぎ", "tier": "中級", "w": 10, "h": 10, "rowHints": [[5], [2, 2], [2, 2], [5], [3], [3], [3], [5], [3], [5]], "colHints": [[0], [4], [10], [1, 7], [10], [4, 1, 1], [1, 1], [0], [0], [0]], "solution": "0111110000011011000001101100000111110000001110000000111000000011100000001111100000111000000011111000"}, {"no": 31, "title": "いかり", "tier": "上級", "w": 10, "h": 10, "rowHints": [[4], [1, 1], [4], [8], [2], [2], [1, 2, 1], [1, 2, 1], [2, 4, 2], [8]], "colHints": [[3], [1, 2], [1, 1], [4, 2], [1, 8], [1, 8], [4, 2], [1, 1], [1, 2], [3]], "solution": "0001111000000100100000011110000111111110000011000000001100001000110001100011000111011110110111111110"}, {"no": 32, "title": "とり", "tier": "上級", "w": 10, "h": 10, "rowHints": [[0], [3], [5], [4], [6], [7], [8], [6], [1, 1], [0]], "colHints": [[0], [1], [3], [5], [4], [6], [8], [7], [6], [1]], "solution": "0000000000000000111000000111110000011110000111111000111111100111111110001111110000010010000000000000"}, {"no": 33, "title": "つき", "tier": "上級", "w": 10, "h": 10, "rowHints": [[4], [6], [5], [4], [4], [4], [4], [5], [6], [4]], "colHints": [[0], [6], [8], [10], [10], [3, 3], [2, 2], [1, 1], [0], [0]], "solution": "0001111000001111110001111100000111100000011110000001111000000111100000011111000000111111000001111000"}, {"no": 34, "title": "き", "tier": "上級", "w": 10, "h": 10, "rowHints": [[2], [4], [6], [8], [10], [8], [6], [2], [2], [6]], "colHints": [[1], [3], [5, 1], [6, 1], [10], [10], [6, 1], [5, 1], [3], [1]], "solution": "0000110000000111100000111111000111111110111111111101111111100011111100000011000000001100000011111100"}, {"no": 35, "title": "ギター", "tier": "上級", "w": 10, "h": 10, "rowHints": [[2], [2], [2], [4], [6], [3, 3], [8], [8], [6], [4]], "colHints": [[0], [3], [5], [7], [5, 4], [5, 4], [7], [5], [3], [0]], "solution": "0000110000000011000000001100000001111000001111110001110011100111111110011111111000111111000001111000"}, {"no": 36, "title": "ヨット", "tier": "上級", "w": 10, "h": 10, "rowHints": [[1], [2], [3], [4], [5], [6], [1], [8], [6], [0]], "colHints": [[0], [1], [2], [2], [9], [5, 2], [4, 2], [3, 2], [2, 1], [1]], "solution": "0000100000000011000000001110000000111100000011111000001111110000100000011111111000111111000000000000"}, {"no": 37, "title": "アイスクリーム", "tier": "上級", "w": 10, "h": 10, "rowHints": [[4], [6], [8], [6], [6], [4], [4], [2], [2], [1]], "colHints": [[0], [1], [4], [7], [9], [10], [7], [4], [1], [0]], "solution": "0001111000001111110001111111100011111100001111110000011110000001111000000011000000001100000000010000"}, {"no": 38, "title": "ペンギン", "tier": "上級", "w": 10, "h": 10, "rowHints": [[4], [6], [1, 2, 1], [6], [4], [8], [2, 2], [2, 2], [8], [1, 1]], "colHints": [[0], [4], [3, 5], [2, 3, 1], [6, 1], [6, 1], [2, 3, 1], [3, 5], [4], [0]], "solution": "0001111000001111110000101101000011111100000111100001111111100110000110011000011001111111100010000100"}, {"no": 39, "title": "おんぷ", "tier": "上級", "w": 10, "h": 10, "rowHints": [[5], [2, 1], [2, 2], [4], [2], [2], [2], [5], [6], [5]], "colHints": [[0], [1], [3], [3], [3], [10], [10], [1, 1], [1, 2], [3]], "solution": "0000011111000001100100000110110000011110000001100000000110000000011000001111100001111110000011111000"}, {"no": 40, "title": "かお", "tier": "上級", "w": 10, "h": 10, "rowHints": [[6], [2, 2], [2, 2], [2, 1, 1, 2], [2, 2], [2, 1, 1, 2], [2, 4, 2], [2, 2], [6], [0]], "colHints": [[5], [7], [2, 2], [1, 1, 2, 1], [1, 1, 1], [1, 1, 1], [1, 1, 2, 1], [2, 2], [7], [5]], "solution": "0011111100011000011011000000111101001011110000001111010010111101111011011000011000111111000000000000"}, {"no": 41, "title": "カメラ", "tier": "特級", "w": 15, "h": 15, "rowHints": [[0], [5], [7], [9], [13], [13], [2, 5, 2], [2, 7, 2], [2, 7, 2], [2, 7, 2], [2, 5, 2], [13], [13], [0], [0]], "colHints": [[0], [9], [9], [3, 2], [4, 3, 2], [12], [12], [12], [12], [12], [4, 3, 2], [3, 2], [9], [9], [0]], "solution": "000000000000000000001111100000000011111110000000111111111000011111111111110011111111111110011001111100110011011111110110011011111110110011011111110110011001111100110011111111111110011111111111110000000000000000000000000000000"}, {"no": 42, "title": "フクロウ", "tier": "特級", "w": 15, "h": 15, "rowHints": [[0], [2, 2], [4, 4], [6, 6], [13], [2, 7, 2], [13], [11], [9], [7], [9], [11], [1, 5, 1], [2, 7, 2], [14]], "colHints": [[0], [4, 2], [6, 4], [4, 3, 2, 1], [11, 2], [13], [12], [11], [12], [13], [11, 2], [4, 3, 2, 1], [6, 4], [4, 2], [1]], "solution": "000000000000000000110000011000001111000111100011111101111110011111111111110011011111110110011111111111110001111111111100000111111111000000011111110000000111111111000001111111111100001001111100100011011111110110011111111111111"}, {"no": 43, "title": "シバイヌ", "tier": "達人", "w": 25, "h": 25, "rowHints": [[0], [2, 2], [4, 4], [6, 6], [7, 7], [19], [19], [19], [2, 13, 2], [2, 13, 2], [19], [17], [15], [13], [15], [17], [19], [19], [21], [21], [23], [23], [2, 15, 2], [2, 13, 2], [0]], "colHints": [[0], [4], [6], [6, 6], [9, 7], [6, 3, 9], [23], [23], [22], [21], [20], [19], [19], [19], [20], [21], [22], [23], [23], [6, 3, 9], [9, 7], [6, 6], [6], [4], [0]], "solution": "0000000000000000000000000000000110000000001100000000000111100000001111000000000111111000001111110000000011111110001111111000000011111111111111111110000001111111111111111111000000111111111111111111100000011011111111111110110000001101111111111111011000000111111111111111111100000001111111111111111100000000011111111111111100000000000111111111111100000000000111111111111111000000000111111111111111110000000111111111111111111100000011111111111111111110000011111111111111111111100001111111111111111111110001111111111111111111111100111111111111111111111110011001111111111111110011001100011111111111110001100000000000000000000000000"}];
 
 /* ----------------------------------------------------------------
    画面制御 & 操作
 ---------------------------------------------------------------- */
 (function() {
-  var elStage = document.getElementById('stage');
+  var elStageWrapper = document.getElementById('stageWrapper');
   var elGrid = document.getElementById('grid');
   var elColHints = document.getElementById('colHints');
   var elRowHints = document.getElementById('rowHints');
   var elLevelName = document.getElementById('levelName');
   var elClearBanner = document.getElementById('clearBanner');
   var artTitle = document.getElementById('artTitle');
+  var btnZoom = document.getElementById('zoomBtn');
   var btnModeFill = document.getElementById('modeFill');
   var btnModeCross = document.getElementById('modeCross');
   var btnUndo = document.getElementById('undoBtn');
@@ -248,10 +293,15 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
   var history = [];
   var isCleared = false;
   var currentInputMode = 'fill'; // 'fill' or 'cross'
+  var isZoomed = false;
+
+  // 十字ハイライト追従
+  var activeRow = -1;
+  var activeCol = -1;
 
   // ドラッグ操作関連
   var isDragging = false;
-  var dragAction = null; // 1(塗る), 2(×をつける), 0(消す)
+  var dragAction = null;
   var lastTargetCell = -1;
 
   // 保存管理
@@ -291,12 +341,20 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
     currentPuzzle = PUZZLES[idx];
     history = [];
     isCleared = false;
+    activeRow = -1;
+    activeCol = -1;
 
-    elStage.classList.remove('cleared');
+    elStageWrapper.classList.remove('cleared');
     elClearBanner.hidden = true;
     btnNext.hidden = true;
 
-    elLevelName.textContent = currentPuzzle.tier + ' ' + (currentIdx + 1) + ' / ' + PUZZLES.length;
+    // ズームボタンの表示制御（15x15以上は大盤面としてズーム可能）
+    var isLarge = (currentPuzzle.w >= 15 || currentPuzzle.h >= 15);
+    btnZoom.hidden = !isLarge;
+    // 初期状態は等倍
+    setZoom(false);
+
+    elLevelName.textContent = currentPuzzle.tier + ' ' + (currentIdx + 1) + ' / ' + PUZZLES.length + ' (' + currentPuzzle.w + '×' + currentPuzzle.h + ')';
 
     var totalCells = currentPuzzle.w * currentPuzzle.h;
     gridState = [];
@@ -316,27 +374,88 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
     persist();
   }
 
+  /* ズーム設定 */
+  function setZoom(zoomed) {
+    isZoomed = zoomed;
+    elStageWrapper.classList.toggle('zoomed', isZoomed);
+    btnZoom.textContent = isZoomed ? '📱 全体' : '🔍 拡大';
+    calculateSizes();
+  }
+  btnZoom.addEventListener('click', function() {
+    setZoom(!isZoomed);
+  });
+
+  /* 動的サイズ計算 */
+  function calculateSizes() {
+    if (!currentPuzzle) return;
+    var w = currentPuzzle.w;
+    var h = currentPuzzle.h;
+
+    // 画面幅（マージン除く）
+    var availWidth = Math.min(window.innerWidth - 32, 420);
+    var cs, fs;
+
+    if (isZoomed) {
+      // 拡大時：指で確実に押せるサイズ（最低23px）
+      cs = 24;
+      fs = 11;
+    } else {
+      // 等倍時：画面幅に合わせて可変
+      if (w <= 5) {
+        cs = 48; fs = 13;
+      } else if (w <= 10) {
+        cs = Math.floor((availWidth - 70) / w);
+        if (cs > 28) cs = 28;
+        if (cs < 22) cs = 22;
+        fs = 11;
+      } else if (w <= 15) {
+        cs = Math.floor((availWidth - 85) / w);
+        if (cs < 16) cs = 16;
+        fs = 9.5;
+      } else { // 25x25等
+        cs = Math.floor((availWidth - 95) / w);
+        if (cs < 11) cs = 11;
+        fs = 8;
+      }
+    }
+
+    elStageWrapper.style.setProperty('--cs', cs + 'px');
+    elStageWrapper.style.setProperty('--hint-fs', fs + 'px');
+  }
+
+  window.addEventListener('resize', calculateSizes);
+
   /* 盤面DOM構築 */
   function setupDOM() {
     var w = currentPuzzle.w;
     var h = currentPuzzle.h;
+    calculateSizes();
 
     // 上部ヒント
     elColHints.innerHTML = '';
-    elColHints.style.gridTemplateColumns = 'repeat(' + w + ', 1fr)';
+    elColHints.style.gridTemplateColumns = 'repeat(' + w + ', var(--cs))';
     for (var c = 0; c < w; c++) {
       var colDiv = document.createElement('div');
       colDiv.className = 'colHint';
+      colDiv.dataset.col = String(c);
+      if ((c + 1) % 5 === 0 && c !== w - 1) colDiv.classList.add('b-r5');
+
       var hints = currentPuzzle.colHints[c];
       if (hints.length === 1 && hints[0] === 0) {
         var span = document.createElement('span');
+        span.className = 'hintNum';
         span.textContent = '0';
         span.style.opacity = '0.35';
         colDiv.appendChild(span);
       } else {
         for (var hi = 0; hi < hints.length; hi++) {
           var numSpan = document.createElement('span');
+          numSpan.className = 'hintNum';
           numSpan.textContent = String(hints[hi]);
+          numSpan.addEventListener('click', function(e) {
+            e.stopPropagation();
+            this.classList.toggle('checked');
+          });
           colDiv.appendChild(numSpan);
         }
       }
@@ -345,20 +464,29 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
 
     // 左部ヒント
     elRowHints.innerHTML = '';
-    elRowHints.style.gridTemplateRows = 'repeat(' + h + ', 1fr)';
+    elRowHints.style.gridTemplateRows = 'repeat(' + h + ', var(--cs))';
     for (var r = 0; r < h; r++) {
       var rowDiv = document.createElement('div');
       rowDiv.className = 'rowHint';
+      rowDiv.dataset.row = String(r);
+      if ((r + 1) % 5 === 0 && r !== h - 1) rowDiv.classList.add('b-b5');
+
       var rHints = currentPuzzle.rowHints[r];
       if (rHints.length === 1 && rHints[0] === 0) {
         var rSpan = document.createElement('span');
+        rSpan.className = 'hintNum';
         rSpan.textContent = '0';
         rSpan.style.opacity = '0.35';
         rowDiv.appendChild(rSpan);
       } else {
         for (var rhi = 0; rhi < rHints.length; rhi++) {
           var rNumSpan = document.createElement('span');
+          rNumSpan.className = 'hintNum';
           rNumSpan.textContent = String(rHints[rhi]);
+          rNumSpan.addEventListener('click', function(e) {
+            e.stopPropagation();
+            this.classList.toggle('checked');
+          });
           rowDiv.appendChild(rNumSpan);
         }
       }
@@ -367,8 +495,8 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
 
     // グリッド
     elGrid.innerHTML = '';
-    elGrid.style.gridTemplateColumns = 'repeat(' + w + ', 1fr)';
-    elGrid.style.gridTemplateRows = 'repeat(' + h + ', 1fr)';
+    elGrid.style.gridTemplateColumns = 'repeat(' + w + ', var(--cs))';
+    elGrid.style.gridTemplateRows = 'repeat(' + h + ', var(--cs))';
 
     for (var i = 0; i < h; i++) {
       for (var j = 0; j < w; j++) {
@@ -376,13 +504,58 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
         var cell = document.createElement('div');
         cell.className = 'cell';
         cell.dataset.idx = String(cellIdx);
+        cell.dataset.r = String(i);
+        cell.dataset.c = String(j);
         if (j === w - 1) cell.classList.add('re');
         if (i === h - 1) cell.classList.add('be');
         // 5マスごとの境界太線
-        if (w > 5 && (j + 1) % 5 === 0 && j !== w - 1) cell.classList.add('b-r5');
-        if (h > 5 && (i + 1) % 5 === 0 && i !== h - 1) cell.classList.add('b-b5');
+        if ((j + 1) % 5 === 0 && j !== w - 1) cell.classList.add('b-r5');
+        if ((i + 1) % 5 === 0 && i !== h - 1) cell.classList.add('b-b5');
         elGrid.appendChild(cell);
       }
+    }
+  }
+
+  /* 十字ハイライト更新 */
+  function updateCrosshair(r, c) {
+    if (r === activeRow && c === activeCol) return;
+    activeRow = r;
+    activeCol = c;
+
+    // ヒントのハイライト
+    var colNodes = elColHints.children;
+    for (var j = 0; j < colNodes.length; j++) {
+      colNodes[j].classList.toggle('active', j === c);
+    }
+    var rowNodes = elRowHints.children;
+    for (var i = 0; i < rowNodes.length; i++) {
+      rowNodes[i].classList.toggle('active', i === r);
+    }
+
+    // グリッドセルのハイライト
+    var cells = elGrid.children;
+    var w = currentPuzzle.w;
+    for (var k = 0; k < cells.length; k++) {
+      var cr = Math.floor(k / w);
+      var cc = k % w;
+      var isRow = (cr === r);
+      var isCol = (cc === c);
+      cells[k].classList.toggle('guide-row', isRow && !isCol);
+      cells[k].classList.toggle('guide-col', isCol && !isRow);
+      cells[k].classList.toggle('guide-cross', isRow && isCol);
+    }
+  }
+
+  function clearCrosshair() {
+    activeRow = -1;
+    activeCol = -1;
+    var colNodes = elColHints.children;
+    for (var j = 0; j < colNodes.length; j++) colNodes[j].classList.remove('active');
+    var rowNodes = elRowHints.children;
+    for (var i = 0; i < rowNodes.length; i++) rowNodes[i].classList.remove('active');
+    var cells = elGrid.children;
+    for (var k = 0; k < cells.length; k++) {
+      cells[k].classList.remove('guide-row', 'guide-col', 'guide-cross');
     }
   }
 
@@ -408,7 +581,8 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
       save.cleared[String(currentIdx)] = 1;
       persist();
 
-      elStage.classList.add('cleared');
+      clearCrosshair();
+      elStageWrapper.classList.add('cleared');
       artTitle.innerHTML = currentPuzzle.title + ' <span>完成！</span>';
       elClearBanner.hidden = false;
       btnNext.hidden = (currentIdx >= PUZZLES.length - 1);
@@ -417,12 +591,12 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
   }
 
   /* セル位置判定 */
-  function getCellIdxFromEvent(e) {
+  function getCellFromEvent(e) {
     var target = document.elementFromPoint(e.clientX, e.clientY);
-    if (!target) return -1;
+    if (!target) return null;
     var cell = target.closest('.cell');
-    if (!cell || !elGrid.contains(cell)) return -1;
-    return parseInt(cell.dataset.idx, 10);
+    if (!cell || !elGrid.contains(cell)) return null;
+    return cell;
   }
 
   /* 入力適用 */
@@ -431,23 +605,26 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
     gridState[idx] = action;
   }
 
-  /* ポインターイベント（タップ & なぞりドラッグ） */
+  /* ポインターイベント（タップ & なぞりドラッグ & 十字追従） */
   elGrid.addEventListener('pointerdown', function(e) {
     if (isCleared) return;
-    var idx = getCellIdxFromEvent(e);
-    if (idx < 0) return;
+    var cell = getCellFromEvent(e);
+    if (!cell) return;
+    var idx = parseInt(cell.dataset.idx, 10);
+    var r = parseInt(cell.dataset.r, 10);
+    var c = parseInt(cell.dataset.c, 10);
 
     e.preventDefault();
     isDragging = true;
     lastTargetCell = idx;
     pushHistory();
 
+    updateCrosshair(r, c);
+
     var cur = gridState[idx];
     if (currentInputMode === 'fill') {
-      // 塗るモード：今黒なら消す(0)、そうでなければ塗る(1)
       dragAction = (cur === 1) ? 0 : 1;
     } else {
-      // ×印モード：今×なら消す(0)、そうでなければ×(2)
       dragAction = (cur === 2) ? 0 : 2;
     }
 
@@ -456,10 +633,16 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
   });
 
   window.addEventListener('pointermove', function(e) {
-    if (!isDragging || isCleared) return;
-    var idx = getCellIdxFromEvent(e);
-    if (idx < 0 || idx === lastTargetCell) return;
+    if (isCleared) return;
+    var cell = getCellFromEvent(e);
+    if (!cell) return;
+    var idx = parseInt(cell.dataset.idx, 10);
+    var r = parseInt(cell.dataset.r, 10);
+    var c = parseInt(cell.dataset.c, 10);
 
+    updateCrosshair(r, c);
+
+    if (!isDragging || idx === lastTargetCell) return;
     lastTargetCell = idx;
     applyActionToCell(idx, dragAction);
     renderBoard();
@@ -514,44 +697,52 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
 
   /* レベル一覧描画 */
   function renderLevelList() {
-    if (!elLevels.childNodes.length) {
-      var tiers = ['入門', '初級', '中級', '上級'];
-      for (var t = 0; t < tiers.length; t++) {
-        var tierName = tiers[t];
-        var tierBox = document.createElement('div');
-        tierBox.className = 'tier';
-
-        var titleDiv = document.createElement('div');
-        titleDiv.className = 'tierName';
-        titleDiv.textContent = tierName;
-        tierBox.appendChild(titleDiv);
-
-        var rowDiv = document.createElement('div');
-        rowDiv.className = 'tierRow';
-
-        for (var p = 0; p < PUZZLES.length; p++) {
-          if (PUZZLES[p].tier !== tierName) continue;
-          var btn = document.createElement('button');
-          btn.className = 'lv';
-          btn.dataset.idx = String(p);
-          btn.textContent = String(p + 1);
-          btn.addEventListener('click', function() {
-            loadLevel(parseInt(this.dataset.idx, 10));
-            window.scrollTo(0, 0);
-          });
-          rowDiv.appendChild(btn);
-        }
-        tierBox.appendChild(rowDiv);
-        elLevels.appendChild(tierBox);
+    elLevels.innerHTML = '';
+    var tiers = [];
+    var seenTiers = {};
+    for (var p = 0; p < PUZZLES.length; p++) {
+      var t = PUZZLES[p].tier;
+      if (!seenTiers[t]) {
+        seenTiers[t] = true;
+        tiers.push(t);
       }
     }
 
+    for (var tIdx = 0; tIdx < tiers.length; tIdx++) {
+      var tierName = tiers[tIdx];
+      var tierBox = document.createElement('div');
+      tierBox.className = 'tier';
+
+      var titleDiv = document.createElement('div');
+      titleDiv.className = 'tierName';
+      titleDiv.textContent = tierName;
+      tierBox.appendChild(titleDiv);
+
+      var rowDiv = document.createElement('div');
+      rowDiv.className = 'tierRow';
+
+      for (var i = 0; i < PUZZLES.length; i++) {
+        if (PUZZLES[i].tier !== tierName) continue;
+        var btn = document.createElement('button');
+        btn.className = 'lv';
+        btn.dataset.idx = String(i);
+        btn.textContent = String(i + 1);
+        btn.addEventListener('click', function() {
+          loadLevel(parseInt(this.dataset.idx, 10));
+          window.scrollTo(0, 0);
+        });
+        rowDiv.appendChild(btn);
+      }
+      tierBox.appendChild(rowDiv);
+      elLevels.appendChild(tierBox);
+    }
+
     var btns = elLevels.querySelectorAll('.lv');
-    for (var i = 0; i < btns.length; i++) {
-      var idx = parseInt(btns[i].dataset.idx, 10);
+    for (var j = 0; j < btns.length; j++) {
+      var idx = parseInt(btns[j].dataset.idx, 10);
       var clr = save.cleared[String(idx)];
-      btns[i].textContent = String(idx + 1) + (clr ? ' ✓' : '');
-      btns[i].className = 'lv' + (idx === currentIdx ? ' cur' : '') + (clr ? ' clr' : '');
+      btns[j].textContent = String(idx + 1) + (clr ? ' ✓' : '');
+      btns[j].className = 'lv' + (idx === currentIdx ? ' cur' : '') + (clr ? ' clr' : '');
     }
   }
 

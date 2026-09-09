@@ -16,7 +16,8 @@ def load_from_html():
     m = re.search(r"var PUZZLES = (\[.*?\]);", src, re.S)
     if not m:
         raise SystemExit("PUZZLES 配列が見つからない")
-    return json.loads(m.group(1))
+    raw_json = re.sub(r"/\*.*?\*/", "", m.group(1), flags=re.S)
+    return json.loads(raw_json)
 
 
 def load_from_json():
@@ -51,26 +52,59 @@ def generate_patterns(length, hints):
 def solve_independent(w, h, row_hints, col_hints, limit=2):
     row_pats = [generate_patterns(w, hts) for hts in row_hints]
     col_pats = [generate_patterns(h, hts) for hts in col_hints]
-    sols = []
 
-    def dfs(r, grid):
+    # ラインソルバーによる事前簡約
+    grid = [[-1] * w for _ in range(h)]
+    changed = True
+    while changed:
+        changed = False
+        for r in range(h):
+            valid = [p for p in row_pats[r] if all(grid[r][c] == -1 or grid[r][c] == p[c] for c in range(w))]
+            row_pats[r] = valid
+            if not valid:
+                return []
+            for c in range(w):
+                if grid[r][c] == -1:
+                    vals = {p[c] for p in valid}
+                    if len(vals) == 1:
+                        grid[r][c] = vals.pop()
+                        changed = True
+        for c in range(w):
+            valid = [p for p in col_pats[c] if all(grid[r][c] == -1 or grid[r][c] == p[r] for r in range(h))]
+            col_pats[c] = valid
+            if not valid:
+                return []
+            for r in range(h):
+                if grid[r][c] == -1:
+                    vals = {p[r] for p in valid}
+                    if len(vals) == 1:
+                        grid[r][c] = vals.pop()
+                        changed = True
+
+    # 全て確定していれば即解を返却（一意解保証）
+    if all(grid[r][c] != -1 for r in range(h) for c in range(w)):
+        return ["".join(str(grid[i][j]) for i in range(h) for j in range(w))]
+
+    # 未定マスが残る場合のみDFS
+    sols = []
+    def dfs(r, cur_grid):
         if len(sols) >= limit:
             return
         if r == h:
-            sols.append("".join(str(grid[i][j]) for i in range(h) for j in range(w)))
+            sols.append("".join(str(cur_grid[i][j]) for i in range(h) for j in range(w)))
             return
 
         for p in row_pats[r]:
             valid = True
             for c in range(w):
-                pref = [grid[i][c] for i in range(r)] + [p[c]]
+                pref = [cur_grid[i][c] for i in range(r)] + [p[c]]
                 if not any(cp[: r + 1] == pref for cp in col_pats[c]):
                     valid = False
                     break
             if valid:
-                grid.append(p)
-                dfs(r + 1, grid)
-                grid.pop()
+                cur_grid.append(p)
+                dfs(r + 1, cur_grid)
+                cur_grid.pop()
 
     dfs(0, [])
     return sols
