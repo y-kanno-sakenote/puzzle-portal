@@ -141,7 +141,7 @@ class Budget(Exception):
     pass
 
 
-def count_solutions(n, cells, rules, limit=2, node_budget=2_000_000):
+def count_solutions(n, cells, rules, limit=2, node_budget=10_000_000):
     """自前の解数え上げ（region-growth）。gen_puzzles.py 由来のコードは使わず
     候補リストを毎回そのマス番号の昇順に並べ直す点・打ち切り判定の書き方を変えている。
     戻り値: (個数, ノード数)"""
@@ -402,7 +402,7 @@ def run_main():
         # 1: 自前ソルバーで解を2つまで数える
         t0 = time.time()
         try:
-            cnt, nodes = count_solutions(n, cells, rules, limit=2, node_budget=3_000_000)
+            cnt, nodes = count_solutions(n, cells, rules, limit=2, node_budget=10_000_000)
         except Exception as e:
             fails.append((idx, "自前ソルバーで例外: %r" % e))
             continue
