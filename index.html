@@ -15,15 +15,25 @@
   .thumb{width:56px;height:56px;flex:0 0 56px;border:2px solid var(--sub);border-radius:8px;background:var(--panel);position:relative;overflow:hidden}
   .thumb i{position:absolute;border-radius:3px;background:#5b7fa6}
   .thumb i.red{background:var(--red)}
-  .badge{font-size:.62rem;font-weight:700;color:#c9483a;border:1px solid currentColor;border-radius:99px;padding:0 6px;margin-left:6px;vertical-align:1px}
   .name{font-size:17px;font-weight:700}
   .desc{font-size:13px;color:var(--sub);margin-top:2px}
   .prog{margin-left:auto;font-size:13px;color:var(--sub);white-space:nowrap}
+  .tabs{display:flex;gap:8px;margin-bottom:14px}
+  .tab{flex:1;padding:13px 0;text-align:center;font-size:15px;font-weight:700;border:1px solid var(--frame);border-radius:10px;background:var(--panel);color:var(--sub)}
+  .tab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .duo-note{font-size:13px;color:var(--sub);margin:0 0 12px}
+  .pane{display:none}
+  .pane.on{display:block}
 </style>
 </head>
 <body>
 <main>
   <h1>パズル箱</h1>
+  <div class="tabs">
+    <button type="button" class="tab on" data-pane="solo">ひとりで</button>
+    <button type="button" class="tab" data-pane="duo">ふたりで</button>
+  </div>
+  <div class="pane on" id="pane-solo">
   <a class="game" href="car-escape/">
     <div class="thumb"><i class="red" style="left:8px;top:22px;width:22px;height:9px"></i><i style="left:34px;top:6px;width:9px;height:24px"></i><i style="left:6px;top:36px;width:9px;height:14px"></i></div>
     <div><div class="name">車をだせ！</div><div class="desc">赤い車を右の出口へ</div></div>
@@ -75,11 +85,15 @@
     <div><div class="name">くるくる</div><div class="desc">回してパイプをつなぐ</div></div>
     <div class="prog" data-key="kurukuru" data-n="40"></div>
   </a>
+  </div>
+  <div class="pane" id="pane-duo">
+  <p class="duo-note">スマホを机に置いて、向かい合って遊ぶ</p>
   <a class="game" href="hayatsukami/">
     <div class="thumb"><i style="left:5px;top:18px;width:12px;height:12px;background:#c9483a;border-radius:50%"></i><i style="left:20px;top:18px;width:12px;height:12px;background:#5b7fa6;border-radius:50%"></i><i style="left:35px;top:18px;width:12px;height:12px;background:#c9a83e;border-radius:50%"></i><i style="left:12px;top:4px;width:28px;height:8px;background:#e8e0d0;border-radius:2px"></i><i style="left:12px;top:36px;width:28px;height:8px;background:#e8e0d0;border-radius:2px"></i></div>
-    <div><div class="name">はやつかみ <span class="badge">ふたりで</span></div><div class="desc">向かい合って早取り</div></div>
+    <div><div class="name">はやつかみ</div><div class="desc">向かい合って早取り</div></div>
     <div class="prog" data-key="hayatsukami" data-n="0"></div>
   </a>
+  </div>
 </main>
 <script>
 /* 進み具合は各ゲームが同じオリジンの localStorage に置く {cleared:{idx:1}} を読むだけ */
@@ -92,6 +106,18 @@
       if (o && o.cleared) n = Object.keys(o.cleared).length;
     } catch (e) {}
     ps[i].textContent = n ? n + ' / ' + ps[i].dataset.n : '';
+  }
+})();
+/* タブ切り替え（状態は記憶しない・毎回「ひとりで」から） */
+(function () {
+  var tabs = document.querySelectorAll('.tab');
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].addEventListener('click', function () {
+      var key = this.dataset.pane;
+      for (var j = 0; j < tabs.length; j++) tabs[j].classList.toggle('on', tabs[j] === this);
+      document.getElementById('pane-solo').classList.toggle('on', key === 'solo');
+      document.getElementById('pane-duo').classList.toggle('on', key === 'duo');
+    });
   }
 })();
 </script>
