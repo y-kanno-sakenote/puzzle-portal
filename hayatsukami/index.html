@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>はやつかみ</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --thick:#5d5952;
+    --item:min(120px,30vh,14vw); --gap:min(20px,3vw); --motif:min(64px,16vh,8vw);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+    touch-action:none;
+  }
+
+  #app{position:fixed;inset:0;display:flex;flex-direction:column}
+
+  /* 上下の陣。上側は 180 度回して相手から読めるようにする */
+  .side{flex:0 0 26%;width:100%;position:relative;display:flex;align-items:center;justify-content:center}
+  .side.top{transform:rotate(180deg)}
+
+  .card{
+    display:flex;align-items:center;gap:min(16px,3vw);
+    padding:min(10px,2vh) min(18px,3vw);
+    background:var(--panel);border:2px solid var(--thick);border-radius:14px;
+    min-width:calc(var(--motif) * 2 + 60px);min-height:calc(var(--motif) + 20px);
+    justify-content:center;
+  }
+  .card svg{width:var(--motif);height:var(--motif);display:block}
+  .card.taken{border-color:var(--frame);opacity:.25}
+
+  /* 取った枚数は自分側の端に置く */
+  .count{position:absolute;left:min(18px,3vw);top:50%;transform:translateY(-50%);
+         font-size:min(26px,6vh);font-weight:700;line-height:1;color:var(--ink)}
+  .count small{font-size:12px;font-weight:400;color:var(--sub);margin-left:2px}
+
+  /* 中央：品が5つ横一列 */
+  #mid{flex:1 1 auto;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+       gap:min(6px,1vh);touch-action:none}
+  #items{width:100%;display:flex;justify-content:center;gap:var(--gap)}
+  .item{width:var(--item);height:var(--item);display:flex;align-items:center;justify-content:center;
+        transition:transform .13s ease-out}
+  .item.hold{transition:none}
+  .item svg{width:100%;height:100%;display:block;pointer-events:none}
+
+  .note{height:17px;font-size:12px;line-height:17px;color:var(--sub);text-align:center}
+  .note.top{transform:rotate(180deg)}
+
+  #rotate{position:fixed;left:0;right:0;top:0;z-index:40;display:none;
+          padding:4px;text-align:center;font-size:12px;color:var(--sub);background:var(--bg)}
+  @media (orientation:portrait){ #rotate{display:block} }
+
+  #over{position:fixed;inset:0;z-index:30;
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:min(14px,3vh);
+        background:rgba(245,244,241,.94)}
+  #over[hidden]{display:none}
+  .res{font-size:min(26px,6vh);font-weight:700;text-align:center}
+  .res.top{transform:rotate(180deg)}
+  .res span{display:block;font-size:12px;font-weight:400;color:var(--sub)}
+  button{
+    font:inherit;padding:12px 28px;border:1px solid var(--frame);
+    border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button:active{background:#eeece7}
+</style>
+</head>
+<body>
+<div id="rotate">横にしてください</div>
+
+<div id="app">
+  <div class="side top">
+    <div class="count" id="countTop">0<small>枚</small></div>
+    <div class="card" id="cardTop"></div>
+  </div>
+
+  <div id="mid">
+    <div class="note top" id="noteTop"></div>
+    <div id="items"></div>
+    <div class="note" id="noteBottom"></div>
+  </div>
+
+  <div class="side bottom">
+    <div class="count" id="countBottom">0<small>枚</small></div>
+    <div class="card" id="cardBottom"></div>
+  </div>
+</div>
+
+<div id="over" hidden>
+  <div class="res top" id="resTop"></div>
+  <button id="again">もう一回</button>
+  <div class="res" id="resBottom"></div>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.Hayatsukami として公開する）
+   ===================================================================== */
+
+/* CARDS-BEGIN  tools/gen_cards.py の出力をそのまま貼る。手で書き換えない */
+var CARDS = [
+{"a":["ほし","黒"],"b":["はっぱ","緑"],"answer":"はっぱ","kind":1},
+{"a":["ハート","黒"],"b":["しずく","黄"],"answer":"はっぱ","kind":2},
+{"a":["ほし","赤"],"b":["つき","黒"],"answer":"つき","kind":1},
+{"a":["ほし","青"],"b":["つき","赤"],"answer":"はっぱ","kind":2},
+{"a":["しずく","緑"],"b":["ほし","黄"],"answer":"ほし","kind":1},
+{"a":["しずく","黄"],"b":["つき","緑"],"answer":"ハート","kind":2},
+{"a":["ハート","緑"],"b":["ほし","黄"],"answer":"ほし","kind":1},
+{"a":["はっぱ","青"],"b":["つき","黒"],"answer":"つき","kind":1},
+{"a":["ほし","黄"],"b":["つき","赤"],"answer":"ほし","kind":1},
+{"a":["はっぱ","黄"],"b":["つき","赤"],"answer":"しずく","kind":2},
+{"a":["ハート","赤"],"b":["つき","緑"],"answer":"ハート","kind":1},
+{"a":["しずく","黄"],"b":["はっぱ","赤"],"answer":"つき","kind":2},
+{"a":["しずく","青"],"b":["ほし","黒"],"answer":"しずく","kind":1},
+{"a":["ほし","黄"],"b":["はっぱ","赤"],"answer":"ほし","kind":1},
+{"a":["ほし","赤"],"b":["はっぱ","黒"],"answer":"しずく","kind":2},
+{"a":["ほし","青"],"b":["つき","黒"],"answer":"つき","kind":1},
+{"a":["はっぱ","緑"],"b":["つき","赤"],"answer":"はっぱ","kind":1},
+{"a":["ハート","緑"],"b":["しずく","青"],"answer":"しずく","kind":1},
+{"a":["ハート","黄"],"b":["つき","緑"],"answer":"しずく","kind":2},
+{"a":["はっぱ","緑"],"b":["つき","黄"],"answer":"はっぱ","kind":1},
+{"a":["ハート","赤"],"b":["しずく","黒"],"answer":"ハート","kind":1},
+{"a":["ほし","青"],"b":["はっぱ","緑"],"answer":"はっぱ","kind":1},
+{"a":["しずく","黒"],"b":["はっぱ","緑"],"answer":"はっぱ","kind":1},
+{"a":["ほし","赤"],"b":["はっぱ","青"],"answer":"つき","kind":2},
+{"a":["はっぱ","青"],"b":["つき","赤"],"answer":"ほし","kind":2},
+{"a":["しずく","黄"],"b":["つき","黒"],"answer":"つき","kind":1},
+{"a":["はっぱ","赤"],"b":["つき","青"],"answer":"ほし","kind":2},
+{"a":["しずく","黒"],"b":["はっぱ","赤"],"answer":"ほし","kind":2},
+{"a":["しずく","赤"],"b":["はっぱ","緑"],"answer":"はっぱ","kind":1},
+{"a":["しずく","青"],"b":["ほし","赤"],"answer":"しずく","kind":1},
+{"a":["しずく","赤"],"b":["つき","緑"],"answer":"ほし","kind":2},
+{"a":["はっぱ","緑"],"b":["つき","青"],"answer":"はっぱ","kind":1},
+{"a":["ハート","緑"],"b":["ほし","黒"],"answer":"しずく","kind":2},
+{"a":["ほし","黒"],"b":["はっぱ","赤"],"answer":"しずく","kind":2},
+{"a":["ハート","青"],"b":["ほし","緑"],"answer":"つき","kind":2},
+{"a":["しずく","青"],"b":["つき","黄"],"answer":"しずく","kind":1},
+{"a":["ほし","緑"],"b":["つき","青"],"answer":"ハート","kind":2},
+{"a":["ハート","赤"],"b":["ほし","緑"],"answer":"ハート","kind":1},
+{"a":["ハート","緑"],"b":["ほし","青"],"answer":"つき","kind":2},
+{"a":["しずく","緑"],"b":["つき","黄"],"answer":"ハート","kind":2},
+{"a":["ハート","青"],"b":["はっぱ","緑"],"answer":"はっぱ","kind":1},
+{"a":["ほし","青"],"b":["はっぱ","黒"],"answer":"ハート","kind":2},
+{"a":["しずく","緑"],"b":["ほし","赤"],"answer":"つき","kind":2},
+{"a":["ハート","黄"],"b":["はっぱ","緑"],"answer":"はっぱ","kind":1},
+{"a":["しずく","緑"],"b":["つき","黒"],"answer":"つき","kind":1},
+{"a":["しずく","青"],"b":["はっぱ","赤"],"answer":"しずく","kind":1},
+{"a":["ハート","黒"],"b":["はっぱ","青"],"answer":"ほし","kind":2},
+{"a":["ほし","黄"],"b":["はっぱ","青"],"answer":"ほし","kind":1},
+{"a":["ハート","青"],"b":["つき","緑"],"answer":"ほし","kind":2},
+{"a":["ハート","赤"],"b":["はっぱ","黒"],"answer":"ハート","kind":1},
+{"a":["ハート","緑"],"b":["つき","青"],"answer":"ほし","kind":2},
+{"a":["ハート","赤"],"b":["しずく","黄"],"answer":"ハート","kind":1},
+{"a":["ハート","黒"],"b":["ほし","黄"],"answer":"ほし","kind":1},
+{"a":["しずく","黄"],"b":["はっぱ","黒"],"answer":"ハート","kind":2},
+{"a":["ハート","黄"],"b":["しずく","緑"],"answer":"つき","kind":2},
+{"a":["ハート","青"],"b":["ほし","黒"],"answer":"はっぱ","kind":2},
+{"a":["ハート","緑"],"b":["つき","黒"],"answer":"つき","kind":1},
+{"a":["ハート","黒"],"b":["しずく","緑"],"answer":"ほし","kind":2},
+{"a":["ハート","赤"],"b":["ほし","青"],"answer":"ハート","kind":1},
+{"a":["ハート","黄"],"b":["しずく","青"],"answer":"しずく","kind":1},
+{"a":["ハート","赤"],"b":["つき","青"],"answer":"ハート","kind":1},
+{"a":["ハート","緑"],"b":["しずく","黄"],"answer":"つき","kind":2},
+{"a":["しずく","赤"],"b":["ほし","緑"],"answer":"つき","kind":2},
+{"a":["しずく","赤"],"b":["つき","黒"],"answer":"つき","kind":1},
+{"a":["ハート","赤"],"b":["しずく","緑"],"answer":"ハート","kind":1},
+{"a":["ほし","赤"],"b":["つき","青"],"answer":"はっぱ","kind":2},
+{"a":["ハート","黄"],"b":["しずく","黒"],"answer":"はっぱ","kind":2},
+{"a":["しずく","黒"],"b":["ほし","赤"],"answer":"はっぱ","kind":2},
+{"a":["しずく","緑"],"b":["つき","赤"],"answer":"ほし","kind":2},
+{"a":["はっぱ","青"],"b":["つき","黄"],"answer":"ハート","kind":2},
+{"a":["ほし","青"],"b":["はっぱ","赤"],"answer":"つき","kind":2},
+{"a":["しずく","青"],"b":["はっぱ","黄"],"answer":"しずく","kind":1},
+{"a":["しずく","黒"],"b":["ほし","緑"],"answer":"ハート","kind":2},
+{"a":["ハート","黒"],"b":["ほし","緑"],"answer":"しずく","kind":2},
+{"a":["ハート","緑"],"b":["つき","黄"],"answer":"しずく","kind":2},
+{"a":["ハート","赤"],"b":["ほし","黒"],"answer":"ハート","kind":1},
+{"a":["しずく","緑"],"b":["ほし","黒"],"answer":"ハート","kind":2},
+{"a":["しずく","青"],"b":["つき","緑"],"answer":"しずく","kind":1},
+{"a":["しずく","黒"],"b":["はっぱ","黄"],"answer":"ハート","kind":2},
+{"a":["はっぱ","赤"],"b":["つき","黒"],"answer":"つき","kind":1},
+{"a":["しずく","青"],"b":["ほし","緑"],"answer":"しずく","kind":1},
+{"a":["ハート","黄"],"b":["つき","青"],"answer":"はっぱ","kind":2},
+{"a":["しずく","黄"],"b":["はっぱ","緑"],"answer":"はっぱ","kind":1},
+{"a":["はっぱ","赤"],"b":["つき","黄"],"answer":"しずく","kind":2},
+{"a":["ハート","黒"],"b":["しずく","青"],"answer":"しずく","kind":1},
+{"a":["ほし","赤"],"b":["はっぱ","緑"],"answer":"はっぱ","kind":1},
+{"a":["ハート","赤"],"b":["つき","黄"],"answer":"ハート","kind":1},
+{"a":["ハート","緑"],"b":["しずく","黒"],"answer":"ほし","kind":2},
+{"a":["ハート","青"],"b":["はっぱ","黄"],"answer":"つき","kind":2},
+{"a":["しずく","赤"],"b":["つき","黄"],"answer":"はっぱ","kind":2},
+{"a":["しずく","青"],"b":["はっぱ","黒"],"answer":"しずく","kind":1},
+{"a":["しずく","赤"],"b":["はっぱ","黄"],"answer":"つき","kind":2},
+{"a":["ハート","青"],"b":["つき","黄"],"answer":"はっぱ","kind":2},
+{"a":["ほし","青"],"b":["つき","緑"],"answer":"ハート","kind":2},
+{"a":["しずく","青"],"b":["つき","赤"],"answer":"しずく","kind":1},
+{"a":["ハート","赤"],"b":["はっぱ","黄"],"answer":"ハート","kind":1},
+{"a":["ほし","黄"],"b":["はっぱ","黒"],"answer":"ほし","kind":1},
+{"a":["ハート","青"],"b":["つき","黒"],"answer":"つき","kind":1},
+{"a":["はっぱ","黄"],"b":["つき","黒"],"answer":"つき","kind":1},
+{"a":["ハート","青"],"b":["はっぱ","黒"],"answer":"ほし","kind":2},
+{"a":["ほし","赤"],"b":["つき","緑"],"answer":"しずく","kind":2},
+{"a":["しずく","黄"],"b":["つき","赤"],"answer":"はっぱ","kind":2},
+{"a":["ハート","黄"],"b":["はっぱ","黒"],"answer":"しずく","kind":2},
+{"a":["しずく","赤"],"b":["ほし","黒"],"answer":"はっぱ","kind":2},
+{"a":["ハート","黒"],"b":["はっぱ","黄"],"answer":"しずく","kind":2},
+{"a":["ハート","赤"],"b":["はっぱ","青"],"answer":"ハート","kind":1},
+{"a":["ハート","黒"],"b":["ほし","青"],"answer":"はっぱ","kind":2},
+{"a":["しずく","赤"],"b":["はっぱ","黒"],"answer":"ほし","kind":2},
+{"a":["しずく","赤"],"b":["ほし","黄"],"answer":"ほし","kind":1},
+{"a":["ハート","黒"],"b":["はっぱ","緑"],"answer":"はっぱ","kind":1},
+{"a":["ほし","緑"],"b":["つき","赤"],"answer":"しずく","kind":2},
+{"a":["ほし","黄"],"b":["つき","緑"],"answer":"ほし","kind":1},
+{"a":["ほし","黒"],"b":["はっぱ","青"],"answer":"ハート","kind":2},
+{"a":["ほし","緑"],"b":["つき","黒"],"answer":"つき","kind":1},
+{"a":["ハート","黄"],"b":["つき","黒"],"answer":"つき","kind":1},
+{"a":["ハート","黄"],"b":["はっぱ","青"],"answer":"つき","kind":2},
+{"a":["ほし","黄"],"b":["つき","青"],"answer":"ほし","kind":1},
+{"a":["はっぱ","黄"],"b":["つき","青"],"answer":"ハート","kind":2},
+{"a":["しずく","黒"],"b":["ほし","黄"],"answer":"ほし","kind":1},
+{"a":["ハート","青"],"b":["ほし","黄"],"answer":"ほし","kind":1}
+];
+/* CARDS-END */
+
+var Hayatsukami = (function () {
+
+  /* 品は5つ。形と色が1対1 */
+  var SHAPES = ["ハート", "しずく", "ほし", "はっぱ", "つき"];
+  var COLORS = ["赤", "青", "黄", "緑", "黒"];
+  var TRUE = { "ハート": "赤", "しずく": "青", "ほし": "黄", "はっぱ": "緑", "つき": "黒" };
+  var OWNER = { "赤": "ハート", "青": "しずく", "黄": "ほし", "緑": "はっぱ", "黒": "つき" };
+
+  function motif(m) {
+    if (!m || m.length !== 2) return null;
+    if (!TRUE.hasOwnProperty(m[0]) || !OWNER.hasOwnProperty(m[1])) return null;
+    return m;
+  }
+
+  /* 札の正解（正解の形）を返す。定まらない札は null
+       1. 形と色が本来の組み合わせと一致する絵柄がちょうど1つ → その品
+       2. 一致が0個 → 形としても色としても出ていない品が1つ残る → その品
+     一致が2つある札（v0.1 では使わない）と、残りが1つに絞れない札は null */
+  function answerOf(card) {
+    if (!card) return null;
+    var a = motif(card.a), b = motif(card.b);
+    if (!a || !b) return null;
+    if (a[0] === b[0]) return null;                 /* 形の重複 */
+    if (a[1] === b[1]) return null;                 /* 色の重複 */
+    var hit = [];
+    if (TRUE[a[0]] === a[1]) hit.push(a[0]);
+    if (TRUE[b[0]] === b[1]) hit.push(b[0]);
+    if (hit.length === 2) return null;
+    if (hit.length === 1) return hit[0];
+    var used = {}, rest = [], i;
+    used[a[0]] = 1; used[b[0]] = 1;
+    used[OWNER[a[1]]] = 1; used[OWNER[b[1]]] = 1;
+    for (i = 0; i < SHAPES.length; i++) if (!used[SHAPES[i]]) rest.push(SHAPES[i]);
+    if (rest.length !== 1) return null;
+    return rest[0];
+  }
+
+  /* 正解が1つに定まる札か */
+  function isValidCard(card) {
+    return answerOf(card) !== null;
+  }
+
+  /* ---- 引きの判定（DOM に依存しない） ----
+     しきい値を越えた最初の引きが、その札を取る。待ち時間も猶予窓も置かない。
+     ・札が場に出ていない間（配り待ち）も指は置けるが、しきい値は越えられない
+     ・札が配られた瞬間に、そのとき押されている指の起点をその場に置き直す
+     ・札が変わった瞬間に、触れている指はすべて無効。いったん離すまで戻らない */
+  var Grab = {
+    create: function () { return { pointers: {}, open: false }; },
+
+    down: function (st, id, idx, x, y) {
+      st.pointers[id] = { idx: idx, x0: x, y0: y, x: x, y: y, off: 0, dead: false, done: false };
+      return st.pointers[id];
+    },
+
+    /* しきい値を越えたら {side, idx} を返す。越えていなければ null */
+    move: function (st, id, x, y, th) {
+      var p = st.pointers[id];
+      if (!p) return null;
+      p.x = x; p.y = y;
+      if (p.dead || p.done || !st.open) { p.off = 0; return null; }
+      var dx = x - p.x0, dy = y - p.y0;
+      p.off = Math.max(-th, Math.min(th, dy));
+      if (Math.abs(dy) >= th && Math.abs(dy) > Math.abs(dx)) {   /* 横に引いても無効 */
+        p.done = true;                                          /* この札への引きは1回きり */
+        p.off = 0;
+        return { side: dy < 0 ? 'top' : 'bottom', idx: p.idx };
+      }
+      return null;
+    },
+
+    up: function (st, id) { delete st.pointers[id]; },
+
+    /* 札が出た。押されたままの指は起点をその場に置き直す（無効な指は無効のまま） */
+    deal: function (st) {
+      st.open = true;
+      for (var id in st.pointers) if (st.pointers.hasOwnProperty(id)) {
+        var p = st.pointers[id];
+        p.x0 = p.x; p.y0 = p.y; p.off = 0;
+      }
+    },
+
+    /* 札が場から消えた。触れている指はすべて無効にする（次の札へ持ち越さない） */
+    clear: function (st) {
+      st.open = false;
+      for (var id in st.pointers) if (st.pointers.hasOwnProperty(id)) {
+        st.pointers[id].dead = true;
+        st.pointers[id].off = 0;
+      }
+    },
+
+    reset: function (st) { st.pointers = {}; st.open = false; },
+
+    /* 描画用。いま引かれている量を品ごとに返す（無効・使用済みの指は 0） */
+    offsets: function (st, n) {
+      var off = [], i, id, p;
+      for (i = 0; i < n; i++) off.push(0);
+      for (id in st.pointers) if (st.pointers.hasOwnProperty(id)) {
+        p = st.pointers[id];
+        if (p.dead || p.done) continue;
+        if (p.idx >= 0 && p.idx < n) off[p.idx] = p.off;
+      }
+      return off;
+    }
+  };
+
+  return {
+    CARDS: CARDS, SHAPES: SHAPES, COLORS: COLORS, TRUE: TRUE, OWNER: OWNER,
+    answerOf: answerOf, isValidCard: isValidCard, Grab: Grab
+  };
+})();
+
+if (typeof window !== 'undefined') window.Hayatsukami = Hayatsukami;
+if (typeof globalThis !== 'undefined') globalThis.Hayatsukami = Hayatsukami;
+</script>
+
+<script>
+/* =====================================================================
+   画面
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var KEY = 'hayatsukami';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var GOAL = 7;          /* 先に7枚で勝ち */
+  var GAP = 600;         /* 取られてから次の札まで（ミリ秒） */
+
+  var SHAPES = Hayatsukami.SHAPES;
+  var TRUE = Hayatsukami.TRUE;
+  var CARDS = Hayatsukami.CARDS;
+
+  var PAINT = { "赤": "#d94f43", "青": "#2f7fd4", "黄": "#e0a90c", "緑": "#3f9b52", "黒": "#2b2b2b" };
+
+  /* 形は単純な輪郭で（100×100 の枠に描く） */
+  var PATH = {
+    "ハート": { d: "M50 87C22 66 9 51 9 35 9 21 20 11 32 11 41 11 47 16 50 23 53 16 59 11 68 11 80 11 91 21 91 35 91 51 78 66 50 87Z" },
+    "しずく": { d: "M50 8C50 8 83 47 83 63 83 81 68 92 50 92 32 92 17 81 17 63 17 47 50 8 50 8Z" },
+    "ほし":   { d: "M50 8L60.6 37.4 91.9 38.4 67.1 57.6 75.9 87.6 50 70 24.1 87.6 32.9 57.6 8.2 38.4 39.4 37.4Z" },
+    "はっぱ": { d: "M12 88C12 40 40 12 88 12 88 60 60 88 12 88Z" },
+    "つき":   { d: "M57 8.6A42 42 0 1 0 57 91.4A50 50 0 0 1 57 8.6Z" }
+  };
+
+  function drawMotif(shape, color) {
+    var svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    var p = document.createElementNS(SVGNS, 'path');
+    p.setAttribute('d', PATH[shape].d);
+    p.setAttribute('fill', PAINT[color]);
+    svg.appendChild(p);
+    return svg;
+  }
+
+  var elItems = document.getElementById('items');
+  var elMid = document.getElementById('mid');
+  var elCard = { top: document.getElementById('cardTop'), bottom: document.getElementById('cardBottom') };
+  var elCount = { top: document.getElementById('countTop'), bottom: document.getElementById('countBottom') };
+  var elNote = { top: document.getElementById('noteTop'), bottom: document.getElementById('noteBottom') };
+  var elOver = document.getElementById('over');
+  var elRes = { top: document.getElementById('resTop'), bottom: document.getElementById('resBottom') };
+  var elAgain = document.getElementById('again');
+
+  /* ---- 保存（通算の勝ち数だけ。途中経過は残さない） ---- */
+  var store = { wins: { top: 0, bottom: 0 } };
+  function loadStore() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (!o || typeof o !== 'object' || !o.wins || typeof o.wins !== 'object') return;
+      if (Number.isInteger(o.wins.top) && o.wins.top >= 0) store.wins.top = o.wins.top;
+      if (Number.isInteger(o.wins.bottom) && o.wins.bottom >= 0) store.wins.bottom = o.wins.bottom;
+    } catch (e) { store = { wins: { top: 0, bottom: 0 } }; }
+  }
+  function saveStore() {
+    try { localStorage.setItem(KEY, JSON.stringify({ wins: store.wins })); } catch (e) {}
+  }
+
+  /* ---- 状態 ---- */
+  var items = [];                       /* 品の見た目（左から SHAPES の順） */
+  var score = { top: 0, bottom: 0 };
+  var deck = [], cursor = 0;
+  var card = null;                      /* いま出ている札 / null＝間 */
+  var locked = true;                    /* 入力を受けない間 */
+  var over = false;
+  var Grab = Hayatsukami.Grab;
+  var grab = Grab.create();             /* 指の状態と先着判定（DOM 非依存） */
+  var noteTimer = { top: 0, bottom: 0 };
+  var dealTimer = 0;
+
+  var HINT = '正しい品を自分の側へ引く';
+
+  function other(side) { return side === 'top' ? 'bottom' : 'top'; }
+
+  /* ---- 品を並べる ---- */
+  (function build() {
+    for (var i = 0; i < SHAPES.length; i++) {
+      var d = document.createElement('div');
+      d.className = 'item';
+      d.appendChild(drawMotif(SHAPES[i], TRUE[SHAPES[i]]));
+      elItems.appendChild(d);
+      items.push(d);
+    }
+  })();
+
+  /* ---- 札 ---- */
+  function shuffleDeck() {
+    deck = [];
+    for (var i = 0; i < CARDS.length; i++) deck.push(i);
+    for (i = deck.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1)), t = deck[i];
+      deck[i] = deck[j]; deck[j] = t;
+    }
+    cursor = 0;
+  }
+
+  function showCard(c) {
+    ['top', 'bottom'].forEach(function (side) {
+      var box = elCard[side];
+      while (box.firstChild) box.removeChild(box.firstChild);
+      if (!c) { box.className = 'card taken'; return; }
+      box.className = 'card';
+      box.appendChild(drawMotif(c.a[0], c.a[1]));
+      box.appendChild(drawMotif(c.b[0], c.b[1]));
+    });
+  }
+
+  function deal() {
+    if (over) return;
+    if (cursor >= deck.length) shuffleDeck();
+    card = CARDS[deck[cursor++]];
+    showCard(card);
+    Grab.deal(grab);          /* 押されたままの指は起点をここに置き直す */
+    offsets();
+    locked = false;
+  }
+
+  function nextCard() {
+    card = null;
+    showCard(null);
+    Grab.clear(grab);         /* 札が変わる。触れている指はいったん無効 */
+    offsets();
+    clearTimeout(dealTimer);
+    dealTimer = setTimeout(deal, GAP);
+  }
+
+  /* ---- 表示 ---- */
+  function renderCount() {
+    ['top', 'bottom'].forEach(function (side) {
+      elCount[side].innerHTML = score[side] + '<small>枚</small>';
+    });
+  }
+  function note(side, text, hold) {
+    elNote[side].textContent = text;
+    clearTimeout(noteTimer[side]);
+    if (hold) noteTimer[side] = setTimeout(function () { elNote[side].textContent = HINT; }, hold);
+  }
+  function resetNotes() { note('top', HINT); note('bottom', HINT); }
+
+  function offsets() {
+    var off = Grab.offsets(grab, 5);
+    for (var i = 0; i < 5; i++) {
+      items[i].style.transform = off[i] ? 'translateY(' + off[i] + 'px)' : '';
+      if (off[i]) items[i].classList.add('hold'); else items[i].classList.remove('hold');
+    }
+  }
+
+  /* ---- 判定 ---- */
+  function judge(side, idx) {
+    if (!card || locked || over) return;
+    var want = Hayatsukami.answerOf(card);
+    if (SHAPES[idx] === want) {
+      locked = true;
+      score[side] += 1;
+      renderCount();
+      note(side, 'とった！', 1200);
+      note(other(side), '', 1200);
+      if (score[side] >= GOAL) { finish(side); return; }
+      nextCard();
+    } else {
+      /* おてつき＝自分の持ち札を1枚相手に渡す（0枚なら何も起きない） */
+      if (score[side] > 0) {
+        score[side] -= 1;
+        score[other(side)] += 1;
+        renderCount();
+        note(side, 'おてつき　1枚わたす', 1200);
+        if (score[other(side)] >= GOAL) { locked = true; finish(other(side)); return; }
+      } else {
+        note(side, 'おてつき', 1200);
+      }
+    }
+  }
+
+  function finish(winner) {
+    over = true;
+    locked = true;
+    clearTimeout(dealTimer);
+    Grab.reset(grab); offsets();
+    store.wins[winner] += 1;
+    saveStore();
+    setTimeout(function () {
+      elRes[winner].innerHTML = 'かち<span>通算 ' + store.wins[winner] + ' 勝</span>';
+      elRes[other(winner)].innerHTML = 'まけ<span>通算 ' + store.wins[other(winner)] + ' 勝</span>';
+      elOver.hidden = false;
+    }, GAP);
+  }
+
+  /* ---- 操作（Pointer Events。pointerId ごとに別々に追う） ----
+     しきい値を越えた瞬間にその場で決める。待ちも猶予窓も置かない。 */
+
+  /* 当たり判定は要素ではなく品の列の座標から求める（列を5等分し、隙間は両隣で分ける） */
+  function hitItem(x, y) {
+    var band = elMid.getBoundingClientRect(), row = elItems.getBoundingClientRect();
+    if (y < band.top || y > band.bottom) return -1;
+    if (x < row.left || x > row.right || !row.width) return -1;
+    var i = Math.floor((x - row.left) / (row.width / 5));
+    if (i < 0) i = 0;
+    if (i > 4) i = 4;
+    return i;
+  }
+  function threshold() {
+    var r = elItems.getBoundingClientRect();
+    return Math.max(18, r.height / 2);           /* 引く距離＝品の高さの半分 */
+  }
+
+  /* 札が出る前から指を置いてよい（置いても得はしない。起点は配布時に置き直される） */
+  elMid.addEventListener('pointerdown', function (e) {
+    if (over) return;
+    var idx = hitItem(e.clientX, e.clientY);
+    if (idx < 0) return;
+    e.preventDefault();
+    try { elMid.setPointerCapture(e.pointerId); } catch (err) {}
+    Grab.down(grab, e.pointerId, idx, e.clientX, e.clientY);
+  });
+
+  elMid.addEventListener('pointermove', function (e) {
+    if (!grab.pointers[e.pointerId]) return;
+    e.preventDefault();
+    var hit = Grab.move(grab, e.pointerId, e.clientX, e.clientY, threshold());
+    offsets();
+    if (hit) judge(hit.side, hit.idx);       /* 引き切った瞬間に即決 */
+  });
+
+  function release(e) {
+    if (!grab.pointers[e.pointerId]) return;
+    Grab.up(grab, e.pointerId);
+    offsets();
+  }
+  elMid.addEventListener('pointerup', release);
+  elMid.addEventListener('pointercancel', release);
+
+  /* ---- はじめから ---- */
+  function start() {
+    score.top = 0; score.bottom = 0;
+    over = false; locked = true; card = null;
+    Grab.reset(grab);
+    elOver.hidden = true;
+    renderCount();
+    resetNotes();
+    showCard(null);
+    offsets();
+    shuffleDeck();
+    clearTimeout(dealTimer);
+    dealTimer = setTimeout(deal, GAP);
+  }
+
+  elAgain.addEventListener('click', start);
+
+  loadStore();
+  start();
+})();
+</script>
+</body>
+</html>
