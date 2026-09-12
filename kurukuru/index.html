@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>くるくる</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --thick:#5d5952;
+    --on:#2f6e9e; --off:#c6d2da;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  #app{max-width:420px;margin:0 auto;padding:10px 10px 40px}
+  header{display:flex;align-items:baseline;gap:8px;padding:2px 2px 8px}
+  #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+
+  #rules{padding:0 2px 10px;font-size:13px;line-height:1.7;color:var(--sub)}
+  #rules div{white-space:nowrap}
+
+  #stage{position:relative}
+  #board{
+    position:relative;
+    width:100%;max-width:400px;margin:0 auto;aspect-ratio:1/1;
+    background:var(--panel);border:2px solid var(--thick);border-radius:6px;
+    overflow:hidden;
+    touch-action:none;                 /* 盤の上だけページを動かさない */
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+    cursor:pointer;
+  }
+  #svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .cell{transition:transform .12s ease-out}
+
+  #buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:12px}
+  button{
+    font:inherit;padding:11px 0;border:1px solid var(--frame);
+    border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button:active{background:#eeece7}
+  button:disabled{opacity:.4;cursor:default}
+
+  #clear{
+    position:absolute;left:0;right:0;top:0;height:100%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+    background:rgba(245,244,241,.93);border-radius:6px;z-index:20;
+  }
+  #clear[hidden]{display:none}
+  #clearTitle{font-size:26px;font-weight:700}
+  #next{font-size:17px;padding:12px 28px}
+
+  #levels{padding-top:18px}
+  .tier{margin-bottom:10px}
+  .tierName{font-size:13px;color:var(--sub);padding:2px 2px 4px}
+  .tierRow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .lv{padding:0;height:40px;font-size:14px;border-radius:7px;
+      display:flex;align-items:center;justify-content:center}
+  .lv.cur{border-color:var(--ink);font-weight:700}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><div id="title">入門 1</div></header>
+
+  <div id="rules">
+    <div>マスをタップすると時計回りに回る</div>
+    <div>全部のパイプをつないで一本の網にする</div>
+  </div>
+
+  <div id="stage">
+    <div id="board"><svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <div id="clear" hidden>
+      <div id="clearTitle">クリア！</div>
+      <button id="next">つぎへ</button>
+    </div>
+  </div>
+
+  <div id="buttons">
+    <button id="undo">もどす</button>
+    <button id="reset">はじめから</button>
+  </div>
+
+  <section id="levels"></section>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.Kurukuru として公開する）
+
+   腕のビット  N=1 E=2 S=4 W=8（16進1桁）
+   時計回りの90度回転は 1ビット左巡回（N->E->S->W->N）
+   ===================================================================== */
+
+/* PUZZLES-BEGIN  tools/gen_puzzles.py の出力をそのまま貼る。手で書き換えない */
+var PUZZLES = [
+  {"n":5,"cells":"64971b85c2a4b599fc4b2c2ac","solution":"686e878538547ac3f92d292a9","tier":"入門","nodes":32},
+  {"n":5,"cells":"ca328a6db95a9f1a3252628e9","solution":"6ac4456d79553f853854382b9","tier":"入門","nodes":34},
+  {"n":5,"cells":"12bd1a39986e3a327f256c829","solution":"42ee8569383d6ac47f8539129","tier":"入門","nodes":36},
+  {"n":5,"cells":"4a5ac457ab22eca7f3a544462","solution":"2aaac2aead447c57f95511291","tier":"入門","nodes":36},
+  {"n":5,"cells":"9141197be696c129336a4d573","solution":"684443ebb9696843c3c52bab9","tier":"入門","nodes":36},
+  {"n":5,"cells":"4b9c485ad4ce3d62e62669952","solution":"2ec68455783d3bc47c29393a8","tier":"入門","nodes":40},
+  {"n":5,"cells":"23c149ba9c857f697b84313a4","solution":"2c6846d569157fc6bd11383a8","tier":"入門","nodes":42},
+  {"n":5,"cells":"1a5d1199b19f9dc119742a39c","solution":"2aae82c6d46f979116d42a939","tier":"入門","nodes":44},
+  {"n":5,"cells":"4ac423d96e1a95d8eb229c9e1","solution":"2ac446e93d156ad47d41393b8","tier":"入門","nodes":47},
+  {"n":5,"cells":"6ec4184aa54abe722db39a631","solution":"6ec44115552abbd42ee93a938","tier":"入門","nodes":51},
+  {"n":6,"cells":"89c9966ca125d46b5ca18744a56bf3cde234","solution":"2c6c6c695115783ea9542d44556bf93bb838","tier":"初級","nodes":57},
+  {"n":6,"cells":"25985618fc4d73535753624a992d7e8e2153","solution":"2ac2ac42fc2d7c53ad5394453c2bbd2b82a9","tier":"初級","nodes":60},
+  {"n":6,"cells":"99688285b83b2b353a4da5753f21bd8742a6","solution":"6c684415783d2d3ac547aad53f82bd2b82a9","tier":"初級","nodes":61},
+  {"n":6,"cells":"255bb42c33623ee682a6b2cd49bd53894758","solution":"2aaee82c69386d7c4453d13d16bea9292ba8","tier":"初級","nodes":65},
+  {"n":6,"cells":"cc16484c6b7e2afd418ebce6cd851486ada1","solution":"6c2c4413c7bd2afb812ed6ec6d151113aba8","tier":"初級","nodes":69},
+  {"n":6,"cells":"194aac8eec3dc459e13563b8c18e7195a5d1","solution":"2c2aac2bec6d6853d13a96b8682be83aaab8","tier":"初級","nodes":70},
+  {"n":6,"cells":"881348ed5a8aacdb7ea6cc2adcb7319421d8","solution":"4446847d554553bbbd56c685797bc13812b8","tier":"初級","nodes":75},
+  {"n":6,"cells":"35c1c9a4bc5439ea9426723e37daca26c4ac","solution":"6ac46c547951397a942c786d6d7a951392a9","tier":"初級","nodes":80},
+  {"n":6,"cells":"2742c21d5ba429965a8d75e667f55c226459","solution":"2e84682bad542c69552d7ab96bfaac1292a9","tier":"初級","nodes":83},
+  {"n":6,"cells":"4894c4c9a1b36bbbd6692da93d1fa4481e54","solution":"42c2c43c54796bbbbc3c2ea96d2fa8112ba8","tier":"初級","nodes":96},
+  {"n":8,"cells":"cb8475a32c7a315d341644ec581d18b4bf4a59e4a67df9e972e44eb192354863","solution":"6e82eaac13ea92ad681682e9542d44787f8553d453ebfc79787817d4383a8139","tier":"中級","nodes":113},
+  {"n":8,"cells":"4d433c814691a3aeeeeab13c5c563bb4ca2eaea28db3cf146e46bdeb14138281","solution":"2e86c68443c153ad7ebad46953ac3bb83a87aea82ee96f846d16d7ed11291111","tier":"中級","nodes":115},
+  {"n":8,"cells":"298539b43629656653c5494a777f577584a119cb2fe5a34a8bb34be43c199261","solution":"2c2ac6e86946953c569529457befaed51451293d2fbaac4547ec47d139139138","tier":"中級","nodes":119},
+  {"n":8,"cells":"8ed5a2489d6daef3473c91a4378c74452d1a422a9b1c3ebdaac3ceda463c7224","solution":"2eeaa8446d3eaef917c3c1546d16b815178544456d293d7d556c6bd51393b811","tier":"中級","nodes":124},
+  {"n":8,"cells":"c59c2434a2de49a5c96c3dfb6c95f285bd4248dd23a7a4a5446dae756e644681","solution":"6ac682c452bd2c553c696bfd693af8157e8412ed13aba855446eaed53b912911","tier":"中級","nodes":126},
+  {"n":8,"cells":"2c82562467ca9bfb37ec9ea452c2165475b6cafbb62d43685991272884c4e756","solution":"4682ac443d6ac7fd6bbc3d5152c129547abc6afd7c2d169153c147841292bba9","tier":"中級","nodes":137},
+  {"n":8,"cells":"25e5a631411c5f92df57249c239895b34aeda487355be9253889d5fc45739834","solution":"2aeaac684416af947fab816913c46abc2abd542d6aabb9453846eaf92ab93838","tier":"中級","nodes":147},
+  {"n":8,"cells":"862c55d22f6956429e4933694b86fae61a2ce8c6beafb2c2368b5ba48c46cb51","solution":"2c46aae82f93ac146d2c69691783fabc452c78697bafd4383c2d57a829293ba8","tier":"中級","nodes":149},
+  {"n":8,"cells":"46416a443dcde1cc5657a3646c1fbd59968a95585cfea196a88dfdda18ac6224","solution":"2c446a846d3d786953ad56943c2fbba969456aa856fd546c5117fbd512a93811","tier":"中級","nodes":173},
+  {"n":8,"cells":"34198a32585d4277582b99333fb7bdb43944c3d651a91da292677d988ae82ad6","solution":"682c2ac452ad42bd542d3c693febebd4691296b952ac47a8386bbbc42ab82ab9","tier":"中級","nodes":203},
+  {"n":10,"cells":"4812ab44e3ebee1659aabc36911ea1a4bbdc8d798368661f619f22d29d78458f7b313293193f7d1954cb345d56cc16813c58","solution":"4442ae82ec7bbe83ac557c69682d51517ebc2d7c1691692f916f84786be8152fbe943869296fed2c546e9157a939138293a8","tier":"上級","nodes":242},
+  {"n":10,"cells":"49576692a6a98ad38179eaab29aaf158aba621a87a4948da6bb36b41ef79a36435ee9269439446e98bd64f56a52b62264732","solution":"46aec6c2ac53857912e97aad16aaf852aba944547a8682d53d7c6b82bfe953946aed383c439413ec2d7c2fac552b91292b91","tier":"上級","nodes":247},
+  {"n":10,"cells":"8131491194aae5f767d4cff41337c88da13a846d26bda1882a9d62effc4526aa9589f9c5dd56143cd116abbc3d6a52171c38","solution":"4468468468557afd6d783ff81397942d546a816d297d5444156e917ff94513aa9516f96aeea9413c7813aebc6d3aa82b8391","tier":"上級","nodes":255},
+  {"n":10,"cells":"97c46255d685cb995c5a4b6517c18586853ab83c8e4cf8ede82d3cd346b71b1f643e131b241571c8bfd5bbfb734824c84388","solution":"6ec2c2aaec153e96ac552bc52bc1152c156ad4692d43f87bd42d3c7c16bd2d2f916d2947812ad1687feaeefebc1112911381","tier":"上級","nodes":282},
+  {"n":10,"cells":"9ad91c3a64822d5fc3fb4b794e93aa13e78294455a49abea816bd222bae1c569b2d9e4d69b123a8ca58dbe5333231469aa78","solution":"6aec2c6ac41417af96fd2be92d695546be8138155543aeea813bb8417ae86ac6d2d6b87c3d12952c552beea969138293aab8","tier":"上級","nodes":289},
+  {"n":10,"cells":"95a9881648a26d9def8556e4cf3c3524d34b54a586d614cefc59d286557cc9db252aa12b75ef65581b59a5127e3949235a32","solution":"6aac444684546d3d7f8553d16f93c5147c17a85543d3816ef956d42c557c397b8515512ebaefc55447ac55117d392913aa91","tier":"上級","nodes":294},
+  {"n":10,"cells":"4d894944818eabc9eb656eae7cd535151bd7345a132aa11ce9c4a53edc68c37d244d748bb55a4e6623d55b61c49683b695e1","solution":"2e868684442babc3eb956eaed6bac5152d7bc45529455413b968553bec683c7d4417d42bd5552d3946d557c1683913b93ab8","tier":"上級","nodes":323},
+  {"n":10,"cells":"8a9131275115fd7f7fc8819a1785993a7b3c83798229fb512a9fb685c41383b187a13846e49d7ba4c7e1421f772ab5ae1688","solution":"2ac2c42ea82afebfefc442952d15393aebc383ec4416fea8153fe915682929782d546846b86bbd543be8142fbd2abaab8381","tier":"上級","nodes":351},
+  {"n":10,"cells":"175b6188728e8a1a9bd1bc83c34ed6cae4a185a23ad676d65a1cd6bab8cd6b24f6495bab68b6ed15ad5c6ca1ca421b228179","solution":"2eaec442e84785153ed47929692d793ae85445546ad6d3b95516b97ae83d6d42fc16ad5792d3eb8557ac3c52c5112b8112b9","tier":"上級","nodes":400},
+  {"n":10,"cells":"248562ae535cccf4974a763ecdb4ac5c73865cd6b88119dd8a3c4e15a5931def4e621139871d849a2c5b5bddb51aa79884c3","solution":"442ac2aeac53c6f86b857c3d3ed2a953e92956ec78142c7d153c478555692bbf8791146c2d4782c513ad57eed52aab911139","tier":"上級","nodes":409}
+];
+/* PUZZLES-END */
+
+var Kurukuru = (function () {
+
+  var HEX = "0123456789abcdef";
+  var VARCACHE = {};
+
+  /* 時計回りに times 回（90度ずつ）。times は負でもよい */
+  function rotate(cell, times) {
+    var m = cell & 15, t = ((times | 0) % 4 + 4) % 4, i;
+    for (i = 0; i < t; i++) m = ((m << 1) | (m >> 3)) & 15;
+    return m;
+  }
+
+  /* 向きの重複を同一視した「異なる向き」の一覧
+     十字は1個、直線は2個、端・かど・三叉は4個 */
+  function variants(m) {
+    m = m & 15;
+    if (VARCACHE[m]) return VARCACHE[m];
+    var out = [], x = m, i;
+    for (i = 0; i < 4; i++) {
+      if (out.indexOf(x) < 0) out.push(x);
+      x = rotate(x, 1);
+    }
+    VARCACHE[m] = out;
+    return out;
+  }
+
+  function decode(s) {
+    var out = [], i;
+    for (i = 0; i < s.length; i++) out.push(HEX.indexOf(s.charAt(i)));
+    return out;
+  }
+  function encode(cells) {
+    var out = "", i;
+    for (i = 0; i < cells.length; i++) out += HEX.charAt(cells[i] & 15);
+    return out;
+  }
+
+  /* 問題 -> {n, N, cells:[出題の向き], sol:[正解の向き]} */
+  function parse(p) {
+    return { n: p.n, N: p.n * p.n, cells: decode(p.cells), sol: decode(p.solution) };
+  }
+
+  /* 左上の隅のマス（0番）から腕でつながっているマスの集合。
+     つながりは両側に腕があるときだけ数える（片方だけの腕はつながっていない） */
+  function connectedSet(cells, n) {
+    var N = n * n, seen = new Set(), stack = [0], i, r, c, m;
+    if (!N) return seen;
+    seen.add(0);
+    while (stack.length) {
+      i = stack.pop();
+      r = Math.floor(i / n); c = i % n; m = cells[i];
+      if ((m & 1) && r > 0 && (cells[i - n] & 4) && !seen.has(i - n)) { seen.add(i - n); stack.push(i - n); }
+      if ((m & 4) && r < n - 1 && (cells[i + n] & 1) && !seen.has(i + n)) { seen.add(i + n); stack.push(i + n); }
+      if ((m & 8) && c > 0 && (cells[i - 1] & 2) && !seen.has(i - 1)) { seen.add(i - 1); stack.push(i - 1); }
+      if ((m & 2) && c < n - 1 && (cells[i + 1] & 8) && !seen.has(i + 1)) { seen.add(i + 1); stack.push(i + 1); }
+    }
+    return seen;
+  }
+
+  /* 腕が過不足なくつながり（腕の先に必ず相手の腕がある・盤の外へ出ていない）、
+     かつ全体が一つの網になっているか */
+  function isSolved(cells, n) {
+    var N = n * n, i, r, c, m;
+    if (!cells || cells.length !== N) return false;
+    for (i = 0; i < N; i++) {
+      r = Math.floor(i / n); c = i % n; m = cells[i];
+      if ((m & 1) && (r === 0 || !(cells[i - n] & 4))) return false;
+      if ((m & 4) && (r === n - 1 || !(cells[i + n] & 1))) return false;
+      if ((m & 8) && (c === 0 || !(cells[i - 1] & 2))) return false;
+      if ((m & 2) && (c === n - 1 || !(cells[i + 1] & 8))) return false;
+    }
+    return connectedSet(cells, n).size === N;
+  }
+
+  /* 解を limit 個まで数える（生成器 tools/gen_puzzles.py と同じ枝刈り）
+     数えるのは「異なる向きの組み合わせ」＝異なる接続のしかた。
+     行優先でマスを決め、
+       ・縁のマスは外向きの腕を持てない
+       ・左・上の決まったマスと、向かい合う辺の腕の有無が一致すること
+       ・輪ができたら打ち切る
+       ・まだ決めていない領域へ腕が1本も向いていない塊ができたら打ち切る
+     で枝を刈る */
+  function countSolutions(p, limit) {
+    limit = limit || 2;
+    var n = p.n, N = n * n, base = decode(p.cells), i, r, c, j, m;
+    var allowed = [];
+    for (i = 0; i < N; i++) {
+      r = Math.floor(i / n); c = i % n;
+      var vs = variants(base[i]), keep = [];
+      for (j = 0; j < vs.length; j++) {
+        m = vs[j];
+        if (r === 0 && (m & 1)) continue;
+        if (r === n - 1 && (m & 4)) continue;
+        if (c === 0 && (m & 8)) continue;
+        if (c === n - 1 && (m & 2)) continue;
+        keep.push(m);
+      }
+      if (!keep.length) return 0;
+      allowed.push(keep);
+    }
+
+    var parent = [], sz = [], opn = [], cur = [], log = [];
+    for (i = 0; i < N; i++) { parent.push(i); sz.push(1); opn.push(0); cur.push(0); }
+    var cnt = 0;
+
+    function find(x) { while (parent[x] !== x) x = parent[x]; return x; }
+    function rollback(mark) {
+      while (log.length > mark) {
+        var e = log.pop();
+        if (e[0] === 0) opn[e[1]] = e[2];
+        else if (e[0] === 1) parent[e[1]] = e[2];
+        else sz[e[1]] = e[2];
+      }
+    }
+
+    function dfs(i) {
+      if (cnt >= limit) return;
+      if (i === N) { if (sz[find(0)] === N) cnt++; return; }
+      var r = Math.floor(i / n), c = i % n;
+      var up = r > 0 ? i - n : -1, lf = c > 0 ? i - 1 : -1;
+      var needN = up >= 0 ? (cur[up] & 4) !== 0 : false;
+      var needW = lf >= 0 ? (cur[lf] & 2) !== 0 : false;
+      var list = allowed[i], k, m, mark, o, ok, ra, rb, t;
+      for (k = 0; k < list.length; k++) {
+        if (cnt >= limit) return;
+        m = list[k];
+        if (up >= 0 && ((m & 1) !== 0) !== needN) continue;
+        if (lf >= 0 && ((m & 8) !== 0) !== needW) continue;
+        cur[i] = m;
+        mark = log.length;
+        o = 0;
+        if (c + 1 < n && (m & 2)) o++;
+        if (r + 1 < n && (m & 4)) o++;
+        log.push([0, i, opn[i]]); opn[i] = o;
+        ok = true;
+        var pairs = [[up, 1], [lf, 8]], q;
+        for (q = 0; q < 2; q++) {
+          var nb = pairs[q][0], bit = pairs[q][1];
+          if (nb < 0 || !(m & bit)) continue;
+          ra = find(i); rb = find(nb);
+          log.push([0, rb, opn[rb]]); opn[rb]--;      /* 相手の外向きの腕を1本使い切る */
+          if (ra === rb) { ok = false; break; }       /* 輪ができた */
+          if (sz[ra] < sz[rb]) { t = ra; ra = rb; rb = t; }
+          log.push([1, rb, parent[rb]]); parent[rb] = ra;
+          log.push([2, ra, sz[ra]]); sz[ra] += sz[rb];
+          log.push([0, ra, opn[ra]]); opn[ra] += opn[rb];
+        }
+        if (ok && i + 1 < N && opn[find(i)] === 0) ok = false;  /* もう広がれない塊 */
+        if (ok) dfs(i + 1);
+        rollback(mark);
+      }
+    }
+
+    dfs(0);
+    return cnt;
+  }
+
+  return {
+    PUZZLES: PUZZLES, HEX: HEX,
+    parse: parse, rotate: rotate, variants: variants,
+    decode: decode, encode: encode,
+    connectedSet: connectedSet, isSolved: isSolved, countSolutions: countSolutions
+  };
+})();
+
+if (typeof window !== 'undefined') window.Kurukuru = Kurukuru;
+if (typeof globalThis !== 'undefined') globalThis.Kurukuru = Kurukuru;
+</script>
+
+<script>
+/* =====================================================================
+   画面
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var KEY = 'kurukuru';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var CELL = 100;                       /* 1マスの user unit。小数を避けて丸めの事故を減らす */
+
+  var elTitle = document.getElementById('title');
+  var elBoard = document.getElementById('board');
+  var elSvg   = document.getElementById('svg');
+  var elUndo  = document.getElementById('undo');
+  var elReset = document.getElementById('reset');
+  var elClear = document.getElementById('clear');
+  var elNext  = document.getElementById('next');
+  var elLevels = document.getElementById('levels');
+
+  var PUZZLES = Kurukuru.PUZZLES;
+
+  /* 段階名と何本目か（例「入門 3」） */
+  var LABELS = (function () {
+    var out = [], count = {}, i;
+    for (i = 0; i < PUZZLES.length; i++) {
+      var t = PUZZLES[i].tier;
+      count[t] = (count[t] || 0) + 1;
+      out.push({ tier: t, no: count[t], text: t + ' ' + count[t] });
+    }
+    return out;
+  })();
+
+  /* ---- 保存 ---- */
+  var save = { cleared: {}, last: 0, rot: {} };
+  function loadSave() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (!o || typeof o !== 'object') return;
+      if (o.cleared && typeof o.cleared === 'object') save.cleared = o.cleared;
+      if (Number.isInteger(o.last) && o.last >= 0 && o.last < PUZZLES.length) save.last = o.last;
+      if (o.rot && typeof o.rot === 'object') save.rot = o.rot;
+    } catch (e) { save = { cleared: {}, last: 0, rot: {} }; }
+  }
+  function storeSave() {
+    try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
+  }
+
+  /* ---- 状態 ---- */
+  var index = 0, p = null, d = null, n = 0, N = 0;
+  var base = [];      /* 出題時の各マスの向き（回転0のときの見た目） */
+  var turn = [];      /* 時計回りに何回まわしたか。増え続ける（見た目が常に時計回りになる） */
+  var groups = [];    /* マスごとの <g> */
+  var history = [];   /* タップしたマス番号。もどす＝1手戻し */
+  var finished = false;
+
+  function maskAt(i) { return Kurukuru.rotate(base[i], turn[i]); }
+  function currentCells() {
+    var out = [], i;
+    for (i = 0; i < N; i++) out.push(maskAt(i));
+    return out;
+  }
+
+  /* ---- 盤を組む ---- */
+  function buildBoard() {
+    while (elSvg.firstChild) elSvg.removeChild(elSvg.firstChild);
+    elSvg.setAttribute('viewBox', '0 0 ' + (n * CELL) + ' ' + (n * CELL));
+    groups = [];
+    var i, e;
+
+    /* 目盛りの線。vector-effect は継承されないので1本ずつ付ける */
+    var g = document.createElementNS(SVGNS, 'g');
+    g.setAttribute('stroke', 'rgba(0,0,0,.08)');
+    function gline(x1, y1, x2, y2) {
+      var t = document.createElementNS(SVGNS, 'line');
+      t.setAttribute('x1', x1); t.setAttribute('y1', y1);
+      t.setAttribute('x2', x2); t.setAttribute('y2', y2);
+      t.setAttribute('stroke-width', '1');
+      t.setAttribute('vector-effect', 'non-scaling-stroke');
+      g.appendChild(t);
+    }
+    for (i = 1; i < n; i++) {
+      gline(i * CELL, 0, i * CELL, n * CELL);
+      gline(0, i * CELL, n * CELL, i * CELL);
+    }
+    elSvg.appendChild(g);
+
+    var W = Math.max(10, Math.round(CELL * (n <= 6 ? 0.20 : 0.17)));
+    for (i = 0; i < N; i++) {
+      var r = Math.floor(i / n), c = i % n;
+      var cx = c * CELL + CELL / 2, cy = r * CELL + CELL / 2;
+      var m = base[i], arms = 0, bit;
+      var cg = document.createElementNS(SVGNS, 'g');
+      cg.setAttribute('class', 'cell');
+      cg.setAttribute('stroke-width', W);
+      cg.setAttribute('stroke-linecap', 'round');
+      cg.style.transformOrigin = cx + 'px ' + cy + 'px';
+      for (bit = 0; bit < 4; bit++) if (m & (1 << bit)) arms++;
+      function arm(x2, y2) {
+        var t = document.createElementNS(SVGNS, 'line');
+        t.setAttribute('x1', cx); t.setAttribute('y1', cy);
+        t.setAttribute('x2', x2); t.setAttribute('y2', y2);
+        cg.appendChild(t);
+      }
+      if (m & 1) arm(cx, cy - CELL / 2);
+      if (m & 4) arm(cx, cy + CELL / 2);
+      if (m & 8) arm(cx - CELL / 2, cy);
+      if (m & 2) arm(cx + CELL / 2, cy);
+      /* 中心の丸。端（腕1本）は大きめにして「ここで行き止まり」と分かるようにする */
+      e = document.createElementNS(SVGNS, 'circle');
+      e.setAttribute('cx', cx); e.setAttribute('cy', cy);
+      e.setAttribute('r', arms === 1 ? Math.round(W * 1.05) : Math.round(W * 0.52));
+      e.setAttribute('stroke', 'none');
+      cg.appendChild(e);
+      elSvg.appendChild(cg);
+      groups.push(cg);
+    }
+  }
+
+  function render() {
+    var cells = currentCells();
+    var lit = Kurukuru.connectedSet(cells, n);
+    var i, col;
+    for (i = 0; i < N; i++) {
+      col = lit.has(i) ? 'var(--on)' : 'var(--off)';
+      groups[i].setAttribute('stroke', col);
+      groups[i].setAttribute('fill', col);
+      groups[i].style.transform = 'rotate(' + (turn[i] * 90) + 'deg)';
+    }
+    elUndo.disabled = finished || !history.length;
+  }
+
+  function persist() {
+    save.rot[String(index)] = Kurukuru.encode(currentCells());
+    save.last = index;
+    storeSave();
+  }
+
+  /* 保存した向きを回転回数に読み戻す。読めなければ出題のまま */
+  function restore(str) {
+    if (typeof str !== 'string' || str.length !== N) return null;
+    var got = Kurukuru.decode(str), out = [], i, t, ok;
+    for (i = 0; i < N; i++) {
+      if (!(got[i] >= 0 && got[i] <= 15)) return null;
+      ok = -1;
+      for (t = 0; t < 4; t++) if (Kurukuru.rotate(base[i], t) === got[i]) { ok = t; break; }
+      if (ok < 0) return null;
+      out.push(ok);
+    }
+    return out;
+  }
+
+  /* ---- 出題 ---- */
+  function loadLevel(i) {
+    index = i;
+    p = PUZZLES[i];
+    d = Kurukuru.parse(p);
+    n = d.n; N = d.N;
+    base = d.cells.slice();
+    turn = [];
+    for (var k = 0; k < N; k++) turn.push(0);
+    history = [];
+    finished = false;
+    elClear.hidden = true;
+    elTitle.textContent = LABELS[i].text;
+    buildBoard();
+    var got = restore(save.rot && save.rot[String(i)]);
+    if (got) turn = got;
+    render();
+    renderLevelList();
+    save.last = i;
+    storeSave();
+  }
+
+  /* ---- 操作 ---- */
+  /* 指の位置からマス番号。盤の座標から求める（要素からではなく） */
+  function cellAt(x, y) {
+    var r = elSvg.getBoundingClientRect();
+    if (!r.width || !r.height) return -1;
+    var cw = r.width / n, ch = r.height / n;
+    var c = Math.floor((x - r.left) / cw), rw = Math.floor((y - r.top) / ch);
+    if (c < 0 || c > n - 1 || rw < 0 || rw > n - 1) return -1;
+    return rw * n + c;
+  }
+
+  function tap(i) {
+    turn[i]++;                       /* 見た目は常に時計回り。論理は 4 で割った余り */
+    history.push(i);
+    if (history.length > 500) history.shift();
+    render();
+    persist();
+    judge();
+  }
+
+  elBoard.addEventListener('pointerdown', function (e) {
+    if (finished) return;
+    var i = cellAt(e.clientX, e.clientY);
+    if (i < 0) return;
+    e.preventDefault();
+    tap(i);
+  });
+
+  /* 全部の腕がつながり一つの網になった瞬間だけクリア（途中では何も言わない） */
+  function judge() {
+    if (!Kurukuru.isSolved(currentCells(), n)) return;
+    finished = true;
+    save.cleared[String(index)] = 1;
+    persist();
+    renderLevelList();
+    render();
+    elNext.hidden = (index >= PUZZLES.length - 1);
+    elClear.hidden = false;
+  }
+
+  elUndo.addEventListener('click', function () {
+    if (finished || !history.length) return;
+    var i = history.pop();
+    turn[i]--;
+    render();
+    persist();
+  });
+  elReset.addEventListener('click', function () {
+    for (var i = 0; i < N; i++) turn[i] = 0;
+    history = [];
+    finished = false;
+    elClear.hidden = true;
+    render();
+    persist();
+  });
+  elNext.addEventListener('click', function () {
+    if (index < PUZZLES.length - 1) { loadLevel(index + 1); window.scrollTo(0, 0); }
+  });
+
+  /* ---- レベル一覧 ---- */
+  function renderLevelList() {
+    if (!elLevels.childNodes.length) {
+      var tiers = [], seen = {}, i;
+      for (i = 0; i < LABELS.length; i++) {
+        if (!seen[LABELS[i].tier]) { seen[LABELS[i].tier] = []; tiers.push(LABELS[i].tier); }
+        seen[LABELS[i].tier].push(i);
+      }
+      for (var t = 0; t < tiers.length; t++) {
+        var box = document.createElement('div');
+        box.className = 'tier';
+        var name = document.createElement('div');
+        name.className = 'tierName';
+        name.textContent = tiers[t];
+        box.appendChild(name);
+        var row = document.createElement('div');
+        row.className = 'tierRow';
+        var idxs = seen[tiers[t]];
+        for (var k = 0; k < idxs.length; k++) {
+          var b = document.createElement('button');
+          b.className = 'lv';
+          b.dataset.idx = String(idxs[k]);
+          b.addEventListener('click', function () {
+            loadLevel(parseInt(this.dataset.idx, 10));
+            window.scrollTo(0, 0);
+          });
+          row.appendChild(b);
+        }
+        box.appendChild(row);
+        elLevels.appendChild(box);
+      }
+    }
+    var btns = elLevels.querySelectorAll('.lv');
+    for (var j = 0; j < btns.length; j++) {
+      var idx = parseInt(btns[j].dataset.idx, 10);
+      btns[j].textContent = LABELS[idx].no + (save.cleared[String(idx)] ? ' ✓' : '');
+      btns[j].className = 'lv' + (idx === index ? ' cur' : '');
+    }
+  }
+
+  loadSave();
+  loadLevel(save.last);
+})();
+</script>
+</body>
+</html>
