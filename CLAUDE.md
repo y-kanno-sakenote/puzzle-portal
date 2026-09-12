@@ -12,6 +12,7 @@
 - `hoshi-oki/` 星おき（Queens 型・色/行/列に★1つ・隣接禁止・一意解）— 正典は `hoshi-oki/CLAUDE.md`
 - `michi-tsunagi/` みちつなぎ（同じ数字を線でつなぐ・全マスを通る・一意解）— 正典は `michi-tsunagi/CLAUDE.md`
 - `kurukuru/` くるくる（タップで回してパイプをつなぐ・一意解）— 正典は `kurukuru/CLAUDE.md`
+- `hayatsukami/` はやつかみ（**箱で唯一の対戦**・向かい合って早取り）— 正典は `hayatsukami/CLAUDE.md`
 - `pixel/` ピクセル（お絵描きロジック・5×5/10×10・一意解・完成で絵が浮かぶ）— 正典は `pixel/CLAUDE.md`
 
 ## 憲法（変えない原則）
