@@ -25,8 +25,9 @@ import random
 import re
 import sys
 
-# 品は5つ。形と色が1対1
-SHAPES = ["ハート", "しずく", "ほし", "はっぱ", "つき"]
+# 品は5つ。形と色が1対1。形は5つとも180度回すと自分自身に重なる（向かい合いで不公平にならないため。
+# 対称かどうかは tools/check_symmetry.py が index.html のパスを塗って機械で点検する）
+SHAPES = ["はな", "ダイヤ", "ろっかく", "リボン", "わ"]
 COLORS = ["赤", "青", "黄", "緑", "黒"]
 TRUE = dict(zip(SHAPES, COLORS))              # 形 -> 本来の色
 OWNER = {c: s for s, c in TRUE.items()}       # 色 -> その色を本来持つ形
