@@ -592,7 +592,8 @@ class El {
 function makeDocument(){
   const ids = {};
   ['board','handTop','handBottom','sideTop','sideBottom','noteTop','noteBottom',
-   'over','resTop','resBottom','app','againOver'].forEach(id=>{ ids[id]=new El('div'); });
+   'over','resTop','resBottom','app','againOver',
+   'helpPanel','helpBtn'].forEach(id=>{ ids[id]=new El('div'); });
   return {
     getElementById(id){ return ids[id] || null; },
     createElement(tag){ return new El(tag); },

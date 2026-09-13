@@ -307,7 +307,8 @@ def run_dom_playthrough(index_html_path):
 
     function buildSandbox(getItemImpl) {
       const ids = ['rotate', 'app', 'countTop', 'cardTop', 'mid', 'noteTop', 'items',
-                   'noteBottom', 'countBottom', 'cardBottom', 'over', 'resTop', 'again', 'resBottom'];
+                   'noteBottom', 'countBottom', 'cardBottom', 'over', 'resTop', 'again', 'resBottom',
+                   'helpPanel', 'helpBtn'];
       const elements = {};
       ids.forEach(id => { elements[id] = new El('div'); });
       elements.mid._rect = { top: 0, bottom: 300, left: 0, right: 500, width: 500, height: 300 };
@@ -520,7 +521,8 @@ def run_grab_rules_test(index_html_path):
     // 独立した document/localStorage スタブを毎回新規に作る（シナリオ間で状態を共有しない）
     function buildSandbox() {
       const ids = ['rotate', 'app', 'countTop', 'cardTop', 'mid', 'noteTop', 'items',
-                   'noteBottom', 'countBottom', 'cardBottom', 'over', 'resTop', 'again', 'resBottom'];
+                   'noteBottom', 'countBottom', 'cardBottom', 'over', 'resTop', 'again', 'resBottom',
+                   'helpPanel', 'helpBtn'];
       const elements = {};
       ids.forEach(id => { elements[id] = new El('div'); });
       elements.mid._rect = { top: 0, bottom: 300, left: 0, right: 500, width: 500, height: 300 };
