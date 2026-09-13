@@ -943,8 +943,14 @@
     var t = (elTitleInput.value || '').trim();
     return t ? t.slice(0, 24) : P.DEFAULT_TITLE;
   }
+  /* 公開先の住所。手元（Tailscale や localhost）で作った URL は外の人が開けないので、
+     公開されていない場所で作ったときは公開先の住所に付け替えて渡す */
+  var PUBLIC_BASE = 'https://y-kanno-sakenote.github.io/puzzle-portal/pixel/tsukuru.html';
   function shareUrl(v, title){
-    return location.origin + location.pathname + P.encode(v.bits, v.w, v.h, title);
+    var hash = P.encode(v.bits, v.w, v.h, title);
+    var here = location.origin + location.pathname;
+    var isPublic = location.origin.indexOf('github.io') >= 0;
+    return (isPublic ? here : PUBLIC_BASE) + hash;
   }
 
   btnShare.addEventListener('click', function(){

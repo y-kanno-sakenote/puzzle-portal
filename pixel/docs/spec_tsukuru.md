@@ -38,3 +38,10 @@
 
 ## 足さないもの（v0.1）
 - 自動修復／ヒント／自動解答／タイマー／ライフ／サーバー・投稿一覧・ランキング／写真の取り込み／色
+
+## 渡し方の実際（2026-09-14 追記）
+- 「わたす」は**公開先の住所**でURLを組む。手元（Tailscale の `100.71.44.114` や localhost）で作っても、
+  渡すURLは `https://y-kanno-sakenote.github.io/puzzle-portal/pixel/tsukuru.html#p1...` になる（手元の住所は外の人が開けないため）
+- コピーは `navigator.clipboard` を使う。**これは https か localhost でしか動かない**ので、
+  Tailscale の http でつないでいるときは動かず、URLを画面に出すだけになる。公開先（https）で作れば普通にコピーできる
+- サーバーもアカウントも要らない。問題そのものがURLに入っている
