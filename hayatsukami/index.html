@@ -70,6 +70,22 @@
     -webkit-tap-highlight-color:transparent;
   }
   button:active{background:#eeece7}
+
+  #helpBtn{position:fixed;right:min(14px,2vw);top:min(14px,2vh);z-index:36;
+           width:28px;height:28px;margin:0;padding:0;border-radius:50%;
+           font:inherit;font-size:14px;font-weight:700;line-height:1;
+           border:1px solid var(--frame);background:var(--panel);color:var(--sub);
+           display:flex;align-items:center;justify-content:center;
+           cursor:pointer;-webkit-tap-highlight-color:transparent}
+  #helpBtn:active{background:#eeece7}
+
+  #helpPanel{position:fixed;inset:0;z-index:35;
+             display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+             background:rgba(245,244,241,.96);padding:min(28px,5vh) min(24px,5vw);
+             cursor:pointer}
+  #helpPanel[hidden]{display:none}
+  .helpText{font-size:14px;line-height:1.9;text-align:center;color:var(--ink);max-width:min(92vw,440px)}
+  .helpText.top{transform:rotate(180deg)}
 </style>
 </head>
 <body>
@@ -97,6 +113,22 @@
   <div class="res top" id="resTop"></div>
   <button id="again">もう一回</button>
   <div class="res" id="resBottom"></div>
+</div>
+
+<button id="helpBtn" type="button" aria-label="あそびかた">？</button>
+<div id="helpPanel" hidden>
+  <div class="helpText top">
+    形と色が正しい品が1つあれば、それを取る<br>
+    無ければ、形も色も札に出ていない品を取る<br>
+    正しい品を自分の側へ引く。早い方が取る<br>
+    まちがえたら1枚相手にわたす
+  </div>
+  <div class="helpText">
+    形と色が正しい品が1つあれば、それを取る<br>
+    無ければ、形も色も札に出ていない品を取る<br>
+    正しい品を自分の側へ引く。早い方が取る<br>
+    まちがえたら1枚相手にわたす
+  </div>
 </div>
 
 <script>
@@ -394,8 +426,8 @@ if (typeof document !== 'undefined') (function () {
   var elRes = { top: document.getElementById('resTop'), bottom: document.getElementById('resBottom') };
   var elAgain = document.getElementById('again');
 
-  /* ---- 保存（通算の勝ち数だけ。途中経過は残さない） ---- */
-  var store = { wins: { top: 0, bottom: 0 } };
+  /* ---- 保存（通算の勝ち数と、あそびかたを見たかどうかだけ） ---- */
+  var store = { wins: { top: 0, bottom: 0 }, seen: 0 };
   function loadStore() {
     try {
       var raw = localStorage.getItem(KEY);
@@ -404,11 +436,23 @@ if (typeof document !== 'undefined') (function () {
       if (!o || typeof o !== 'object' || !o.wins || typeof o.wins !== 'object') return;
       if (Number.isInteger(o.wins.top) && o.wins.top >= 0) store.wins.top = o.wins.top;
       if (Number.isInteger(o.wins.bottom) && o.wins.bottom >= 0) store.wins.bottom = o.wins.bottom;
-    } catch (e) { store = { wins: { top: 0, bottom: 0 } }; }
+      if (o.seen) store.seen = 1;
+    } catch (e) { store = { wins: { top: 0, bottom: 0 }, seen: 0 }; }
   }
   function saveStore() {
-    try { localStorage.setItem(KEY, JSON.stringify({ wins: store.wins })); } catch (e) {}
+    try { localStorage.setItem(KEY, JSON.stringify({ wins: store.wins, seen: store.seen })); } catch (e) {}
   }
+
+  /* ---- あそびかた（初回だけ自動、以降は？ボタン） ---- */
+  var elHelpBtn = document.getElementById('helpBtn');
+  var elHelpPanel = document.getElementById('helpPanel');
+  function showHelp() { elHelpPanel.hidden = false; }
+  function hideHelp() {
+    elHelpPanel.hidden = true;
+    if (!store.seen) { store.seen = 1; saveStore(); }
+  }
+  elHelpPanel.addEventListener('click', hideHelp);
+  elHelpBtn.addEventListener('click', showHelp);
 
   /* ---- 状態 ---- */
   var items = [];                       /* 品の見た目（左から SHAPES の順） */
@@ -602,6 +646,7 @@ if (typeof document !== 'undefined') (function () {
 
   loadStore();
   start();
+  if (!store.seen) showHelp();
 })();
 </script>
 </body>
