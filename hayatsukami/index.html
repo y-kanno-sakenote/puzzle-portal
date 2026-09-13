@@ -27,6 +27,7 @@
   .side.top{transform:rotate(180deg)}
 
   .card{
+    position:relative;
     display:flex;align-items:center;gap:min(16px,3vw);
     padding:min(10px,2vh) min(18px,3vw);
     background:var(--panel);border:2px solid var(--thick);border-radius:14px;
@@ -35,6 +36,7 @@
   }
   .card svg{width:var(--motif);height:var(--motif);display:block}
   .card.taken{border-color:var(--frame);opacity:.25}
+  .card.taken.showingCue{opacity:1}   /* 合図の数字を出している間は枠を薄くしない */
 
   /* 取った枚数は自分側の端に置く */
   .count{position:absolute;left:min(18px,3vw);top:50%;transform:translateY(-50%);
@@ -42,7 +44,7 @@
   .count small{font-size:12px;font-weight:400;color:var(--sub);margin-left:2px}
 
   /* 中央：品が5つ横一列 */
-  #mid{flex:1 1 auto;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  #mid{flex:1 1 auto;width:100%;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;
        gap:min(6px,1vh);touch-action:none}
   #items{width:100%;display:flex;justify-content:center;gap:var(--gap)}
   .item{width:var(--item);height:var(--item);display:flex;align-items:center;justify-content:center;
@@ -52,6 +54,15 @@
 
   .note{height:17px;font-size:12px;line-height:17px;color:var(--sub);text-align:center}
   .note.top{transform:rotate(180deg)}
+
+  /* 始まりの合図（3→2→1）。札が出る瞬間を二人に予告するだけのもので、制限時間ではない。
+     上下の札の枠（.card）の中に数字を出し、0 になった瞬間に同じ枠へ札を出す
+     （「次はここに出る」が形で伝わる）。中央の品には一切かからない。
+     上側は .side.top の 180 度回転をそのまま受け継ぐので、追加の回転指定は要らない。
+     指の邪魔をしないよう当たり判定は持たない（pointer-events:none） */
+  .cueNum{position:absolute;inset:0;pointer-events:none;
+          display:flex;align-items:center;justify-content:center;
+          font-size:calc((var(--motif) + 20px) * .65);font-weight:800;line-height:1;color:var(--thick)}
 
   #rotate{position:fixed;left:0;right:0;top:0;z-index:40;display:none;
           padding:4px;text-align:center;font-size:12px;color:var(--sub);background:var(--bg)}
@@ -386,7 +397,8 @@ if (typeof document !== 'undefined') (function () {
   var KEY = 'hayatsukami';
   var SVGNS = 'http://www.w3.org/2000/svg';
   var GOAL = 7;          /* 先に7枚で勝ち */
-  var GAP = 600;         /* 取られてから次の札まで（ミリ秒） */
+  var GAP = 600;         /* 決着の表示までの間（ミリ秒） */
+  var CUE = 350;         /* 始まりの合図の1数字あたり（ミリ秒）。3→2→1 で合計 1.05 秒 */
 
   var SHAPES = Hayatsukami.SHAPES;
   var TRUE = Hayatsukami.TRUE;
@@ -426,6 +438,25 @@ if (typeof document !== 'undefined') (function () {
   var elRes = { top: document.getElementById('resTop'), bottom: document.getElementById('resBottom') };
   var elAgain = document.getElementById('again');
 
+  /* 始まりの合図の数字。上下それぞれの札の枠（cardTop/cardBottom）の中に出す。
+     showCard() が箱の中身を丸ごと入れ替えるので、札が出る瞬間に自動で消える */
+  var cueNum = { top: document.createElement('div'), bottom: document.createElement('div') };
+  cueNum.top.className = 'cueNum';
+  cueNum.bottom.className = 'cueNum';
+  function cue(text) {
+    ['top', 'bottom'].forEach(function (side) {
+      var el = cueNum[side], box = elCard[side];
+      if (text) {
+        el.textContent = text;
+        if (el.parentNode !== box) box.appendChild(el);
+        box.classList.add('showingCue');
+      } else {
+        if (el.parentNode) el.parentNode.removeChild(el);
+        box.classList.remove('showingCue');
+      }
+    });
+  }
+
   /* ---- 保存（通算の勝ち数と、あそびかたを見たかどうかだけ） ---- */
   var store = { wins: { top: 0, bottom: 0 }, seen: 0 };
   function loadStore() {
@@ -464,7 +495,7 @@ if (typeof document !== 'undefined') (function () {
   var Grab = Hayatsukami.Grab;
   var grab = Grab.create();             /* 指の状態と先着判定（DOM 非依存） */
   var noteTimer = { top: 0, bottom: 0 };
-  var dealTimer = 0;
+  var cueTimers = [];                   /* 合図と配り（3→2→1→札） */
 
   var HINT = '正しい品を自分の側へ引く';
 
@@ -505,6 +536,7 @@ if (typeof document !== 'undefined') (function () {
 
   function deal() {
     if (over) return;
+    cue('');
     if (cursor >= deck.length) shuffleDeck();
     card = CARDS[deck[cursor++]];
     showCard(card);
@@ -518,8 +550,23 @@ if (typeof document !== 'undefined') (function () {
     showCard(null);
     Grab.clear(grab);         /* 札が変わる。触れている指はいったん無効 */
     offsets();
-    clearTimeout(dealTimer);
-    dealTimer = setTimeout(deal, GAP);
+    countdown();
+  }
+
+  function clearDeal() {
+    for (var i = 0; i < cueTimers.length; i++) clearTimeout(cueTimers[i]);
+    cueTimers = [];
+  }
+
+  /* 始まりの合図。3 を出してから 1 数字ずつ進め、0 になった瞬間に札を出す。
+     合図の間は札が場に無いので、品に触れても引いても何も起きない（judge は card が無ければ戻る）。
+     札を出すのは deal() のままなので、押されたままの指の起点を置き直す仕組みはそのまま効く */
+  function countdown() {
+    clearDeal();
+    cue('3');
+    cueTimers.push(setTimeout(function () { cue('2'); }, CUE));
+    cueTimers.push(setTimeout(function () { cue('1'); }, CUE * 2));
+    cueTimers.push(setTimeout(deal, CUE * 3));
   }
 
   /* ---- 表示 ---- */
@@ -572,7 +619,8 @@ if (typeof document !== 'undefined') (function () {
   function finish(winner) {
     over = true;
     locked = true;
-    clearTimeout(dealTimer);
+    clearDeal();
+    cue('');
     Grab.reset(grab); offsets();
     store.wins[winner] += 1;
     saveStore();
@@ -638,8 +686,7 @@ if (typeof document !== 'undefined') (function () {
     showCard(null);
     offsets();
     shuffleDeck();
-    clearTimeout(dealTimer);
-    dealTimer = setTimeout(deal, GAP);
+    countdown();          /* 1局の最初も同じ合図から始める */
   }
 
   elAgain.addEventListener('click', start);
