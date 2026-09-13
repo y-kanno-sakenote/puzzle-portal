@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>かぶせっこ</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --thick:#5d5952;
+    --blue:#2f7fd4; --red:#d94f43;
+    --board:min(56vh,44vw,300px);
+    --cell:calc(var(--board) / 3);
+    --p3:calc(var(--cell) * 0.84);
+    --p2:calc(var(--cell) * 0.60);
+    --p1:calc(var(--cell) * 0.38);
+    --gap:min(8px,1.4vh);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+    touch-action:none;
+  }
+
+  #app{position:fixed;inset:0;display:flex;flex-direction:column}
+
+  /* 上下の陣。上側は 180 度回して相手から読めるようにする */
+  .side{flex:1 1 0;width:100%;position:relative;display:flex;align-items:center;justify-content:center}
+  .side.top{transform:rotate(180deg)}
+  .side.dim{opacity:.26}
+
+  /* 持ち駒は自分側の端に横一列（残っている数だけ） */
+  .hand{display:flex;align-items:center;justify-content:center;gap:min(16px,2.4vw);
+        min-height:calc(var(--p3) + 4px)}
+
+  .again{position:absolute;left:min(14px,2vw);top:50%;transform:translateY(-50%);
+         font:inherit;font-size:11px;line-height:1;padding:8px 10px;
+         border:1px solid var(--frame);border-radius:8px;background:var(--panel);color:var(--sub);
+         cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .again:active{background:#eeece7}
+
+  /* 中央：3×3 の盤 */
+  #mid{flex:0 0 auto;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+       gap:min(5px,.8vh)}
+  #board{display:grid;grid-template-columns:repeat(3,var(--cell));grid-template-rows:repeat(3,var(--cell))}
+  .cell{width:var(--cell);height:var(--cell);display:flex;align-items:center;justify-content:center;
+        border:1px solid var(--frame);background:var(--panel)}
+  .cell:nth-child(1){border-top-left-radius:10px}
+  .cell:nth-child(3){border-top-right-radius:10px}
+  .cell:nth-child(7){border-bottom-left-radius:10px}
+  .cell:nth-child(9){border-bottom-right-radius:10px}
+
+  /* 駒は丸だけ。大中小は直径で分ける */
+  .piece{border-radius:50%;border:2px solid rgba(0,0,0,.16);flex:0 0 auto}
+  .piece.s3{width:var(--p3);height:var(--p3)}
+  .piece.s2{width:var(--p2);height:var(--p2)}
+  .piece.s1{width:var(--p1);height:var(--p1)}
+  .piece.pbottom{background:var(--blue)}
+  .piece.ptop{background:var(--red)}
+  .piece.held{opacity:.2}
+  .piece.ghost{position:fixed;z-index:20;pointer-events:none;margin:0}
+
+  .note{height:16px;font-size:12px;line-height:16px;color:var(--sub);text-align:center}
+  .note.top{transform:rotate(180deg)}
+  .note.now{color:var(--ink);font-weight:700}
+
+  #rotate{position:fixed;left:0;right:0;top:0;z-index:40;display:none;
+          padding:4px;text-align:center;font-size:12px;color:var(--sub);background:var(--bg)}
+  @media (orientation:portrait){ #rotate{display:block} }
+
+  #over{position:fixed;inset:0;z-index:30;
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:min(14px,3vh);
+        background:rgba(245,244,241,.94)}
+  #over[hidden]{display:none}
+  .res{font-size:min(26px,6vh);font-weight:700;text-align:center}
+  .res.top{transform:rotate(180deg)}
+  .res span{display:block;font-size:12px;font-weight:400;color:var(--sub)}
+  #over button{
+    font:inherit;padding:12px 28px;border:1px solid var(--frame);
+    border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #over button:active{background:#eeece7}
+</style>
+</head>
+<body>
+<div id="rotate">横にしてください</div>
+
+<div id="app">
+  <div class="side top" id="sideTop">
+    <button class="again" data-again="top">はじめから</button>
+    <div class="hand" id="handTop"></div>
+  </div>
+
+  <div id="mid">
+    <div class="note top" id="noteTop"></div>
+    <div id="board"></div>
+    <div class="note" id="noteBottom"></div>
+  </div>
+
+  <div class="side bottom" id="sideBottom">
+    <button class="again" data-again="bottom">はじめから</button>
+    <div class="hand" id="handBottom"></div>
+  </div>
+</div>
+
+<div id="over" hidden>
+  <div class="res top" id="resTop"></div>
+  <button id="againOver">はじめから</button>
+  <div class="res" id="resBottom"></div>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.Kabusekko として公開する）
+
+   盤の状態は「各マスが駒の積み重ね」。駒は {owner:'top'|'bottom', size:1|2|3}
+   size は 1=小 / 2=中 / 3=大。積み重ねは配列の末尾が一番上（＝見えている駒）
+   ===================================================================== */
+var Kabusekko = (function () {
+
+  var HAND = [3, 3, 2, 2, 1, 1];          /* 各自 大2・中2・小2 */
+  var LINES = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+    [0, 4, 8], [2, 4, 6]
+  ];
+
+  function other(player) { return player === 'top' ? 'bottom' : 'top'; }
+
+  function isCell(c) { return Number.isInteger(c) && c >= 0 && c <= 8; }
+  function isSize(s) { return s === 1 || s === 2 || s === 3; }
+  function isPlayer(p) { return p === 'top' || p === 'bottom'; }
+
+  function initialState() {
+    return {
+      board: [[], [], [], [], [], [], [], [], []],
+      hands: { top: HAND.slice(), bottom: HAND.slice() },
+      turn: 'bottom',                      /* 先手は下（青） */
+      winner: null
+    };
+  }
+
+  function cloneState(state) {
+    return {
+      board: state.board.map(function (stack) {
+        return stack.map(function (p) { return { owner: p.owner, size: p.size }; });
+      }),
+      hands: { top: state.hands.top.slice(), bottom: state.hands.bottom.slice() },
+      turn: state.turn,
+      winner: state.winner || null
+    };
+  }
+
+  /* そのマスで見えている駒（一番上）。無ければ null。下の駒は返さない */
+  function topOf(state, cell) {
+    if (!state || !state.board || !isCell(cell)) return null;
+    var stack = state.board[cell];
+    if (!stack || !stack.length) return null;
+    return stack[stack.length - 1];
+  }
+
+  /* size の駒をそのマスに置けるか。空きマス、または自分より小さい駒の上だけ */
+  function canPlaceOn(under, size) {
+    if (under === null) return true;
+    return under.size < size;
+  }
+
+  /* 手が規則に合っているか。
+     move = {player, from:'hand', size, to} / {player, from:セル番号, to} */
+  function isLegal(state, move) {
+    if (!state || !state.board) return false;
+    if (state.winner) return false;
+    if (!move || typeof move !== 'object' || Array.isArray(move)) return false;
+    var player = move.player === undefined ? state.turn : move.player;
+    if (!isPlayer(player)) return false;
+    if (player !== state.turn) return false;      /* 手番でない側は指せない */
+    if (!isCell(move.to)) return false;
+
+    var size;
+    if (move.from === 'hand') {
+      size = move.size;
+      if (!isSize(size)) return false;
+      if (state.hands[player].indexOf(size) < 0) return false;   /* 持っていない */
+    } else {
+      if (!isCell(move.from)) return false;
+      if (move.from === move.to) return false;                   /* 同じマスへは動かせない */
+      var p = topOf(state, move.from);
+      if (!p) return false;
+      if (p.owner !== player) return false;                      /* 相手の駒は動かせない */
+      size = p.size;
+      if (move.size !== undefined && move.size !== size) return false;
+    }
+    return canPlaceOn(topOf(state, move.to), size);
+  }
+
+  /* その人が指せる手を全部返す。持ち駒は同じ大きさをまとめて1通りに数える */
+  function legalMoves(state, player) {
+    var out = [];
+    if (!state || !state.board) return out;
+    if (state.winner) return out;
+    if (!isPlayer(player)) return out;
+
+    var seen = {}, hand = state.hands[player] || [], i, c, d;
+    for (i = 0; i < hand.length; i++) {
+      var s = hand[i];
+      if (!isSize(s) || seen[s]) continue;
+      seen[s] = 1;
+      for (c = 0; c < 9; c++) {
+        if (canPlaceOn(topOf(state, c), s)) out.push({ player: player, from: 'hand', size: s, to: c });
+      }
+    }
+    for (c = 0; c < 9; c++) {
+      var p = topOf(state, c);
+      if (!p || p.owner !== player) continue;
+      for (d = 0; d < 9; d++) {
+        if (d === c) continue;
+        if (canPlaceOn(topOf(state, d), p.size)) out.push({ player: player, from: c, size: p.size, to: d });
+      }
+    }
+    return out;
+  }
+
+  /* 見えている駒だけで3並びができている持ち主を返す（複数成立しうるので配列） */
+  function winnerOf(state) {
+    var out = [], seen = {}, i;
+    for (i = 0; i < LINES.length; i++) {
+      var L = LINES[i];
+      var a = topOf(state, L[0]), b = topOf(state, L[1]), c = topOf(state, L[2]);
+      if (!a || !b || !c) continue;
+      if (a.owner !== b.owner || b.owner !== c.owner) continue;
+      if (!seen[a.owner]) { seen[a.owner] = 1; out.push(a.owner); }
+    }
+    return out;
+  }
+
+  /* 勝者を1人に決める。指した本人の列が先。
+     本人の列が無く相手の列が現れていれば相手の勝ち */
+  function judgeAfter(state, mover) {
+    var w = winnerOf(state);
+    if (w.indexOf(mover) >= 0) return mover;
+    if (w.length) return w[0];
+    return null;
+  }
+
+  /* 手を指した新しい状態を返す（元の状態は変えない）。規則に反する手は例外 */
+  function applyMove(state, move) {
+    if (!isLegal(state, move)) throw new Error('kabusekko: 反則の手');
+    var player = move.player === undefined ? state.turn : move.player;
+    var ns = cloneState(state), size;
+
+    if (move.from === 'hand') {
+      size = move.size;
+      ns.hands[player].splice(ns.hands[player].indexOf(size), 1);
+    } else {
+      size = ns.board[move.from].pop().size;      /* どけると下の駒がまた現れる */
+    }
+    ns.board[move.to].push({ owner: player, size: size });
+
+    ns.winner = judgeAfter(ns, player);
+    ns.turn = ns.winner ? player : other(player);
+    return ns;
+  }
+
+  return {
+    HAND: HAND, LINES: LINES,
+    initialState: initialState, cloneState: cloneState,
+    topOf: topOf, isLegal: isLegal, legalMoves: legalMoves,
+    applyMove: applyMove, winnerOf: winnerOf, judgeAfter: judgeAfter,
+    other: other
+  };
+})();
+
+if (typeof window !== 'undefined') window.Kabusekko = Kabusekko;
+if (typeof globalThis !== 'undefined') globalThis.Kabusekko = Kabusekko;
+</script>
+
+<script>
+/* =====================================================================
+   画面（向かい合い専用）
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var KEY = 'kabusekko';
+
+  var elBoard = document.getElementById('board');
+  var elHand = { top: document.getElementById('handTop'), bottom: document.getElementById('handBottom') };
+  var elSide = { top: document.getElementById('sideTop'), bottom: document.getElementById('sideBottom') };
+  var elNote = { top: document.getElementById('noteTop'), bottom: document.getElementById('noteBottom') };
+  var elOver = document.getElementById('over');
+  var elRes = { top: document.getElementById('resTop'), bottom: document.getElementById('resBottom') };
+  var elApp = document.getElementById('app');
+
+  /* ---- 保存（通算の勝ち数だけ。途中の盤は保存しない） ---- */
+  var store = { wins: { top: 0, bottom: 0 } };
+  function loadStore() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (!o || typeof o !== 'object' || !o.wins || typeof o.wins !== 'object') return;
+      if (Number.isInteger(o.wins.top) && o.wins.top >= 0) store.wins.top = o.wins.top;
+      if (Number.isInteger(o.wins.bottom) && o.wins.bottom >= 0) store.wins.bottom = o.wins.bottom;
+    } catch (e) { store = { wins: { top: 0, bottom: 0 } }; }
+  }
+  function saveStore() {
+    try { localStorage.setItem(KEY, JSON.stringify({ wins: store.wins })); } catch (e) {}
+  }
+
+  /* ---- 状態 ---- */
+  var state = Kabusekko.initialState();
+  var cells = [];
+  var drag = null;
+
+  (function build() {
+    for (var i = 0; i < 9; i++) {
+      var c = document.createElement('div');
+      c.className = 'cell';
+      c.dataset.cell = String(i);
+      elBoard.appendChild(c);
+      cells.push(c);
+    }
+  })();
+
+  function pieceEl(owner, size) {
+    var d = document.createElement('div');
+    d.className = 'piece s' + size + ' p' + owner;
+    return d;
+  }
+
+  /* ---- 表示。見えているのは一番上の駒だけ（下の駒は描かない） ---- */
+  function render() {
+    var i, side, hand, k, el;
+    for (i = 0; i < 9; i++) {
+      var box = cells[i];
+      while (box.firstChild) box.removeChild(box.firstChild);
+      var p = Kabusekko.topOf(state, i);
+      if (!p) continue;
+      el = pieceEl(p.owner, p.size);
+      el.dataset.from = String(i);
+      el.dataset.owner = p.owner;
+      el.dataset.size = String(p.size);
+      box.appendChild(el);
+    }
+
+    ['top', 'bottom'].forEach(function (s) {
+      var box = elHand[s];
+      while (box.firstChild) box.removeChild(box.firstChild);
+      hand = state.hands[s].slice().sort(function (a, b) { return b - a; });
+      for (k = 0; k < hand.length; k++) {
+        var h = pieceEl(s, hand[k]);
+        h.dataset.from = 'hand';
+        h.dataset.owner = s;
+        h.dataset.size = String(hand[k]);
+        box.appendChild(h);
+      }
+      var mine = (state.turn === s) && !state.winner;
+      elSide[s].classList.toggle('dim', !mine);
+      elNote[s].textContent = state.winner ? '' : (mine ? 'あなたの番' : 'あいての番');
+      elNote[s].classList.toggle('now', mine);
+    });
+
+    /* つまんでいる駒は元の位置で薄くする（動かした先を見せるためではない） */
+    if (drag && drag.origin) drag.origin.classList.add('held');
+  }
+
+  /* ---- 操作：つまんで引く ---- */
+  function cellAt(x, y) {
+    for (var i = 0; i < 9; i++) {
+      var r = cells[i].getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return i;
+    }
+    return -1;
+  }
+
+  function moveGhost(x, y) {
+    if (!drag) return;
+    drag.ghost.style.left = (x - drag.w / 2) + 'px';
+    drag.ghost.style.top = (y - drag.h / 2) + 'px';
+  }
+
+  function endDrag() {
+    if (!drag) return;
+    if (drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
+    if (drag.origin) drag.origin.classList.remove('held');
+    drag = null;
+  }
+
+  elApp.addEventListener('pointerdown', function (e) {
+    if (state.winner || drag) return;
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var el = t.closest('.piece');
+    if (!el || !el.dataset.owner) return;
+    if (el.dataset.owner !== state.turn) return;          /* 相手の駒・手番でない側は動かせない */
+
+    var size = Number(el.dataset.size);
+    var from = el.dataset.from === 'hand' ? 'hand' : Number(el.dataset.from);
+
+    e.preventDefault();
+    try { elApp.setPointerCapture(e.pointerId); } catch (err) {}
+
+    var g = pieceEl(state.turn, size);
+    g.classList.add('ghost');
+    document.body.appendChild(g);
+    var r = g.getBoundingClientRect();
+
+    drag = { id: e.pointerId, from: from, size: size, origin: el, ghost: g, w: r.width, h: r.height };
+    el.classList.add('held');
+    moveGhost(e.clientX, e.clientY);
+  });
+
+  elApp.addEventListener('pointermove', function (e) {
+    if (!drag || drag.id !== e.pointerId) return;
+    e.preventDefault();
+    moveGhost(e.clientX, e.clientY);
+  });
+
+  function onUp(e) {
+    if (!drag || drag.id !== e.pointerId) return;
+    var move = { player: state.turn, from: drag.from, to: cellAt(e.clientX, e.clientY) };
+    if (drag.from === 'hand') move.size = drag.size;
+    endDrag();
+    /* 置けない所で離したら何も起きない。戻す動きは見せず、元の位置のまま */
+    if (!Kabusekko.isLegal(state, move)) { render(); return; }
+    state = Kabusekko.applyMove(state, move);
+    render();
+    if (state.winner) finish(state.winner);
+  }
+  elApp.addEventListener('pointerup', onUp);
+  elApp.addEventListener('pointercancel', function (e) {
+    if (!drag || drag.id !== e.pointerId) return;
+    endDrag();
+    render();
+  });
+
+  /* ---- 決着 ---- */
+  function finish(winner) {
+    var loser = Kabusekko.other(winner);
+    store.wins[winner] += 1;
+    saveStore();
+    elRes[winner].innerHTML = 'かち<span>通算 ' + store.wins[winner] + ' 勝</span>';
+    elRes[loser].innerHTML = 'まけ<span>通算 ' + store.wins[loser] + ' 勝</span>';
+    elOver.hidden = false;
+  }
+
+  /* ---- はじめから（待ったは無し） ---- */
+  function start() {
+    endDrag();
+    state = Kabusekko.initialState();
+    elOver.hidden = true;
+    render();
+  }
+  document.getElementById('againOver').addEventListener('click', start);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-again]'), function (b) {
+    b.addEventListener('click', start);
+  });
+
+  loadStore();
+  start();
+})();
+</script>
+</body>
+</html>
