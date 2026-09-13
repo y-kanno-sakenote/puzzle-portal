@@ -82,6 +82,23 @@
   }
   button:active{background:#eeece7}
 
+  /* 「はじめる」（ページを開いた直後と「もう一回」の後）。押すまで札は配らない。
+     二人が座って構えるまで勝負が始まらないようにするための待ちで、ここでは何も進まない。
+     置き場所は中央（品の上）ではなく、**上下の札の枠（.card）と同じ場所**。
+     合図の数字（.cueNum）・札そのものと目の置き場を1か所に揃えるため。
+     上下それぞれの陣に1つずつ置き、どちらを押しても始まる。
+     .side.top の 180 度回転をそのまま受け継ぐので、追加の回転指定は要らない
+     （合図の数字と同じ作法）。中央の品には一切かからない。
+     ボタンの外側は指を通す（当たり判定はボタン自体だけ＝pointer-events:auto はボタンのみ）。
+     ルール説明の板（z-index 35）の方が上なので、板が出ている間は押せない＝始まらない */
+  .startWrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+             pointer-events:none}
+  .startWrap[hidden]{display:none}
+  .startBtn{pointer-events:auto;box-sizing:border-box;
+            min-width:calc(var(--motif) * 2 + 60px);min-height:calc(var(--motif) + 20px);
+            padding:min(10px,2vh) min(18px,3vw);
+            font-size:min(18px,4.4vh);font-weight:700}
+
   #helpBtn{position:fixed;right:min(14px,2vw);top:min(14px,2vh);z-index:36;
            width:28px;height:28px;margin:0;padding:0;border-radius:50%;
            font:inherit;font-size:14px;font-weight:700;line-height:1;
@@ -106,6 +123,9 @@
   <div class="side top">
     <div class="count" id="countTop">0<small>枚</small></div>
     <div class="card" id="cardTop"></div>
+    <div class="startWrap" id="startWrapTop" hidden>
+      <button class="startBtn" id="startBtnTop" type="button">はじめる</button>
+    </div>
   </div>
 
   <div id="mid">
@@ -117,6 +137,9 @@
   <div class="side bottom">
     <div class="count" id="countBottom">0<small>枚</small></div>
     <div class="card" id="cardBottom"></div>
+    <div class="startWrap" id="startWrapBottom" hidden>
+      <button class="startBtn" id="startBtnBottom" type="button">はじめる</button>
+    </div>
   </div>
 </div>
 
@@ -398,7 +421,7 @@ if (typeof document !== 'undefined') (function () {
   var SVGNS = 'http://www.w3.org/2000/svg';
   var GOAL = 7;          /* 先に7枚で勝ち */
   var GAP = 600;         /* 決着の表示までの間（ミリ秒） */
-  var CUE = 600;         /* 始まりの合図の1数字あたり（ミリ秒）。3→2→1 で合計 1.8 秒 */
+  var CUE = 1000;        /* 始まりの合図の1数字あたり（ミリ秒）。3→2→1 で合計 3 秒 */
 
   var SHAPES = Hayatsukami.SHAPES;
   var TRUE = Hayatsukami.TRUE;
@@ -484,6 +507,21 @@ if (typeof document !== 'undefined') (function () {
   }
   elHelpPanel.addEventListener('click', hideHelp);
   elHelpBtn.addEventListener('click', showHelp);
+
+  /* ---- はじめる（押すまで札を配らない） ----
+     上下の札の枠それぞれに1つずつ置く。どちらを押しても始まる。
+     ルール説明の板は「はじめる」より上に重なっているので、板が出ている間は押せない＝始まらない */
+  var elStartWrap = { top: document.getElementById('startWrapTop'), bottom: document.getElementById('startWrapBottom') };
+  var elStartBtn = { top: document.getElementById('startBtnTop'), bottom: document.getElementById('startBtnBottom') };
+  function showStart() { elStartWrap.top.hidden = false; elStartWrap.bottom.hidden = false; }
+  function hideStart() { elStartWrap.top.hidden = true; elStartWrap.bottom.hidden = true; }
+  function onStart() {
+    if (elStartWrap.top.hidden || over) return;
+    hideStart();
+    countdown();            /* ここで初めて 3→2→1 が始まり、0 で最初の札が出る */
+  }
+  elStartBtn.top.addEventListener('click', onStart);
+  elStartBtn.bottom.addEventListener('click', onStart);
 
   /* ---- 状態 ---- */
   var items = [];                       /* 品の見た目（左から SHAPES の順） */
@@ -686,7 +724,9 @@ if (typeof document !== 'undefined') (function () {
     showCard(null);
     offsets();
     shuffleDeck();
-    countdown();          /* 1局の最初も同じ合図から始める */
+    clearDeal();          /* 積み残しの合図があれば止める */
+    cue('');
+    showStart();   /* 「はじめる」を押すまで待つ。押したら 1局の最初も同じ合図から始める */
   }
 
   elAgain.addEventListener('click', start);

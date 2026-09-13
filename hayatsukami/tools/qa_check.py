@@ -308,7 +308,7 @@ def run_dom_playthrough(index_html_path):
     function buildSandbox(getItemImpl) {
       const ids = ['rotate', 'app', 'countTop', 'cardTop', 'mid', 'noteTop', 'items',
                    'noteBottom', 'countBottom', 'cardBottom', 'over', 'resTop', 'again', 'resBottom',
-                   'helpPanel', 'helpBtn'];
+                   'helpPanel', 'helpBtn', 'startWrapTop', 'startWrapBottom', 'startBtnTop', 'startBtnBottom'];
       const elements = {};
       ids.forEach(id => { elements[id] = new El('div'); });
       elements.mid._rect = { top: 0, bottom: 300, left: 0, right: 500, width: 500, height: 300 };
@@ -371,6 +371,10 @@ def run_dom_playthrough(index_html_path):
       try {
         const { ctx, elements, savedCalls } = buildSandbox(getItemImpl);
         vm.runInContext(GAME_JS, ctx);
+        // 開いた直後は札を配らず「はじめる」待ち。押して初めて合図→札の順に進む
+        // （このハーネスの setTimeout は即時実行なので、押した時点で最初の札まで出る）
+        if (elements.cardBottom.children.length) { out.ok = false; out.notes.push('「はじめる」前に札が出ている'); }
+        elements.startBtnBottom._listeners['click'][0]({});
 
         var pid = 1;
 
@@ -519,10 +523,11 @@ def run_grab_rules_test(index_html_path):
     const GAME_JS = %(GAME_JS)s;
 
     // 独立した document/localStorage スタブを毎回新規に作る（シナリオ間で状態を共有しない）
-    function buildSandbox() {
+    // opts.noStart=true で「はじめる」を押さずに返す（押す前の状態を検査したいシナリオ用）
+    function buildSandbox(opts) {
       const ids = ['rotate', 'app', 'countTop', 'cardTop', 'mid', 'noteTop', 'items',
                    'noteBottom', 'countBottom', 'cardBottom', 'over', 'resTop', 'again', 'resBottom',
-                   'helpPanel', 'helpBtn'];
+                   'helpPanel', 'helpBtn', 'startWrapTop', 'startWrapBottom', 'startBtnTop', 'startBtnBottom'];
       const elements = {};
       ids.forEach(id => { elements[id] = new El('div'); });
       elements.mid._rect = { top: 0, bottom: 300, left: 0, right: 500, width: 500, height: 300 };
@@ -544,10 +549,13 @@ def run_grab_rules_test(index_html_path):
         requestAnimationFrame: (fn) => { fn(); return 0; },  // 新実装は rAF を使わないため単純即時実行でよい
       };
       const ctx = vm.createContext(sandbox);
-      vm.runInContext(GAME_JS, ctx);   // 内部で loadStore(); start(); まで走る（dealTimer が積まれるだけ）
+      vm.runInContext(GAME_JS, ctx);   // 内部で loadStore(); start(); まで走る（「はじめる」待ちで止まる）
       var Hy = vm.runInContext('Hayatsukami', ctx);
       function flushTimers() { const q = TIMERQ; TIMERQ = []; q.forEach(fn => fn()); }
-      return { elements, Hy, flushTimers };
+      // 「はじめる」を押す＝合図（3→2→1→札）のタイマーが積まれる。札はまだ出ない
+      function pressStart() { elements.startBtnBottom._listeners['click'][0]({}); }
+      if (!(opts && opts.noStart)) pressStart();
+      return { elements, Hy, flushTimers, pressStart };
     }
 
     function currentCard(elements, Hy) {
@@ -600,8 +608,11 @@ def run_grab_rules_test(index_html_path):
 
     // --- 3) 札が出る前はしきい値を越えられない。出た後は同じ指で有効になる ---
     scenario('札が出る前は無効、出た後は同じ指で有効', function (check) {
-      const { elements, Hy, flushTimers } = buildSandbox();
-      // ここでは flushTimers() をまだ呼ばない＝札はまだ配られていない（open=false）
+      const { elements, Hy, flushTimers, pressStart } = buildSandbox({ noStart: true });
+      // 開いた直後は「はじめる」待ち＝札はまだ無い
+      check('「はじめる」を押す前は札が配られていない', elements.cardBottom.children.length === 0, elements.cardBottom.children.length);
+      pressStart();
+      // ここでは flushTimers() をまだ呼ばない＝合図の最中で札はまだ配られていない（open=false）
       var xy = down(elements, 3, 0);
       move(elements, 3, xy, 60, 'bottom');
       var noteBefore = elements.noteBottom._text;
