@@ -85,6 +85,8 @@ def py_legal(s, move):
     player = move.get("player", s["turn"])
     if player not in ("top", "bottom"):
         return False
+    if player != s["turn"]:          # 手番でない側は指せない
+        return False
     to = move.get("to")
     if not isinstance(to, int) or isinstance(to, bool) or not (0 <= to <= 8):
         return False
