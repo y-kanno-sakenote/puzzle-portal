@@ -24,11 +24,24 @@
   .duo-note{font-size:13px;color:var(--sub);margin:0 0 12px}
   .pane{display:none}
   .pane.on{display:block}
+  /* タイトル（パズル／クエスト）と一覧は #puzzle の有無で切り替える */
+  #title{min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:center;max-width:480px;margin:0 auto;padding:22px 14px 60px}
+  #title h1{font-size:30px;text-align:center;margin:0 0 36px}
+  a.pick{display:block;padding:26px 0;margin-bottom:14px;text-align:center;font-size:22px;font-weight:700;background:var(--panel);border:1px solid var(--frame);border-radius:14px;color:inherit;text-decoration:none}
+  a.pick:active{background:#eeece7}
+  #list h1 a{color:inherit;text-decoration:none}
+  #list h1 .back{color:var(--sub);font-weight:400;margin-right:6px}
+  body.list #title,body:not(.list) #list{display:none}
 </style>
 </head>
 <body>
-<main>
+<section id="title">
   <h1>パズル箱</h1>
+  <a class="pick" href="#puzzle">パズル</a>
+  <a class="pick" href="quest/">クエスト</a>
+</section>
+<main id="list">
+  <h1><a href="./" id="toTitle"><span class="back">‹</span>パズル箱</a></h1>
   <div class="tabs">
     <button type="button" class="tab on" data-pane="solo">ひとりで</button>
     <button type="button" class="tab" data-pane="duo">ふたりで</button>
@@ -124,6 +137,26 @@
       document.getElementById('pane-duo').classList.toggle('on', key === 'duo');
     });
   }
+})();
+/* タイトル／一覧の切り替え。#puzzle なら一覧、それ以外はタイトル */
+(function () {
+  var fromTitle = false;
+  function show() {
+    var list = location.hash === '#puzzle';
+    document.body.classList.toggle('list', list);
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener('hashchange', function () {
+    if (location.hash === '#puzzle') fromTitle = true;
+    show();
+  });
+  document.getElementById('toTitle').addEventListener('click', function (e) {
+    e.preventDefault();
+    if (fromTitle) { fromTitle = false; history.back(); return; }
+    history.replaceState(null, '', location.pathname + location.search);
+    show();
+  });
+  show();
 })();
 </script>
 </body>
