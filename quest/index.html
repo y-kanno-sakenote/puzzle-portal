@@ -15,10 +15,21 @@
   .big{display:block;width:100%;padding:22px 0;margin-bottom:14px;font:inherit;font-size:20px;font-weight:700;background:var(--panel);border:1px solid var(--frame);border-radius:14px;color:inherit;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
   .big:active{background:#eeece7}
   .back{font-size:15px;color:var(--sub);text-decoration:none;padding:10px}
-  #score{font-size:64px;font-weight:700;line-height:1.1}
-  #score small{font-size:20px;color:var(--sub);font-weight:400;margin-left:4px}
-  #detail{font-size:15px;color:var(--sub);margin:10px 0 6px}
-  #rare{font-size:17px;font-weight:700;margin:0 0 30px;min-height:1.5em}
+  button.back{background:none;border:0;font:inherit;font-size:15px;cursor:pointer}
+  .stage{font-size:15px;color:var(--sub);margin:0 0 18px}
+  .stage b{color:var(--ink);font-size:17px;margin-right:10px}
+  #cards{display:flex;flex-direction:column}
+  .big:disabled{order:1;padding:8px 0;margin-bottom:4px;font-size:14px;font-weight:400;color:var(--sub);background:transparent;border-color:transparent;cursor:default}
+  .big small{display:block;font-size:13px;font-weight:400;color:var(--sub);margin-top:4px}
+  .num{font-size:min(56px,12vw);font-weight:700;line-height:1.1;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .num small{font-size:18px;color:var(--sub);font-weight:400;margin-left:4px}
+  .label{font-size:13px;color:var(--sub);margin:22px 0 2px}
+  .line{font-size:15px;color:var(--sub);margin:8px 0}
+  #charRare small{display:block;font-size:13px;font-weight:400;color:var(--sub);margin-top:2px}
+  .up{color:var(--ink);font-weight:700}
+  #charEmoji{font-size:40px;margin:0 0 8px}
+  #charName{font-size:22px;font-weight:700;margin:0 0 6px}
+  #charRare{font-size:17px;font-weight:700;min-height:1.5em;margin:0 0 24px}
   #play{position:fixed;inset:0;width:100%;height:100%;border:0;background:var(--bg)}
   #play[hidden],#quit[hidden]{display:none}
   #quit{position:fixed;left:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:5;font:inherit;font-size:13px;padding:6px 12px;color:var(--sub);background:var(--panel);border:1px solid var(--frame);border-radius:8px;cursor:pointer}
@@ -31,63 +42,118 @@
   <a class="back" href="../">‹ パズル箱</a>
 </section>
 
+<section class="screen" id="choose" hidden>
+  <div class="stage" id="chooseStage"></div>
+  <div id="cards"></div>
+  <button type="button" class="back" id="giveup">やめる</button>
+</section>
+
 <iframe id="play" title="パズル" hidden></iframe>
 <button type="button" id="quit" hidden>やめる</button>
 
-<section class="screen" id="result" hidden>
-  <div id="score"></div>
-  <div id="detail"></div>
-  <div id="rare"></div>
+<section class="screen" id="stageEnd" hidden>
+  <div class="stage" id="endStage"></div>
+  <div class="line" id="endScore" style="font-size:20px;color:var(--ink);font-weight:700;margin:0"></div>
+  <div class="line" id="endDetail" style="margin-top:4px"></div>
+  <div class="label">累計</div>
+  <div class="num" id="endTotal"></div>
+  <div class="line" id="endDigits" style="margin-bottom:30px"></div>
+  <button type="button" class="big" id="onward"></button>
+</section>
+
+<section class="screen" id="final" hidden>
+  <div id="charEmoji"></div>
+  <div id="charName"></div>
+  <div id="charRare"></div>
+  <div class="num" id="finalScore"></div>
+  <div class="line" id="finalDigits" style="margin-bottom:30px"></div>
   <button type="button" class="big" id="again">もう一度</button>
-  <a class="back" href="../">‹ タイトルへ</a>
+  <button type="button" class="back" id="toTitle">‹ タイトルへ</button>
 </section>
 
 <script>
-/* 系統 → ゲーム → 段（易/中/難）の表。ここだけ直せば広げられる（spec §2・§3・§7）
-   levels は各ゲームの問題配列の添字の範囲 [最初, 最後]（両端含む）。
-   車をだせ！: 入門0-9・初級10-19・中級20-29・上級30-39・達人40-49 */
-var SYSTEMS = {
-  move: {
-    label: '🚗 動かす',
-    games: {
-      'car-escape': {
-        name: '車をだせ！', path: '../car-escape/',
-        levels: { easy: [0, 19], mid: [20, 29], hard: [30, 49] }
-      }
-    }
-  }
-};
-/* ステージごとの段と点の上限（spec §4）。今回は1stのみ */
-var STAGES = [
-  { tier: 'easy', cap: 100 },
-  { tier: 'mid',  cap: 1000 },
-  { tier: 'hard', cap: 10000 }
+/* 系統とゲーム（spec §2）。キャラ名の部品は spec §5（1st=種族・2nd=気質・3rd=称号） */
+var SYSTEMS = [
+  { id: 'move', emoji: '🚗', label: '動かす', parts: ['歯車族', 'せっかちな', '走り屋'],
+    games: ['car-escape', 'hakoiri-musume', 'slide-robots'] },
+  { id: 'fill', emoji: '🧩', label: '埋める', parts: ['石板族', '几帳面な', '職人'],
+    games: ['sudoku', 'hoshi-oki', 'pixel'] },
+  { id: 'link', emoji: '🔗', label: 'つなぐ', parts: ['糸族', '人懐っこい', '案内人'],
+    games: ['michi-tsunagi', 'kurukuru', 'mado-wake'] }
 ];
+var NAMES = {
+  'car-escape': '車をだせ！', 'hakoiri-musume': '箱入り娘', 'slide-robots': 'すべりロボ',
+  'sudoku': '数独', 'hoshi-oki': '星おき', 'pixel': 'ピクセル',
+  'michi-tsunagi': 'みちつなぎ', 'kurukuru': 'くるくる', 'mado-wake': '窓わけ'
+};
+/* クエスト対応済みのゲーム（?quest=<添字> と quest-solved 通知を実装済み）。ここに1行足せば出るようになる。
+   値は各段の問題番号（LEVELSの添字）の範囲 [最初, 最後]（両端含む）。spec §7
+   車をだせ！: 入門0-9・初級10-19・中級20-29・上級30-39・達人40-49 → 易=入門+初級／中=中級／難=上級+達人
+   箱入り娘・すべりロボ: 入門0-9・初級10-19・中級20-29・上級30-39 → 易=入門／中=初級+中級／難=上級 */
+var QUEST = {
+  'car-escape':     { easy: [0, 19], mid: [20, 29], hard: [30, 49] },
+  'hakoiri-musume': { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
+  'slide-robots':   { easy: [0, 9],  mid: [10, 29], hard: [30, 39] }
+};
+/* ステージごとの段と点の上限（spec §3・§4 案②） */
+var STAGES = [
+  { name: '1st', tier: 'easy', tierName: '易', cap: 100 },
+  { name: '2nd', tier: 'mid',  tierName: '中', cap: 1000 },
+  { name: '3rd', tier: 'hard', tierName: '難', cap: 10000 }
+];
+/* キリ番（spec §6）。下3桁777 は別判定 */
+var KIRIBAN = [777777, 77777777, 123456, 1234567, 1000000000];
 
-var elTitle = document.getElementById('title');
-var elPlay = document.getElementById('play');
-var elResult = document.getElementById('result');
-var current = null;
+var $ = function (id) { return document.getElementById(id); };
+var SCREENS = ['title', 'choose', 'play', 'stageEnd', 'final'];
+var run = null;      /* 1プレイの状態 */
+var current = null;  /* いま解いている問題 */
 
-function show(el) {
-  elTitle.hidden = el !== elTitle;
-  elResult.hidden = el !== elResult;
-  elPlay.hidden = el !== elPlay;
-  document.getElementById('quit').hidden = el !== elPlay;
+function show(id) {
+  SCREENS.forEach(function (k) { $(k).hidden = k !== id; });
+  $('quit').hidden = id !== 'play';
+  window.scrollTo(0, 0);
 }
-
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function fmt(n) { return n.toLocaleString('ja-JP'); }
+function digits(n) { return String(n).length; }
 
 function start() {
-  var stage = STAGES[0];
-  var sys = SYSTEMS.move;
-  var gameId = pick(Object.keys(sys.games));
-  var game = sys.games[gameId];
-  var r = game.levels[stage.tier];
+  run = { stage: 0, total: 1, used: {}, systems: [], exact: false };
+  choose();
+}
+
+/* 各系統から、このプレイでまだ遊んでいない対応済みゲームを1本ずつ候補にする（出たが選ばなかったものは再登場してよい） */
+function choose() {
+  var st = STAGES[run.stage];
+  $('chooseStage').innerHTML = '<b>' + st.name + '・' + st.tierName + '</b>最高 ' + fmt(st.cap) + '点';
+  var box = $('cards');
+  box.innerHTML = '';
+  SYSTEMS.forEach(function (sys, si) {
+    var pool = sys.games.filter(function (g) { return QUEST[g] && !run.used[g]; });
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'big';
+    if (!pool.length) {
+      b.disabled = true;
+      b.textContent = sys.emoji + ' ' + sys.label + '　準備中';
+    } else {
+      var g = pick(pool);
+      b.innerHTML = sys.emoji + ' ' + NAMES[g] + '<small>' + sys.label + '</small>';
+      b.addEventListener('click', function () { play(si, g); });
+    }
+    box.appendChild(b);
+  });
+  show('choose');
+}
+
+function play(si, g) {
+  var st = STAGES[run.stage], r = QUEST[g][st.tier];
   var level = r[0] + Math.floor(Math.random() * (r[1] - r[0] + 1));
-  current = { game: gameId, level: level, cap: stage.cap };
-  elPlay.src = game.path + '?quest=' + level;
-  show(elPlay);
+  run.used[g] = 1;
+  current = { sys: si, game: g, level: level, cap: st.cap };
+  $('play').src = '../' + g + '/?quest=' + level;
+  show('play');
 }
 
 function score(cap, moves, min) {
@@ -95,27 +161,67 @@ function score(cap, moves, min) {
   return Math.max(1, Math.round(cap * eff));
 }
 
+function isKiriban(n) { return n % 1000 === 777 || KIRIBAN.indexOf(n) >= 0; }
+
+function solved(d) {
+  var st = STAGES[run.stage];
+  var s = score(current.cap, d.moves, d.min);
+  var before = run.stage === 0 ? 0 : digits(run.total);
+  run.total *= s;
+  run.systems.push(current.sys);
+  if (d.moves === d.min) run.exact = true;
+  current = null;
+  var after = digits(run.total);
+  $('endStage').textContent = st.name + '・' + st.tierName;
+  $('endScore').textContent = (before ? '× ' : '') + fmt(s) + '点';
+  $('endDetail').textContent = '手数 ' + d.moves + ' ／ 最短 ' + d.min + (d.moves === d.min ? ' ★' : '');
+  $('endTotal').innerHTML = fmt(run.total) + '<small>点</small>';
+  $('endDigits').innerHTML = before
+    ? before + '桁 → <span class="up">' + after + '桁</span>' + (after > before ? ' ↑' : '')
+    : '<span class="up">' + after + '桁</span>';
+  $('onward').textContent = run.stage < STAGES.length - 1 ? 'つぎへ' : 'けっか';
+  setTimeout(function () { show('stageEnd'); $('play').removeAttribute('src'); }, 700);
+}
+
+function onward() {
+  run.stage++;
+  if (run.stage < STAGES.length) { choose(); return; }
+  var sy = run.systems.map(function (i) { return SYSTEMS[i]; });
+  var rare = run.exact || isKiriban(run.total);
+  $('charEmoji').textContent = sy.map(function (x) { return x.emoji; }).join('');
+  $('charName').textContent = sy[1].parts[1] + sy[0].parts[0] + 'の' + sy[2].parts[2];
+  var why = [];
+  if (run.exact) why.push('最短で解いた');
+  if (isKiriban(run.total)) why.push('キリ番');
+  $('charRare').innerHTML = rare ? '✨レア版<small>' + why.join('・') + '</small>' : '';
+  $('finalScore').innerHTML = fmt(run.total) + '<small>点</small>';
+  $('finalDigits').textContent = digits(run.total) + '桁';
+  run = null;
+  show('final');
+}
+
 window.addEventListener('message', function (e) {
   var d = e.data;
-  if (!current || e.source !== elPlay.contentWindow) return;
+  if (!run || !current || e.source !== $('play').contentWindow) return;
   if (!d || d.type !== 'quest-solved' || d.game !== current.game || d.level !== current.level) return;
   if (!(d.moves > 0 && d.min > 0)) return;
-  var s = score(current.cap, d.moves, d.min);
-  current = null;
-  document.getElementById('score').innerHTML = s + '<small>点</small>';
-  document.getElementById('detail').textContent = '手数 ' + d.moves + ' ／ 最短 ' + d.min;
-  document.getElementById('rare').textContent = d.moves === d.min ? '✨最小手数' : '';
-  setTimeout(function () { show(elResult); elPlay.removeAttribute('src'); }, 700);
+  solved(d);
 });
 
-document.getElementById('start').addEventListener('click', start);
-/* ギブアップ（spec §1：点0で終わり）。確認なしでタイトルへ */
-document.getElementById('quit').addEventListener('click', function () {
+/* ギブアップ（spec §1：そのプレイは点0・キャラなしで終わり）。確認なしでタイトルへ */
+function giveUp() {
+  run = null;
   current = null;
-  elPlay.removeAttribute('src');
-  show(elTitle);
-});
-document.getElementById('again').addEventListener('click', start);
+  $('play').removeAttribute('src');
+  show('title');
+}
+
+$('start').addEventListener('click', start);
+$('again').addEventListener('click', start);
+$('onward').addEventListener('click', onward);
+$('quit').addEventListener('click', giveUp);
+$('giveup').addEventListener('click', giveUp);
+$('toTitle').addEventListener('click', function () { show('title'); });
 </script>
 </body>
 </html>

@@ -349,6 +349,12 @@ if (typeof globalThis !== 'undefined') globalThis.Hakoiri = Hakoiri;
 if (typeof document !== 'undefined') (function () {
   var W = Hakoiri.W, H = Hakoiri.H;
   var KEY = 'hakoiri-musume';
+  /* クエスト用モード：?quest=<LEVELSの添字(0始まり)> のときだけ有効。
+     その1問だけ・一覧/つぎへを隠す・保存しない・もどす/はじめからでも手数を減らさない（quest/docs/spec.md §4） */
+  var Q = (function () {
+    var m = /[?&]quest=(\d+)/.exec(location.search), n = m ? parseInt(m[1], 10) : -1;
+    return (n >= 0 && n < LEVELS.length) ? n : -1;
+  })();
 
   var elTitle = document.getElementById('title');
   var elMoves = document.getElementById('moves');
@@ -388,6 +394,7 @@ if (typeof document !== 'undefined') (function () {
     } catch (e) { /* 保存が使えなくても遊べる */ }
   }
   function storeSave() {
+    if (Q >= 0) return;
     try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
   }
 
@@ -441,15 +448,16 @@ if (typeof document !== 'undefined') (function () {
 
   function loadLevel(i) {
     levelIndex = i;
+    var keep = Q >= 0 && state;
     state = Hakoiri.parse(LEVELS[i].board);
-    moves = 0;
+    if (!keep) moves = 0;
     history = [];
     finished = false;
     drag = null;
     elClear.hidden = true;
     elTitle.textContent = LABELS[i].text;
     elBest.textContent = String(LEVELS[i].min);
-    elMoves.textContent = '0';
+    elMoves.textContent = String(moves);
     elUndo.disabled = true;
     buildBoard();
     renderLevelList();
@@ -541,6 +549,13 @@ if (typeof document !== 'undefined') (function () {
 
   function showClear() {
     var min = LEVELS[levelIndex].min;
+    if (Q >= 0) {
+      elClearSub.textContent = (moves <= min) ? '★ 最短' : '';
+      elNext.hidden = true;
+      elClear.hidden = false;
+      parent.postMessage({ type: 'quest-solved', game: 'hakoiri-musume', level: Q, moves: moves, min: min }, '*');
+      return;
+    }
     save.cleared[String(levelIndex)] = 1;
     storeSave();
     renderLevelList();
@@ -553,7 +568,7 @@ if (typeof document !== 'undefined') (function () {
   elUndo.addEventListener('click', function () {
     if (finished || !history.length) return;
     state = history.pop();
-    moves = Math.max(0, moves - 1);
+    if (Q < 0) moves = Math.max(0, moves - 1);
     elMoves.textContent = String(moves);
     elUndo.disabled = !history.length;
     place();
@@ -605,6 +620,7 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
+  if (Q >= 0) { elLevels.hidden = true; loadLevel(Q); return; }
   loadSave();
   loadLevel(save.last);
 })();

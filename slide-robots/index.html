@@ -387,6 +387,13 @@ if (typeof globalThis !== 'undefined') globalThis.SlideRobots = SlideRobots;
 if (typeof document !== 'undefined') (function () {
   var W = SlideRobots.W;
   var KEY = 'slide-robots';
+  /* クエスト用モード：?quest=<LEVELSの添字(0始まり)> のときだけ有効。
+     その1問だけ・一覧/つぎへを隠す・保存しない・もどす/はじめからでも手数を減らさない（quest/docs/spec.md §4）。
+     手数＝ロボットを1回滑らせるごとに1（宣言は数えない）。はじめからでも宣言は残す */
+  var Q = (function () {
+    var m = /[?&]quest=(\d+)/.exec(location.search), n = m ? parseInt(m[1], 10) : -1;
+    return (n >= 0 && n < LEVELS.length) ? n : -1;
+  })();
   var SYMBOL = { R: '●', B: '▲', Y: '■', G: '◆' };  /* ● ▲ ■ ◆ */
   var GAP = 2;
   var AXIS_LOCK = 6;      /* これだけ指が動いたら向きを決める（px） */
@@ -432,6 +439,7 @@ if (typeof document !== 'undefined') (function () {
     } catch (e) { /* 保存が使えなくても遊べる */ }
   }
   function storeSave() {
+    if (Q >= 0) return;
     try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
   }
 
@@ -532,9 +540,9 @@ if (typeof document !== 'undefined') (function () {
 
   function loadLevel(i) {
     levelIndex = i;
+    var keep = Q >= 0 && state;
     state = SlideRobots.parse(LEVELS[i]);
-    moves = 0;
-    call = 0;
+    if (!keep) { moves = 0; call = 0; }
     history = [];
     finished = false;
     drag = null;
@@ -543,6 +551,7 @@ if (typeof document !== 'undefined') (function () {
     elTitle.textContent = LABELS[i].text;
     elCallOut.textContent = '';
     elBoard.classList.remove('live');
+    if (call) { elCall.hidden = true; showCounts(); elBoard.classList.add('live'); }
     elUndo.disabled = true;
     buildBoard();
     renderLevelList();
@@ -632,6 +641,15 @@ if (typeof document !== 'undefined') (function () {
 
   function showClear() {
     var lv = LEVELS[levelIndex], min = lv.min;
+    if (Q >= 0) {
+      elClearTitle.textContent = (moves === min) ? '★ 最短！' : 'クリア！';
+      elClearVerdict.textContent = '';
+      elClearStats.innerHTML = '手数 <b>' + moves + '</b> ／ 最短 <b>' + min + '</b>';
+      elNext.hidden = true;
+      elClear.hidden = false;
+      parent.postMessage({ type: 'quest-solved', game: 'slide-robots', level: Q, moves: moves, min: min }, '*');
+      return;
+    }
     save.cleared[String(levelIndex)] = 1;
     storeSave();
     renderLevelList();
@@ -649,7 +667,7 @@ if (typeof document !== 'undefined') (function () {
   elUndo.addEventListener('click', function () {
     if (finished || !history.length) return;
     state = history.pop();
-    moves = Math.max(0, moves - 1);
+    if (Q < 0) moves = Math.max(0, moves - 1);
     showCounts();
     elUndo.disabled = !history.length;
     hideGhost();
@@ -710,8 +728,9 @@ if (typeof document !== 'undefined') (function () {
   elHelpPanel.addEventListener('click', hideHelp);
   elHelpBtn.addEventListener('click', showHelp);
 
-  loadSave();
-  loadLevel(save.last);
+  loadSave();   /* クエストでも読むだけ（あそびかたを見たか）。書き込みはしない */
+  if (Q >= 0) elLevels.hidden = true;
+  loadLevel(Q >= 0 ? Q : save.last);
   if (!save.seen) showHelp();
 })();
 </script>
