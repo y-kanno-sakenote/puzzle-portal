@@ -630,6 +630,7 @@ if (typeof document !== 'undefined') (function () {
     state = SlideRobots.applyMove(state, id, dir);
     moves++;
     showCounts();
+    if (Q >= 0) parent.postMessage({ type: 'quest-moves', game: 'slide-robots', level: Q, moves: moves, min: LEVELS[levelIndex].min }, '*');
     elUndo.disabled = false;
     place(id, dist);
     if (SlideRobots.isSolved(state)) {

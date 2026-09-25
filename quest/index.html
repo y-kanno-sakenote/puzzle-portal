@@ -30,9 +30,14 @@
   #charEmoji{font-size:40px;margin:0 0 8px}
   #charName{font-size:22px;font-weight:700;margin:0 0 6px}
   #charRare{font-size:17px;font-weight:700;min-height:1.5em;margin:0 0 24px}
-  #play{position:fixed;inset:0;width:100%;height:100%;border:0;background:var(--bg)}
-  #play[hidden],#quit[hidden]{display:none}
-  #quit{position:fixed;left:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:5;font:inherit;font-size:13px;padding:6px 12px;color:var(--sub);background:var(--panel);border:1px solid var(--frame);border-radius:8px;cursor:pointer}
+  /* プレイ中は上に細い帯（左=やめる・右=持ち点）を取り、ゲームはその下から始める＝ゲーム側の見出し・手数と重ならない */
+  :root{--bar:calc(36px + env(safe-area-inset-top))}
+  #play{position:fixed;left:0;top:var(--bar);width:100%;height:calc(100% - var(--bar));border:0;border-top:1px solid var(--frame);background:var(--bg)}
+  #play[hidden],#quit[hidden],#hud[hidden]{display:none}
+  #hud{position:fixed;right:14px;top:env(safe-area-inset-top);height:36px;line-height:36px;z-index:5;pointer-events:none;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+  #hud.down{color:#d94436}
+  #quit{position:fixed;left:4px;top:env(safe-area-inset-top);height:36px;z-index:5;font:inherit;font-size:14px;padding:0 10px;color:var(--sub);background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .time{font-size:13px}
 </style>
 </head>
 <body>
@@ -50,6 +55,7 @@
 
 <iframe id="play" title="パズル" hidden></iframe>
 <button type="button" id="quit" hidden>やめる</button>
+<div id="hud" hidden></div>
 
 <section class="screen" id="stageEnd" hidden>
   <div class="stage" id="endStage"></div>
@@ -57,7 +63,8 @@
   <div class="line" id="endDetail" style="margin-top:4px"></div>
   <div class="label">累計</div>
   <div class="num" id="endTotal"></div>
-  <div class="line" id="endDigits" style="margin-bottom:30px"></div>
+  <div class="line" id="endDigits"></div>
+  <div class="line time" id="endTime" style="margin-bottom:30px"></div>
   <button type="button" class="big" id="onward"></button>
 </section>
 
@@ -66,9 +73,20 @@
   <div id="charName"></div>
   <div id="charRare"></div>
   <div class="num" id="finalScore"></div>
-  <div class="line" id="finalDigits" style="margin-bottom:30px"></div>
+  <div class="line" id="finalDigits"></div>
+  <div class="line time" id="finalTime" style="margin-bottom:30px"></div>
   <button type="button" class="big" id="again">もう一度</button>
   <button type="button" class="back" id="toTitle">‹ タイトルへ</button>
+</section>
+
+<section class="screen" id="out" hidden>
+  <div style="font-size:22px;font-weight:700;margin:0 0 6px">アウト</div>
+  <div class="label">累計</div>
+  <div class="num" id="outScore"></div>
+  <div class="line" id="outDigits"></div>
+  <div class="line time" id="outTime" style="margin-bottom:30px"></div>
+  <button type="button" class="big" id="outAgain">もう一度</button>
+  <button type="button" class="back" id="outTitle">‹ タイトルへ</button>
 </section>
 
 <script>
@@ -101,25 +119,32 @@ var STAGES = [
   { name: '2nd', tier: 'mid',  tierName: '中', cap: 1000 },
   { name: '3rd', tier: 'hard', tierName: '難', cap: 10000 }
 ];
+/* 猶予時間G（秒）。spec §4 減点方式。段ごとの既定値＋ゲーム×段の上書き（例 'sudoku': { hard: 240 }） */
+var GRACE = { easy: 60, mid: 120, hard: 180 };
+var GRACE_BY_GAME = {};
+function grace(g, tier) { var o = GRACE_BY_GAME[g]; return (o && o[tier]) || GRACE[tier]; }
 /* キリ番（spec §6）。下3桁777 は別判定 */
 var KIRIBAN = [777777, 77777777, 123456, 1234567, 1000000000];
 
 var $ = function (id) { return document.getElementById(id); };
-var SCREENS = ['title', 'choose', 'play', 'stageEnd', 'final'];
+var SCREENS = ['title', 'choose', 'play', 'stageEnd', 'final', 'out'];
 var run = null;      /* 1プレイの状態 */
 var current = null;  /* いま解いている問題 */
+var ticker = null;   /* 持ち点表示の更新タイマー */
 
 function show(id) {
   SCREENS.forEach(function (k) { $(k).hidden = k !== id; });
   $('quit').hidden = id !== 'play';
+  $('hud').hidden = id !== 'play';
   window.scrollTo(0, 0);
 }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function fmt(n) { return n.toLocaleString('ja-JP'); }
 function digits(n) { return String(n).length; }
+function mmss(ms) { var s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); }
 
 function start() {
-  run = { stage: 0, total: 1, used: {}, systems: [], exact: false };
+  run = { stage: 0, total: 1, used: {}, systems: [], exact: false, time: 0 };
   choose();
 }
 
@@ -151,21 +176,59 @@ function play(si, g) {
   var st = STAGES[run.stage], r = QUEST[g][st.tier];
   var level = r[0] + Math.floor(Math.random() * (r[1] - r[0] + 1));
   run.used[g] = 1;
-  current = { sys: si, game: g, level: level, cap: st.cap };
+  /* t0 は問題が表示された時点（iframe の load）から。moves=0 の間は手数減点なし */
+  current = { sys: si, game: g, level: level, cap: st.cap, G: grace(g, st.tier) * 1000,
+              t0: null, tPlay: Date.now(), moves: 0, min: 0 };
   $('play').src = '../' + g + '/?quest=' + level;
   show('play');
+  hud();
+  clearInterval(ticker);
+  ticker = setInterval(tick, 500);
 }
 
-function score(cap, moves, min) {
-  var eff = Math.min(1, min / moves);
-  return Math.max(1, Math.round(cap * eff));
+/* 時間係数：t≤G:1 / G<t<2G:(2G−t)/G / t≥2G:0（spec §4） */
+function timeFactor(t, G) { return t <= G ? 1 : t >= 2 * G ? 0 : (2 * G - t) / G; }
+/* 持ち点 = round(上限 × min(1, 最短/実手数) × 時間係数)。手数が未確定（0）なら手数減点なし */
+function points(cap, moves, min, t, G) {
+  var eff = moves > 0 && min > 0 ? Math.min(1, min / moves) : 1;
+  return Math.round(cap * eff * timeFactor(t, G));
+}
+function elapsed() { return current.t0 === null ? 0 : Date.now() - current.t0; }
+
+function hud() {
+  if (!current) return;
+  var t = elapsed();
+  $('hud').textContent = fmt(Math.max(1, points(current.cap, current.moves, current.min, t, current.G))) + '点';
+  $('hud').classList.toggle('down', t > current.G);  /* 表示だけ：猶予Gを過ぎたら赤 */
+}
+function tick() {
+  if (!run || !current) { clearInterval(ticker); return; }
+  if (elapsed() >= 2 * current.G) { out(); return; }
+  hud();
+}
+
+/* 2Gで即アウト（spec §4）：そこまでの累計・桁数・累計タイムを見せる。キャラなし */
+function out() {
+  clearInterval(ticker);
+  current = null;
+  $('play').removeAttribute('src');
+  var cleared = run.stage > 0;
+  $('outScore').innerHTML = (cleared ? fmt(run.total) : '0') + '<small>点</small>';
+  $('outDigits').textContent = cleared ? digits(run.total) + '桁' : '';
+  $('outTime').textContent = cleared ? 'タイム ' + mmss(run.time) : '';
+  run = null;
+  show('out');
 }
 
 function isKiriban(n) { return n % 1000 === 777 || KIRIBAN.indexOf(n) >= 0; }
 
 function solved(d) {
   var st = STAGES[run.stage];
-  var s = score(current.cap, d.moves, d.min);
+  var t = elapsed();
+  if (t >= 2 * current.G) { out(); return; }
+  clearInterval(ticker);
+  var s = Math.max(1, points(current.cap, d.moves, d.min, t, current.G));
+  run.time += t;
   var before = run.stage === 0 ? 0 : digits(run.total);
   run.total *= s;
   run.systems.push(current.sys);
@@ -179,6 +242,7 @@ function solved(d) {
   $('endDigits').innerHTML = before
     ? before + '桁 → <span class="up">' + after + '桁</span>' + (after > before ? ' ↑' : '')
     : '<span class="up">' + after + '桁</span>';
+  $('endTime').textContent = 'タイム ' + mmss(t) + (before ? ' ／ 累計 ' + mmss(run.time) : '');
   $('onward').textContent = run.stage < STAGES.length - 1 ? 'つぎへ' : 'けっか';
   setTimeout(function () { show('stageEnd'); $('play').removeAttribute('src'); }, 700);
 }
@@ -196,6 +260,7 @@ function onward() {
   $('charRare').innerHTML = rare ? '✨レア版<small>' + why.join('・') + '</small>' : '';
   $('finalScore').innerHTML = fmt(run.total) + '<small>点</small>';
   $('finalDigits').textContent = digits(run.total) + '桁';
+  $('finalTime').textContent = 'タイム ' + mmss(run.time);
   run = null;
   show('final');
 }
@@ -203,13 +268,21 @@ function onward() {
 window.addEventListener('message', function (e) {
   var d = e.data;
   if (!run || !current || e.source !== $('play').contentWindow) return;
-  if (!d || d.type !== 'quest-solved' || d.game !== current.game || d.level !== current.level) return;
+  if (!d || (d.type !== 'quest-solved' && d.type !== 'quest-moves') || d.game !== current.game || d.level !== current.level) return;
   if (!(d.moves > 0 && d.min > 0)) return;
+  if (current.t0 === null) current.t0 = current.tPlay;  /* load を取り逃した保険 */
+  if (d.type === 'quest-moves') { current.moves = d.moves; current.min = d.min; hud(); return; }
   solved(d);
+});
+
+/* 問題が表示されたら計測開始 */
+$('play').addEventListener('load', function () {
+  if (current && current.t0 === null && $('play').getAttribute('src')) current.t0 = Date.now();
 });
 
 /* ギブアップ（spec §1：そのプレイは点0・キャラなしで終わり）。確認なしでタイトルへ */
 function giveUp() {
+  clearInterval(ticker);
   run = null;
   current = null;
   $('play').removeAttribute('src');
@@ -222,6 +295,8 @@ $('onward').addEventListener('click', onward);
 $('quit').addEventListener('click', giveUp);
 $('giveup').addEventListener('click', giveUp);
 $('toTitle').addEventListener('click', function () { show('title'); });
+$('outAgain').addEventListener('click', start);
+$('outTitle').addEventListener('click', function () { show('title'); });
 </script>
 </body>
 </html>

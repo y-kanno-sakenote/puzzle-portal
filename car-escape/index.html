@@ -523,6 +523,7 @@ if (typeof document !== 'undefined') (function () {
     state = CarEscape.applyMove(state, id, delta);
     moves++;
     elMoves.textContent = String(moves);
+    if (Q >= 0) parent.postMessage({ type: 'quest-moves', game: 'car-escape', level: Q, moves: moves, min: LEVELS[levelIndex].min }, '*');
     elUndo.disabled = false;
     place();
     if (CarEscape.isSolved(state)) driveOut();
