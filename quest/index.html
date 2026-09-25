@@ -5,20 +5,117 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>クエスト</title>
 <style>
-  :root{--bg:#f5f4f1;--ink:#222;--sub:#6b6b6b}
+  :root{--bg:#f5f4f1;--panel:#fff;--ink:#222;--sub:#6b6b6b;--frame:#c9c6be}
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;-webkit-text-size-adjust:100%}
-  main{min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:center;align-items:center;max-width:480px;margin:0 auto;padding:22px 14px 60px}
-  h1{font-size:30px;margin:0 0 14px}
-  p{font-size:15px;color:var(--sub);margin:0 0 36px}
-  a{font-size:15px;color:var(--sub);text-decoration:none;padding:10px}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;-webkit-text-size-adjust:100%}
+  .screen{min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:center;max-width:480px;margin:0 auto;padding:22px 14px 60px;text-align:center}
+  .screen[hidden]{display:none}
+  h1{font-size:30px;margin:0 0 36px}
+  .big{display:block;width:100%;padding:22px 0;margin-bottom:14px;font:inherit;font-size:20px;font-weight:700;background:var(--panel);border:1px solid var(--frame);border-radius:14px;color:inherit;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .big:active{background:#eeece7}
+  .back{font-size:15px;color:var(--sub);text-decoration:none;padding:10px}
+  #score{font-size:64px;font-weight:700;line-height:1.1}
+  #score small{font-size:20px;color:var(--sub);font-weight:400;margin-left:4px}
+  #detail{font-size:15px;color:var(--sub);margin:10px 0 6px}
+  #rare{font-size:17px;font-weight:700;margin:0 0 30px;min-height:1.5em}
+  #play{position:fixed;inset:0;width:100%;height:100%;border:0;background:var(--bg)}
+  #play[hidden],#quit[hidden]{display:none}
+  #quit{position:fixed;left:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:5;font:inherit;font-size:13px;padding:6px 12px;color:var(--sub);background:var(--panel);border:1px solid var(--frame);border-radius:8px;cursor:pointer}
 </style>
 </head>
 <body>
-<main>
+<section class="screen" id="title">
   <h1>クエスト</h1>
-  <p>準備中</p>
-  <a href="../">‹ パズル箱</a>
-</main>
+  <button type="button" class="big" id="start">はじめる</button>
+  <a class="back" href="../">‹ パズル箱</a>
+</section>
+
+<iframe id="play" title="パズル" hidden></iframe>
+<button type="button" id="quit" hidden>やめる</button>
+
+<section class="screen" id="result" hidden>
+  <div id="score"></div>
+  <div id="detail"></div>
+  <div id="rare"></div>
+  <button type="button" class="big" id="again">もう一度</button>
+  <a class="back" href="../">‹ タイトルへ</a>
+</section>
+
+<script>
+/* 系統 → ゲーム → 段（易/中/難）の表。ここだけ直せば広げられる（spec §2・§3・§7）
+   levels は各ゲームの問題配列の添字の範囲 [最初, 最後]（両端含む）。
+   車をだせ！: 入門0-9・初級10-19・中級20-29・上級30-39・達人40-49 */
+var SYSTEMS = {
+  move: {
+    label: '🚗 動かす',
+    games: {
+      'car-escape': {
+        name: '車をだせ！', path: '../car-escape/',
+        levels: { easy: [0, 19], mid: [20, 29], hard: [30, 49] }
+      }
+    }
+  }
+};
+/* ステージごとの段と点の上限（spec §4）。今回は1stのみ */
+var STAGES = [
+  { tier: 'easy', cap: 100 },
+  { tier: 'mid',  cap: 1000 },
+  { tier: 'hard', cap: 10000 }
+];
+
+var elTitle = document.getElementById('title');
+var elPlay = document.getElementById('play');
+var elResult = document.getElementById('result');
+var current = null;
+
+function show(el) {
+  elTitle.hidden = el !== elTitle;
+  elResult.hidden = el !== elResult;
+  elPlay.hidden = el !== elPlay;
+  document.getElementById('quit').hidden = el !== elPlay;
+}
+
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function start() {
+  var stage = STAGES[0];
+  var sys = SYSTEMS.move;
+  var gameId = pick(Object.keys(sys.games));
+  var game = sys.games[gameId];
+  var r = game.levels[stage.tier];
+  var level = r[0] + Math.floor(Math.random() * (r[1] - r[0] + 1));
+  current = { game: gameId, level: level, cap: stage.cap };
+  elPlay.src = game.path + '?quest=' + level;
+  show(elPlay);
+}
+
+function score(cap, moves, min) {
+  var eff = Math.min(1, min / moves);
+  return Math.max(1, Math.round(cap * eff));
+}
+
+window.addEventListener('message', function (e) {
+  var d = e.data;
+  if (!current || e.source !== elPlay.contentWindow) return;
+  if (!d || d.type !== 'quest-solved' || d.game !== current.game || d.level !== current.level) return;
+  if (!(d.moves > 0 && d.min > 0)) return;
+  var s = score(current.cap, d.moves, d.min);
+  current = null;
+  document.getElementById('score').innerHTML = s + '<small>点</small>';
+  document.getElementById('detail').textContent = '手数 ' + d.moves + ' ／ 最短 ' + d.min;
+  document.getElementById('rare').textContent = d.moves === d.min ? '✨最小手数' : '';
+  setTimeout(function () { show(elResult); elPlay.removeAttribute('src'); }, 700);
+});
+
+document.getElementById('start').addEventListener('click', start);
+/* ギブアップ（spec §1：点0で終わり）。確認なしでタイトルへ */
+document.getElementById('quit').addEventListener('click', function () {
+  current = null;
+  elPlay.removeAttribute('src');
+  show(elTitle);
+});
+document.getElementById('again').addEventListener('click', start);
+</script>
 </body>
 </html>
