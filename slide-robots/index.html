@@ -128,7 +128,8 @@
 <body>
 <div id="app">
   <header>
-    <div id="titleWrap"><a id="home" href="../">‹ パズル箱</a><span id="title">入門 1</span><button id="helpBtn" type="button" aria-label="あそびかた">？</button></div>
+    <!-- 戻り先は一覧（../#puzzle）。../ だけだとタイトル画面（パズル／クエストの2択）に着いてしまう -->
+    <div id="titleWrap"><a id="home" href="../#puzzle">‹ パズル箱</a><span id="title">入門 1</span><button id="helpBtn" type="button" aria-label="あそびかた">？</button></div>
     <div id="callOut"></div>
   </header>
 
@@ -411,6 +412,7 @@ if (typeof document !== 'undefined') (function () {
   var elUndo = document.getElementById('undo');
   var elReset = document.getElementById('reset');
   var elLevels = document.getElementById('levels');
+  var elHome = document.getElementById('home');
   var elHelpPanel = document.getElementById('helpPanel');
   var elHelpBtn = document.getElementById('helpBtn');
 
@@ -730,7 +732,8 @@ if (typeof document !== 'undefined') (function () {
   elHelpBtn.addEventListener('click', showHelp);
 
   loadSave();   /* クエストでも読むだけ（あそびかたを見たか）。書き込みはしない */
-  if (Q >= 0) elLevels.hidden = true;
+  /* クエストは iframe の中で開かれるので「‹ パズル箱」も隠す（押すと iframe の中だけが入口に飛んで入れ子が壊れる） */
+  if (Q >= 0) { elLevels.hidden = true; elHome.hidden = true; }
   loadLevel(Q >= 0 ? Q : save.last);
   if (!save.seen) showHelp();
 })();

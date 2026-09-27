@@ -91,7 +91,8 @@
 <body>
 <div id="app">
   <header>
-    <div id="titleWrap"><a id="home" href="../">‹ パズル箱</a><div id="title">入門 1</div></div>
+    <!-- 戻り先は一覧（../#puzzle）。../ だけだとタイトル画面（パズル／クエストの2択）に着いてしまう -->
+    <div id="titleWrap"><a id="home" href="../#puzzle">‹ パズル箱</a><div id="title">入門 1</div></div>
     <div id="counts">手数 <b id="moves">0</b> ／ 最短 <b id="best">5</b></div>
   </header>
 
@@ -366,6 +367,7 @@ if (typeof document !== 'undefined') (function () {
   var elUndo  = document.getElementById('undo');
   var elReset = document.getElementById('reset');
   var elLevels = document.getElementById('levels');
+  var elHome  = document.getElementById('home');
 
   /* 段階名と何本目か（古典は名前も。例「上級 3・横刀立馬」） */
   var LABELS = (function () {
@@ -621,7 +623,8 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
-  if (Q >= 0) { elLevels.hidden = true; loadLevel(Q); return; }
+  /* クエストは iframe の中で開かれるので「‹ パズル箱」も隠す（押すと iframe の中だけが入口に飛んで入れ子が壊れる） */
+  if (Q >= 0) { elLevels.hidden = true; elHome.hidden = true; loadLevel(Q); return; }
   loadSave();
   loadLevel(save.last);
 })();
