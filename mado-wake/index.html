@@ -520,6 +520,16 @@ if (typeof document !== 'undefined') (function () {
   var elNext   = document.getElementById('next');
   var elMsg    = document.getElementById('msg');
   var elLevels = document.getElementById('levels');
+  var elHome   = document.getElementById('home');
+
+  /* クエスト用モード：?quest=<PUZZLESの添字(0始まり)> のときだけ有効。
+     その1問だけ・一覧/つぎへ/戻りリンクを隠す・保存しない・もどす/はじめからでも手数を減らさない（quest/docs/spec.md §4） */
+  var Q = (function () {
+    /* Node の最小DOMスタブには location が無いので、無ければ本家モード扱い */
+    if (typeof location === 'undefined' || !location.search) return -1;
+    var m = /[?&]quest=(\d+)/.exec(location.search), n = m ? parseInt(m[1], 10) : -1;
+    return (n >= 0 && n < PUZZLES.length) ? n : -1;
+  })();
 
   var LABELS = (function () {
     var out = [], count = {}, i;
@@ -545,6 +555,7 @@ if (typeof document !== 'undefined') (function () {
     } catch (e) { save = { cleared: {}, last: 0, grid: {} }; }
   }
   function storeSave() {
+    if (Q >= 0) return;             /* クエストは本家の進み具合を汚さない */
     try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
   }
   function encode(part) {
@@ -570,6 +581,14 @@ if (typeof document !== 'undefined') (function () {
   var index = 0, p = null, part = [], history = [], finished = false;
   var cells = [], msgTimer = null;
   var dragging = false, moved = false, startCell = -1, lastCell = -1, baseId = 0;
+  /* クエスト用モードだけで使う手数。本家の画面には出さない（足さないバイアス） */
+  var qmoves = 0, qmin = 0;
+
+  /* 親（quest/index.html）へ報せる。親は moves>0 && min>0 でないと無視する */
+  function qsend(type) {
+    if (Q < 0 || !(qmoves > 0 && qmin > 0)) return;
+    parent.postMessage({ type: type, game: 'mado-wake', level: Q, moves: qmoves, min: qmin }, '*');
+  }
 
   function message(t) {
     elMsg.textContent = t;
@@ -683,12 +702,20 @@ if (typeof document !== 'undefined') (function () {
     return Number.isInteger(i) ? i : -1;
   }
 
+  /* 1マスを起点の領域に入れる。所属が変わったときだけ1手
+     （ドラッグ「1回」ではなく変わったマスの数で数える＝なぞり方の上手い下手で差が出ない・spec §4） */
+  function joinCell(i) {
+    if (part[i] === baseId) return;
+    part[i] = baseId;
+    if (Q >= 0) qmoves++;
+  }
+
   /* なぞった道すじのマスを起点の領域にまとめる（指が飛んでも間を埋める） */
   function joinPath(a, b) {
     var n = p.n, r = Math.floor(a / n), c = a % n;
     var rb = Math.floor(b / n), cb = b % n;
-    while (r !== rb) { r += (rb > r) ? 1 : -1; part[r * n + c] = baseId; }
-    while (c !== cb) { c += (cb > c) ? 1 : -1; part[r * n + c] = baseId; }
+    while (r !== rb) { r += (rb > r) ? 1 : -1; joinCell(r * n + c); }
+    while (c !== cb) { c += (cb > c) ? 1 : -1; joinCell(r * n + c); }
   }
 
   elBoard.addEventListener('pointerdown', function (e) {
@@ -714,12 +741,13 @@ if (typeof document !== 'undefined') (function () {
     dragging = false;
     if (moved) {
       part = MadoWake.split(part, p.n);
-      render(); persist(); message('');
+      render(); persist(); message(''); qsend('quest-moves');
     } else if (sizeOf(startCell) >= 2) {
-      /* タップ: そのマスだけ切り離す */
+      /* タップ: そのマスだけ切り離す（1マスの所属が変わる＝1手） */
       part[startCell] = freshId();
+      if (Q >= 0) qmoves++;
       part = MadoWake.split(part, p.n);
-      render(); persist(); message('');
+      render(); persist(); message(''); qsend('quest-moves');
     } else {
       history.pop();
     }
@@ -731,6 +759,14 @@ if (typeof document !== 'undefined') (function () {
     if (finished) return;
     if (MadoWake.samePartition(part, p.solution)) {
       finished = true;
+      if (Q >= 0) {
+        /* クエストは進み具合を書かず、クリア表示だけ出して親に知らせる */
+        elNext.hidden = true;
+        elClear.hidden = false;
+        message('');
+        qsend('quest-solved');
+        return;
+      }
       save.cleared[String(index)] = 1;
       storeSave();
       renderLevelList();
@@ -738,6 +774,7 @@ if (typeof document !== 'undefined') (function () {
       elClear.hidden = false;
       message('');
     } else {
+      if (Q >= 0) { qmoves++; qsend('quest-moves'); }   /* 「できた」で不正解も1手（spec §4） */
       message('どこか違う');
     }
   });
@@ -761,6 +798,13 @@ if (typeof document !== 'undefined') (function () {
   function loadLevel(i) {
     index = i;
     p = MadoWake.parse(PUZZLES[i]);
+    /* 最小手数＝全マス数 − 部屋の数。はじめは1マス1部屋（下の part=[0..N-1]）なので、
+       部屋ごとに1マスを残して残りの所属を変えれば足りる＝Σ(部屋のマス数−1) */
+    var rooms = {}, nroom = 0;
+    for (var qi = 0; qi < p.N; qi++) {
+      if (!rooms[p.solution[qi]]) { rooms[p.solution[qi]] = 1; nroom++; }
+    }
+    qmin = p.N - nroom;
     part = [];
     for (var k = 0; k < p.N; k++) part.push(k);
     var saved = decode(save.grid[String(i)], p.N);
@@ -820,6 +864,8 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
+  /* クエストは iframe の中で開かれるので「‹ パズル箱」も隠す（押すと iframe の中だけが入口に飛んで入れ子が壊れる） */
+  if (Q >= 0) { elLevels.hidden = true; elHome.hidden = true; loadLevel(Q); return; }
   loadSave();
   loadLevel(save.last);
 })();

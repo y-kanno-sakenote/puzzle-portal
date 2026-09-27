@@ -735,7 +735,8 @@ if (typeof document !== 'undefined') (function () {
   /* クエストは iframe の中で開かれるので「‹ パズル箱」も隠す（押すと iframe の中だけが入口に飛んで入れ子が壊れる） */
   if (Q >= 0) { elLevels.hidden = true; elHome.hidden = true; }
   loadLevel(Q >= 0 ? Q : save.last);
-  if (!save.seen) showHelp();
+  /* クエストでは自動で開かない。見た印を保存しないので、出るたび毎回開いてしまうため（？ボタンは使える） */
+  if (Q < 0 && !save.seen) showHelp();
 })();
 </script>
 </body>

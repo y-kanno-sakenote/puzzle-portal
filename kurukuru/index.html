@@ -332,8 +332,18 @@ if (typeof document !== 'undefined') (function () {
   var elClear = document.getElementById('clear');
   var elNext  = document.getElementById('next');
   var elLevels = document.getElementById('levels');
+  var elHome  = document.getElementById('home');
 
   var PUZZLES = Kurukuru.PUZZLES;
+
+  /* クエスト用モード：?quest=<PUZZLESの添字(0始まり)> のときだけ有効。
+     その1問だけ・一覧/つぎへ/戻りリンクを隠す・保存しない・もどす/はじめからでも手数を減らさない（quest/docs/spec.md §4） */
+  var Q = (function () {
+    /* Node の最小DOMスタブには location が無いので、無ければ本家モード扱い */
+    if (typeof location === 'undefined' || !location.search) return -1;
+    var m = /[?&]quest=(\d+)/.exec(location.search), n = m ? parseInt(m[1], 10) : -1;
+    return (n >= 0 && n < PUZZLES.length) ? n : -1;
+  })();
 
   /* 段階名と何本目か（例「入門 3」） */
   var LABELS = (function () {
@@ -360,6 +370,7 @@ if (typeof document !== 'undefined') (function () {
     } catch (e) { save = { cleared: {}, last: 0, rot: {} }; }
   }
   function storeSave() {
+    if (Q >= 0) return;             /* クエストは本家の進み具合を汚さない */
     try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
   }
 
@@ -370,6 +381,14 @@ if (typeof document !== 'undefined') (function () {
   var groups = [];    /* マスごとの <g> */
   var history = [];   /* タップしたマス番号。もどす＝1手戻し */
   var finished = false;
+  /* クエスト用モードだけで使う手数。本家は手数を数えない方針なので画面には出さない */
+  var qmoves = 0, qmin = 0;
+
+  /* 親（quest/index.html）へ報せる。親は moves>0 && min>0 でないと無視する */
+  function qsend(type) {
+    if (Q < 0 || !(qmoves > 0 && qmin > 0)) return;
+    parent.postMessage({ type: type, game: 'kurukuru', level: Q, moves: qmoves, min: qmin }, '*');
+  }
 
   function maskAt(i) { return Kurukuru.rotate(base[i], turn[i]); }
   function currentCells() {
@@ -474,6 +493,14 @@ if (typeof document !== 'undefined') (function () {
     d = Kurukuru.parse(p);
     n = d.n; N = d.N;
     base = d.cells.slice();
+    /* 最小手数＝各マスを正解と同じ見た目にする最少の時計回り回転数の和。
+       十字は回しても同じ・直線は180°で同じなので、一致する最小の回転数を採れば0回転で済む */
+    qmin = 0;
+    for (var qi = 0; qi < N; qi++) {
+      for (var qr = 0; qr < 4; qr++) {
+        if (Kurukuru.rotate(base[qi], qr) === d.sol[qi]) { qmin += qr; break; }
+      }
+    }
     turn = [];
     for (var k = 0; k < N; k++) turn.push(0);
     history = [];
@@ -502,10 +529,12 @@ if (typeof document !== 'undefined') (function () {
 
   function tap(i) {
     turn[i]++;                       /* 見た目は常に時計回り。論理は 4 で割った余り */
+    if (Q >= 0) qmoves++;            /* 1回タップ＝1手（もどす・はじめからでは減らさない） */
     history.push(i);
     if (history.length > 500) history.shift();
     render();
     persist();
+    qsend('quest-moves');
     judge();
   }
 
@@ -521,6 +550,14 @@ if (typeof document !== 'undefined') (function () {
   function judge() {
     if (!Kurukuru.isSolved(currentCells(), n)) return;
     finished = true;
+    if (Q >= 0) {
+      /* クエストは進み具合を書かず、クリア表示だけ出して親に知らせる */
+      render();
+      elNext.hidden = true;
+      elClear.hidden = false;
+      qsend('quest-solved');
+      return;
+    }
     save.cleared[String(index)] = 1;
     persist();
     renderLevelList();
@@ -588,6 +625,8 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
+  /* クエストは iframe の中で開かれるので「‹ パズル箱」も隠す（押すと iframe の中だけが入口に飛んで入れ子が壊れる） */
+  if (Q >= 0) { elLevels.hidden = true; elHome.hidden = true; loadLevel(Q); return; }
   loadSave();
   loadLevel(save.last);
 })();

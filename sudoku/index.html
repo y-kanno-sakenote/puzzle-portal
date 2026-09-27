@@ -477,6 +477,24 @@ if (typeof document !== 'undefined') (function () {
   var CELLS = 81, KEY = 'sudoku';
   var ROW = Sudoku.ROW, COL = Sudoku.COL, BOX = Sudoku.BOX;
 
+  /* クエスト用モード：?quest=<PUZZLESの添字(0始まり)> のときだけ有効。
+     その1問だけ・一覧/つぎへを隠す・保存しない・もどす/はじめからでも手数を減らさない（quest/docs/spec.md §4） */
+  var Q = (function () {
+    var m = /[?&]quest=(\d+)/.exec(location.search), n = m ? parseInt(m[1], 10) : -1;
+    return (n >= 0 && n < PUZZLES.length) ? n : -1;
+  })();
+  var qMoves = 0;
+  /* 最小手数＝空きマスの数（1マスずつ正解を入れればぴったり）。問題から機械的に出す */
+  var qMin = (function () {
+    if (Q < 0) return 0;
+    var g = Sudoku.parse(PUZZLES[Q].puzzle), c = 0, k;
+    for (k = 0; k < CELLS; k++) if (!g[k]) c++;
+    return c;
+  })();
+  function qSend(type) {
+    parent.postMessage({ type: type, game: 'sudoku', level: Q, moves: qMoves, min: qMin }, '*');
+  }
+
   var elTitle = document.getElementById('title');
   var elBoard = document.getElementById('board');
   var elPad   = document.getElementById('pad');
@@ -488,6 +506,7 @@ if (typeof document !== 'undefined') (function () {
   var elNext  = document.getElementById('next');
   var elMsg   = document.getElementById('msg');
   var elLevels = document.getElementById('levels');
+  var elHome  = document.getElementById('home');
 
   /* 段階名と何本目か（例「初級 3」） */
   var LABELS = (function () {
@@ -515,6 +534,7 @@ if (typeof document !== 'undefined') (function () {
     } catch (e) { save = { cleared: {}, last: 0, grid: {}, notes: {} }; }
   }
   function storeSave() {
+    if (Q >= 0) return;   /* クエスト用モードでは本家の進み具合を汚さない */
     try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
   }
 
@@ -661,6 +681,7 @@ if (typeof document !== 'undefined') (function () {
       snapshot();
       grid[sel] = d;
       notes[sel] = 0;
+      if (Q >= 0) { qMoves++; qSend('quest-moves'); }   /* 数字が1マス変わったら1手。メモは答えに関わらないので数えない */
       var p = Sudoku.PEERS[sel], mask = ~(1 << (d - 1));
       for (var k = 0; k < p.length; k++) notes[p[k]] &= mask;   // 同じ行・列・ブロックのメモを消す
     }
@@ -675,6 +696,7 @@ if (typeof document !== 'undefined') (function () {
     if (given[sel]) return;
     if (!grid[sel] && !notes[sel]) return;
     snapshot();
+    if (Q >= 0 && grid[sel]) { qMoves++; qSend('quest-moves'); }   /* 数字を消すのも1手（メモだけ消すのは数えない） */
     grid[sel] = 0;
     notes[sel] = 0;
     message('');
@@ -687,6 +709,13 @@ if (typeof document !== 'undefined') (function () {
     for (var k = 0; k < CELLS; k++) if (!grid[k]) return;
     if (Sudoku.isComplete(grid)) {
       finished = true;
+      if (Q >= 0) {
+        render();
+        elNext.hidden = true;
+        elClear.hidden = false;
+        qSend('quest-solved');
+        return;
+      }
       save.cleared[String(index)] = 1;
       persist();
       renderLevelList();
@@ -779,6 +808,8 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
+  /* クエストは iframe の中で開かれるので「‹ パズル箱」も隠す（押すと iframe の中だけが入口に飛んで入れ子が壊れる） */
+  if (Q >= 0) { elLevels.hidden = true; elNext.hidden = true; elHome.hidden = true; loadLevel(Q); return; }
   loadSave();
   loadLevel(save.last);
 })();

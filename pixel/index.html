@@ -302,6 +302,25 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
   var btnNext = document.getElementById('nextBtn');
   var btnNextBanner = document.getElementById('nextBtnBanner');
   var elLevels = document.getElementById('levels');
+  var elPortal = document.getElementById('portalLink');
+
+  /* クエスト用モード：?quest=<PUZZLESの添字(0始まり)> のときだけ有効。
+     その1問だけ・一覧/次へを隠す・保存しない・もどす/はじめからでも手数を減らさない（quest/docs/spec.md §4） */
+  var Q = (function() {
+    var m = /[?&]quest=(\d+)/.exec(location.search), n = m ? parseInt(m[1], 10) : -1;
+    return (n >= 0 && n < PUZZLES.length) ? n : -1;
+  })();
+  var qMoves = 0;
+  /* 最小手数＝正解で塗るマスの数（1マスずつ塗ればぴったり）。問題から機械的に出す */
+  var qMin = (function() {
+    if (Q < 0) return 0;
+    var sol = PUZZLES[Q].solution, c = 0, k;
+    for (k = 0; k < sol.length; k++) if (sol.charAt(k) === '1') c++;
+    return c;
+  })();
+  function qSend(type) {
+    parent.postMessage({ type: type, game: 'pixel', level: Q, moves: qMoves, min: qMin }, '*');
+  }
 
   var currentIdx = 0;
   var currentPuzzle = null;
@@ -326,6 +345,7 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
   var save = { cleared: {}, last: 0, grid: {} };
 
   function loadSave() {
+    if (Q >= 0) return;   /* クエスト用モードでは本家の進み具合を読まない */
     try {
       var s = localStorage.getItem(SAVE_KEY);
       if (s) {
@@ -340,6 +360,7 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
   }
 
   function persist() {
+    if (Q >= 0) return;   /* クエスト用モードでは本家の進み具合を汚さない */
     try {
       save.last = currentIdx;
       if (!isCleared) {
@@ -624,8 +645,9 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
         elArtOrig.hidden = false;
       }
 
-      btnNext.hidden = (currentIdx >= PUZZLES.length - 1);
+      btnNext.hidden = (Q >= 0) || (currentIdx >= PUZZLES.length - 1);
       renderLevelList();
+      if (Q >= 0) qSend('quest-solved');
     }
   }
 
@@ -641,6 +663,8 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
   /* 入力適用 */
   function applyActionToCell(idx, action) {
     if (idx < 0 || idx >= gridState.length) return;
+    /* 手数は塗りの出入りだけ数える（×印は答えに関わらない）。なぞりも変わったマスの数で数える */
+    if (Q >= 0 && (gridState[idx] === 1) !== (action === 1)) { qMoves++; qSend('quest-moves'); }
     gridState[idx] = action;
   }
 
@@ -785,6 +809,18 @@ var PUZZLES = [{"no": 1, "title": "じゅうじ", "tier": "入門", "w": 5, "h":
     }
   }
 
+  /* クエストは iframe の中で開かれるので、外へ出るリンクは全部隠す（押すと iframe の中だけが移動して入れ子が壊れる）。
+     拡大ボタンは大盤面で要るので残す */
+  if (Q >= 0) {
+    elLevels.hidden = true;
+    btnNext.hidden = true;
+    btnNextBanner.hidden = true;
+    elPortal.hidden = true;
+    var qMake = document.querySelector('#headerActions a[href="tsukuru.html"]');
+    if (qMake) qMake.hidden = true;
+    loadLevel(Q);
+    return;
+  }
   loadSave();
   loadLevel(save.last);
 })();

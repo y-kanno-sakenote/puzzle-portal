@@ -107,11 +107,18 @@ var NAMES = {
 /* クエスト対応済みのゲーム（?quest=<添字> と quest-solved 通知を実装済み）。ここに1行足せば出るようになる（足す側のゲームでは ?quest のとき「‹ パズル箱」も隠す）。
    値は各段の問題番号（LEVELSの添字）の範囲 [最初, 最後]（両端含む）。spec §7
    車をだせ！: 入門0-9・初級10-19・中級20-29・上級30-39・達人40-49 → 易=入門+初級／中=中級／難=上級+達人
-   箱入り娘・すべりロボ: 入門0-9・初級10-19・中級20-29・上級30-39 → 易=入門／中=初級+中級／難=上級 */
+   ピクセル: 入門0-9・初級10-19・中級20-29・上級30-39・特級40-44・達人45-49・名画50-59 → 易=入門+初級／中=中級+上級／難=特級+達人+名画
+   他7本: 入門0-9・初級10-19・中級20-29・上級30-39 → 易=入門／中=初級+中級／難=上級 */
 var QUEST = {
   'car-escape':     { easy: [0, 19], mid: [20, 29], hard: [30, 49] },
   'hakoiri-musume': { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
-  'slide-robots':   { easy: [0, 9],  mid: [10, 29], hard: [30, 39] }
+  'slide-robots':   { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
+  'sudoku':         { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
+  'hoshi-oki':      { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
+  'pixel':          { easy: [0, 19], mid: [20, 39], hard: [40, 59] },
+  'michi-tsunagi':  { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
+  'kurukuru':       { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
+  'mado-wake':      { easy: [0, 9],  mid: [10, 29], hard: [30, 39] }
 };
 /* ステージごとの段と点の上限（spec §3・§4 案②） */
 var STAGES = [
@@ -119,10 +126,11 @@ var STAGES = [
   { name: '2nd', tier: 'mid',  tierName: '中', cap: 1000 },
   { name: '3rd', tier: 'hard', tierName: '難', cap: 10000 }
 ];
-/* 猶予時間G（秒）。spec §4 減点方式。段ごとの既定値＋ゲーム×段の上書き（例 'sudoku': { hard: 240 }） */
-var GRACE = { easy: 60, mid: 120, hard: 180 };
-var GRACE_BY_GAME = {};
-function grace(g, tier) { var o = GRACE_BY_GAME[g]; return (o && o[tier]) || GRACE[tier]; }
+/* 持ち点が尽きるまでの余裕（spec §4 2026-09-27）。時間は採点にもアウトにも使わない。
+   余分に打てる手数 = max(最短×SLACK, FLOOR)。倍率だけだと最短が小さいゲーム（すべりロボ入門は
+   最短3手）で +6手しか許されず厳しすぎるので、どのゲームでも最低 FLOOR 手は許す。数値は叩き台 */
+var SLACK = 2;
+var FLOOR = 10;
 /* キリ番（spec §6）。下3桁777 は別判定 */
 var KIRIBAN = [777777, 77777777, 123456, 1234567, 1000000000];
 
@@ -130,7 +138,6 @@ var $ = function (id) { return document.getElementById(id); };
 var SCREENS = ['title', 'choose', 'play', 'stageEnd', 'final', 'out'];
 var run = null;      /* 1プレイの状態 */
 var current = null;  /* いま解いている問題 */
-var ticker = null;   /* 持ち点表示の更新タイマー */
 
 function show(id) {
   SCREENS.forEach(function (k) { $(k).hidden = k !== id; });
@@ -177,39 +184,31 @@ function play(si, g) {
   var level = r[0] + Math.floor(Math.random() * (r[1] - r[0] + 1));
   run.used[g] = 1;
   /* t0 は問題が表示された時点（iframe の load）から。moves=0 の間は手数減点なし */
-  current = { sys: si, game: g, level: level, cap: st.cap, G: grace(g, st.tier) * 1000,
+  current = { sys: si, game: g, level: level, cap: st.cap,
               t0: null, tPlay: Date.now(), moves: 0, min: 0 };
   $('play').src = '../' + g + '/?quest=' + level;
   show('play');
   hud();
-  clearInterval(ticker);
-  ticker = setInterval(tick, 500);
 }
 
-/* 時間係数：t≤G:1 / G<t<2G:(2G−t)/G / t≥2G:0（spec §4） */
-function timeFactor(t, G) { return t <= G ? 1 : t >= 2 * G ? 0 : (2 * G - t) / G; }
-/* 持ち点 = round(上限 × min(1, 最短/実手数) × 時間係数)。手数が未確定（0）なら手数減点なし */
-function points(cap, moves, min, t, G) {
-  var eff = moves > 0 && min > 0 ? Math.min(1, min / moves) : 1;
-  return Math.round(cap * eff * timeFactor(t, G));
+/* 残り具合：最短までは1、そこから直線的に減り、最短×(1+SLACK) 手で0＝アウト（spec §4）。
+   考える時間は罰しない。手を動かしすぎたときだけ落ちる。手数が未確定（0）なら減らさない */
+function left(moves, min) {
+  if (!(moves > 0 && min > 0) || moves <= min) return 1;
+  return Math.max(0, 1 - (moves - min) / Math.max(min * SLACK, FLOOR));
 }
+function points(cap, moves, min) { return Math.round(cap * left(moves, min)); }
 function elapsed() { return current.t0 === null ? 0 : Date.now() - current.t0; }
 
 function hud() {
   if (!current) return;
-  var t = elapsed();
-  $('hud').textContent = fmt(Math.max(1, points(current.cap, current.moves, current.min, t, current.G))) + '点';
-  $('hud').classList.toggle('down', t > current.G);  /* 表示だけ：猶予Gを過ぎたら赤 */
-}
-function tick() {
-  if (!run || !current) { clearInterval(ticker); return; }
-  if (elapsed() >= 2 * current.G) { out(); return; }
-  hud();
+  $('hud').textContent = fmt(Math.max(1, points(current.cap, current.moves, current.min))) + '点';
+  /* 表示だけ：最短を超えて減り始めたら赤 */
+  $('hud').classList.toggle('down', current.min > 0 && current.moves > current.min);
 }
 
-/* 2Gで即アウト（spec §4）：そこまでの累計・桁数・累計タイムを見せる。キャラなし */
+/* 持ち点が0になったら即アウト（spec §4）：そこまでの累計・桁数・累計タイムを見せる。キャラなし */
 function out() {
-  clearInterval(ticker);
   current = null;
   $('play').removeAttribute('src');
   var cleared = run.stage > 0;
@@ -225,9 +224,8 @@ function isKiriban(n) { return n % 1000 === 777 || KIRIBAN.indexOf(n) >= 0; }
 function solved(d) {
   var st = STAGES[run.stage];
   var t = elapsed();
-  if (t >= 2 * current.G) { out(); return; }
-  clearInterval(ticker);
-  var s = Math.max(1, points(current.cap, d.moves, d.min, t, current.G));
+  if (left(d.moves, d.min) <= 0) { out(); return; }
+  var s = Math.max(1, points(current.cap, d.moves, d.min));
   run.time += t;
   var before = run.stage === 0 ? 0 : digits(run.total);
   run.total *= s;
@@ -271,7 +269,11 @@ window.addEventListener('message', function (e) {
   if (!d || (d.type !== 'quest-solved' && d.type !== 'quest-moves') || d.game !== current.game || d.level !== current.level) return;
   if (!(d.moves > 0 && d.min > 0)) return;
   if (current.t0 === null) current.t0 = current.tPlay;  /* load を取り逃した保険 */
-  if (d.type === 'quest-moves') { current.moves = d.moves; current.min = d.min; hud(); return; }
+  if (d.type === 'quest-moves') {
+    current.moves = d.moves; current.min = d.min;
+    if (left(d.moves, d.min) <= 0) { out(); return; }   /* 手を動かしすぎた＝その場でアウト */
+    hud(); return;
+  }
   solved(d);
 });
 
@@ -282,7 +284,6 @@ $('play').addEventListener('load', function () {
 
 /* ギブアップ（spec §1：そのプレイは点0・キャラなしで終わり）。確認なしでタイトルへ */
 function giveUp() {
-  clearInterval(ticker);
   run = null;
   current = null;
   $('play').removeAttribute('src');

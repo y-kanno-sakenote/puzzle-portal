@@ -311,6 +311,25 @@ if (typeof document !== 'undefined') (function () {
   var elNext  = document.getElementById('next');
   var elMsg   = document.getElementById('msg');
   var elLevels = document.getElementById('levels');
+  var elHome  = document.getElementById('home');
+
+  /* クエスト用モード：?quest=<PUZZLESの添字(0始まり)> のときだけ有効。
+     その1問だけ・一覧/つぎへを隠す・保存しない・もどす/はじめからでも手数を減らさない（quest/docs/spec.md §4） */
+  var Q = (function () {
+    var m = /[?&]quest=(\d+)/.exec(location.search), n = m ? parseInt(m[1], 10) : -1;
+    return (n >= 0 && n < PUZZLES.length) ? n : -1;
+  })();
+  var qMoves = 0;
+  /* 最小手数＝解に含まれる★の数（1マスずつ★を置けばぴったり）。問題から機械的に出す */
+  var qMin = (function () {
+    if (Q < 0) return 0;
+    var sol = PUZZLES[Q].solution, c = 0, k;
+    for (k = 0; k < sol.length; k++) if (sol.charAt(k) === '1') c++;
+    return c;
+  })();
+  function qSend(type) {
+    parent.postMessage({ type: type, game: 'hoshi-oki', level: Q, moves: qMoves, min: qMin }, '*');
+  }
 
   /* 段階名と何本目か（例「初級 3」） */
   var LABELS = (function () {
@@ -337,6 +356,7 @@ if (typeof document !== 'undefined') (function () {
     } catch (e) { save = { cleared: {}, last: 0, grid: {} }; }
   }
   function storeSave() {
+    if (Q >= 0) return;   /* クエスト用モードでは本家の進み具合を汚さない */
     try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
   }
 
@@ -504,6 +524,8 @@ if (typeof document !== 'undefined') (function () {
     snapshot();
     var before = st[startCell];
     st[startCell] = (before + 1) % 3;
+    /* 手数は★の出入りだけ数える（空→×は0手、×→★と★→空が1手）。×は答えに関わらない */
+    if (Q >= 0 && (before === 2 || st[startCell] === 2)) { qMoves++; qSend('quest-moves'); }
     message('');
     render();
     persist();
@@ -519,6 +541,13 @@ if (typeof document !== 'undefined') (function () {
     if (idx.length !== n) return;
     if (HoshiOki.isSolution(p, idx)) {
       finished = true;
+      if (Q >= 0) {
+        render();
+        elNext.hidden = true;
+        elClear.hidden = false;
+        qSend('quest-solved');
+        return;
+      }
       save.cleared[String(index)] = 1;
       persist();
       renderLevelList();
@@ -591,6 +620,8 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
+  /* クエストは iframe の中で開かれるので「‹ パズル箱」も隠す（押すと iframe の中だけが入口に飛んで入れ子が壊れる） */
+  if (Q >= 0) { elLevels.hidden = true; elNext.hidden = true; elHome.hidden = true; loadLevel(Q); return; }
   loadSave();
   loadLevel(save.last);
 })();

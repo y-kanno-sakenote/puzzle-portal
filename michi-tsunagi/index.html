@@ -332,8 +332,18 @@ if (typeof document !== 'undefined') (function () {
   var elNext  = document.getElementById('next');
   var elMsg   = document.getElementById('msg');
   var elLevels = document.getElementById('levels');
+  var elHome  = document.getElementById('home');
 
   var PUZZLES = MichiTsunagi.PUZZLES;
+
+  /* クエスト用モード：?quest=<PUZZLESの添字(0始まり)> のときだけ有効。
+     その1問だけ・一覧/つぎへ/戻りリンクを隠す・保存しない・もどす/はじめからでも手数を減らさない（quest/docs/spec.md §4） */
+  var Q = (function () {
+    /* tools/qa_check.py の最小DOMスタブには location が無いので、無ければ本家モード扱い */
+    if (typeof location === 'undefined' || !location.search) return -1;
+    var m = /[?&]quest=(\d+)/.exec(location.search), n = m ? parseInt(m[1], 10) : -1;
+    return (n >= 0 && n < PUZZLES.length) ? n : -1;
+  })();
 
   /* 段階名と何本目か（例「初級 3」） */
   var LABELS = (function () {
@@ -360,6 +370,7 @@ if (typeof document !== 'undefined') (function () {
     } catch (e) { save = { cleared: {}, last: 0, paths: {} }; }
   }
   function storeSave() {
+    if (Q >= 0) return;             /* クエストは本家の進み具合を汚さない */
     try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
   }
 
@@ -371,6 +382,14 @@ if (typeof document !== 'undefined') (function () {
   var finished = false;
   var lines = [], dots = [], texts = [];
   var drag = null;
+  /* クエスト用モードだけで使う手数。本家の画面には出さない（足さないバイアス） */
+  var qmoves = 0, qmin = 0;
+
+  /* 親（quest/index.html）へ報せる。親は moves>0 && min>0 でないと無視する */
+  function qsend(type) {
+    if (Q < 0 || !(qmoves > 0 && qmin > 0)) return;
+    parent.postMessage({ type: type, game: 'michi-tsunagi', level: Q, moves: qmoves, min: qmin }, '*');
+  }
 
   /* ---- 道の書き出し・読み込み（保存用の1本の文字列） ---- */
   function encode() {
@@ -504,6 +523,8 @@ if (typeof document !== 'undefined') (function () {
     p = PUZZLES[i];
     d = MichiTsunagi.parse(p);
     n = d.n; N = d.N; K = d.pairs.length;
+    /* 最小手数＝全マス数 − ペアの数（対ごとに数字マスから引き始めるので 道の長さ−1 が手数。その総和） */
+    qmin = N - K;
     paths = [];
     for (var k = 0; k < K; k++) paths.push([]);
     var got = decode(save.paths && save.paths[String(i)]);
@@ -566,6 +587,7 @@ if (typeof document !== 'undefined') (function () {
       if (paths[m].length < 2) paths[m] = [];          /* 数字1つだけの残骸は残さない */
     }
     path.push(nx);
+    if (Q >= 0) qmoves++;            /* 道が1マス伸びた＝1手。消すのは数えない（spec §4） */
     reown();
     return true;
   }
@@ -618,6 +640,7 @@ if (typeof document !== 'undefined') (function () {
     drag.moved = true;
     driveTo(i);
     render();
+    qsend('quest-moves');
   });
 
   function endDrag() {
@@ -647,6 +670,14 @@ if (typeof document !== 'undefined') (function () {
   function judge() {
     if (!MichiTsunagi.isComplete(p, paths)) return;
     finished = true;
+    if (Q >= 0) {
+      /* クエストは進み具合を書かず、クリア表示だけ出して親に知らせる */
+      render();
+      elNext.hidden = true;
+      elClear.hidden = false;
+      qsend('quest-solved');
+      return;
+    }
     save.cleared[String(index)] = 1;
     persist();
     renderLevelList();
@@ -716,6 +747,8 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
+  /* クエストは iframe の中で開かれるので「‹ パズル箱」も隠す（押すと iframe の中だけが入口に飛んで入れ子が壊れる） */
+  if (Q >= 0) { elLevels.hidden = true; elHome.hidden = true; loadLevel(Q); return; }
   loadSave();
   loadLevel(save.last);
 })();
