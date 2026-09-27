@@ -99,6 +99,8 @@
         font-size:12px;line-height:1;white-space:nowrap;text-decoration:none;
         border:1px solid var(--frame);background:var(--panel);color:var(--sub);-webkit-tap-highlight-color:transparent}
   #home:active{background:#eeece7}
+  /* 縦持ちでは上端に「横にしてください」の帯（#rotate・高さ約26px）が出るので、その下へずらす */
+  @media (orientation:portrait){ #home{top:calc(26px + min(14px,2vh))} }
 
   #helpPanel{position:fixed;inset:0;z-index:35;
              display:flex;flex-direction:column;align-items:center;justify-content:space-between;
