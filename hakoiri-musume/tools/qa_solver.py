@@ -13,8 +13,10 @@
 使い方:
   python3 tools/qa_solver.py
 """
+import atexit
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -25,8 +27,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 W, H = 4, 5
 GOAL = (1, 3)
-SCRATCH = Path("/private/tmp/claude-501/-Users-ymacmini-Documents-claudecode-macmini"
-                "/84792f8b-2118-477f-8a4f-455403769681/scratchpad")
+# 一時JSの置き場。実行ごとに新しく作り、終わったら消す（特定セッションのパスに固定しない）
+SCRATCH = Path(tempfile.mkdtemp(prefix="hakoiri_qa_"))
+atexit.register(shutil.rmtree, SCRATCH, True)
 
 
 # ============================================================ 盤面パース＆妥当性
@@ -300,6 +303,7 @@ var document = {
 };
 var window = (typeof window !== 'undefined') ? window : {};
 window.scrollTo = function(){};
+var location = { search: '', hash: '' };  // ?quest モードの判定が location.search を読む（本家モード＝クエリ無し）
 """
 
 

@@ -13,10 +13,13 @@
 使い方:
   python3 tools/qa_solver.py
 """
+import atexit
 import json
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from collections import deque
 from pathlib import Path
@@ -34,8 +37,9 @@ for _bx in (W // 2 - 1, W // 2):
         BLOCK.add(_by * W + _bx)
 CORNER_VALUES = {3, 6, 9, 12}   # N+E, E+S, S+W, W+N
 TIERS = [("入門", 3, 4), ("初級", 5, 6), ("中級", 7, 8), ("上級", 9, 10 ** 9)]
-SCRATCH = Path("/private/tmp/claude-501/-Users-ymacmini-Documents-claudecode-macmini"
-                "/84792f8b-2118-477f-8a4f-455403769681/scratchpad")
+# 一時JSの置き場。実行ごとに新しく作り、終わったら消す（特定セッションのパスに固定しない）
+SCRATCH = Path(tempfile.mkdtemp(prefix="slide_qa_"))
+atexit.register(shutil.rmtree, SCRATCH, True)
 
 
 def tier_of(m):
@@ -359,6 +363,7 @@ var document = {
 };
 var window = (typeof window !== 'undefined') ? window : {};
 window.scrollTo = function(){};
+var location = { search: '', hash: '' };  // ?quest モードの判定が location.search を読む（本家モード＝クエリ無し）
 function getComputedStyle(){ return { backgroundColor: '#000' }; }
 """
 
