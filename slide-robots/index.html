@@ -30,6 +30,11 @@
   }
   #callOut{font-size:15px;color:var(--sub);white-space:nowrap}
   #callOut b{color:var(--ink);font-weight:700;font-size:17px}
+  /* 360px 未満（320px幅など）だけ詰める：「上級 10」＋手数2桁でも見出しを1行に保つ */
+  @media (max-width:359px){
+    header{gap:4px} #titleWrap{gap:4px}
+    #callOut{font-size:14px} #callOut b{font-size:16px}
+  }
 
   #stage{position:relative}
   #board{
