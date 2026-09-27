@@ -21,6 +21,7 @@
   header{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:2px 2px 10px}
   #titleWrap{display:flex;align-items:center;gap:6px}
   #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+  #home{font-size:13px;color:var(--sub);text-decoration:none;white-space:nowrap}
   #helpBtn{
     width:24px;height:24px;margin:0;padding:0;border-radius:50%;
     font-size:13px;font-weight:700;line-height:1;vertical-align:2px;
@@ -121,7 +122,7 @@
 <body>
 <div id="app">
   <header>
-    <div id="titleWrap"><span id="title">入門 1</span><button id="helpBtn" type="button" aria-label="あそびかた">？</button></div>
+    <div id="titleWrap"><a id="home" href="../">‹ パズル箱</a><span id="title">入門 1</span><button id="helpBtn" type="button" aria-label="あそびかた">？</button></div>
     <div id="callOut"></div>
   </header>
 

@@ -19,6 +19,8 @@
   #app{max-width:480px;margin:0 auto;padding:10px 10px 40px}
   header{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:2px 2px 10px}
   #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+  #titleWrap{display:flex;align-items:baseline;gap:8px;min-width:0}
+  #home{font-size:13px;color:var(--sub);text-decoration:none;white-space:nowrap}
   #counts{font-size:14px;color:var(--sub);white-space:nowrap}
   #counts b{color:var(--ink);font-weight:700}
 
@@ -83,7 +85,7 @@
 <body>
 <div id="app">
   <header>
-    <div id="title">入門 1</div>
+    <div id="titleWrap"><a id="home" href="../">‹ パズル箱</a><div id="title">入門 1</div></div>
     <div id="counts">手数 <b id="moves">0</b> ／ 最短 <b id="best">3</b></div>
   </header>
 
