@@ -19,6 +19,8 @@
   .stage{font-size:15px;color:var(--sub);margin:0 0 18px}
   .stage b{color:var(--ink);font-size:17px;margin-right:10px}
   #cards{display:flex;flex-direction:column}
+  /* やめるは最後の札から離す＝札を狙った指が当たらない（やめると3rdの前でも取り消せない） */
+  #giveup{margin-top:18px}
   .big:disabled{order:1;padding:8px 0;margin-bottom:4px;font-size:14px;font-weight:400;color:var(--sub);background:transparent;border-color:transparent;cursor:default}
   .big small{display:block;font-size:13px;font-weight:400;color:var(--sub);margin-top:4px}
   .num{font-size:min(56px,12vw);font-weight:700;line-height:1.1;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -80,7 +82,7 @@
 </section>
 
 <section class="screen" id="out" hidden>
-  <div style="font-size:22px;font-weight:700;margin:0 0 6px">アウト</div>
+  <div id="outHead" style="font-size:22px;font-weight:700;margin:0 0 6px">アウト</div>
   <div class="label">累計</div>
   <div class="num" id="outScore"></div>
   <div class="line" id="outDigits"></div>
@@ -207,10 +209,12 @@ function hud() {
   $('hud').classList.toggle('down', current.min > 0 && current.moves > current.min);
 }
 
-/* 持ち点が0になったら即アウト（spec §4）：そこまでの累計・桁数・累計タイムを見せる。キャラなし */
-function out() {
+/* 持ち点が0になったら即アウト（spec §4）：そこまでの累計・桁数・累計タイムを見せる。キャラなし。
+   ギブアップも同じ画面で終える（見出しだけ変える） */
+function out(gaveUp) {
   current = null;
   $('play').removeAttribute('src');
+  $('outHead').textContent = gaveUp ? 'ギブアップ' : 'アウト';
   var cleared = run.stage > 0;
   $('outScore').innerHTML = (cleared ? fmt(run.total) : '0') + '<small>点</small>';
   $('outDigits').textContent = cleared ? digits(run.total) + '桁' : '';
@@ -282,13 +286,9 @@ $('play').addEventListener('load', function () {
   if (current && current.t0 === null && $('play').getAttribute('src')) current.t0 = Date.now();
 });
 
-/* ギブアップ（spec §1：そのプレイは点0・キャラなしで終わり）。確認なしでタイトルへ */
-function giveUp() {
-  run = null;
-  current = null;
-  $('play').removeAttribute('src');
-  show('title');
-}
+/* ギブアップ（spec §1 2026-09-27）：そこまでにクリアしたステージの累計で終える。キャラなし。
+   解いている途中のステージの持ち点は数えない。数えると、解くよりやめる方が得な場面が出るため */
+function giveUp() { out(true); }
 
 $('start').addEventListener('click', start);
 $('again').addEventListener('click', start);
