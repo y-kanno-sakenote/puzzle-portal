@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>ボス</title>
+<style>
+  /* 色は本家かぶせっこと同じ。新しい色は足さない */
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --thick:#5d5952;
+    --blue:#2f7fd4; --red:#d94f43;
+    --board:min(84vw,300px,46vh);
+    --cell:calc(var(--board) / 3);
+    --p3:calc(var(--cell) * 0.84);
+    --p2:calc(var(--cell) * 0.60);
+    --p1:calc(var(--cell) * 0.38);
+    /* 持ち駒は盤より小さく描く。6個を幅360pxの1列に収めるため */
+    --h3:calc(var(--p3) * 0.7);
+    --h2:calc(var(--p2) * 0.7);
+    --h1:calc(var(--p1) * 0.7);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+    touch-action:none;
+  }
+
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+       gap:min(6px,1vh);padding:44px 16px 12px}
+
+  .side{width:100%;display:flex;align-items:center;justify-content:center}
+  .side.dim{opacity:.26}
+  .hand{display:flex;align-items:center;justify-content:center;gap:min(10px,2.4vw);
+        min-height:calc(var(--h3) + 4px)}
+
+  #board{display:grid;grid-template-columns:repeat(3,var(--cell));grid-template-rows:repeat(3,var(--cell))}
+  .cell{width:var(--cell);height:var(--cell);display:flex;align-items:center;justify-content:center;
+        border:1px solid var(--frame);background:var(--panel)}
+  .cell:nth-child(1){border-top-left-radius:10px}
+  .cell:nth-child(3){border-top-right-radius:10px}
+  .cell:nth-child(7){border-bottom-left-radius:10px}
+  .cell:nth-child(9){border-bottom-right-radius:10px}
+  /* ボスの直前の手：どこから（点線）どこへ（太枠）。間をおいても見落としたときの手がかり */
+  .cell.lastTo{box-shadow:inset 0 0 0 3px var(--thick)}
+  .cell.lastFrom{outline:2px dashed var(--frame);outline-offset:-6px}
+
+  .piece{border-radius:50%;border:2px solid rgba(0,0,0,.16);flex:0 0 auto}
+  .piece.s3{width:var(--p3);height:var(--p3)}
+  .piece.s2{width:var(--p2);height:var(--p2)}
+  .piece.s1{width:var(--p1);height:var(--p1)}
+  .hand .piece.s3{width:var(--h3);height:var(--h3)}
+  .hand .piece.s2{width:var(--h2);height:var(--h2)}
+  .hand .piece.s1{width:var(--h1);height:var(--h1)}
+  .piece.pbottom{background:var(--blue)}
+  .piece.ptop{background:var(--red)}
+  .piece.held{opacity:.2}
+  .piece.ghost{position:fixed;z-index:20;pointer-events:none;margin:0}
+
+  .note{height:18px;font-size:12px;line-height:18px;color:var(--sub);text-align:center}
+  .note.now{color:var(--ink);font-weight:700}
+
+  .corner{position:fixed;top:8px;z-index:36;height:28px;margin:0;
+          font:inherit;font-size:12px;line-height:1;
+          border:1px solid var(--frame);background:var(--panel);color:var(--sub);
+          display:flex;align-items:center;justify-content:center;
+          cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .corner:active{background:#eeece7}
+  #resign{left:16px;padding:0 12px;border-radius:14px}
+  #helpBtn{right:16px;width:28px;padding:0;border-radius:50%;font-size:14px;font-weight:700}
+  .corner[hidden]{display:none}
+
+  #over,#helpPanel{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+                   gap:10px;background:rgba(245,244,241,.94);padding:24px 16px}
+  #over{z-index:30}
+  #helpPanel{z-index:35;background:rgba(245,244,241,.96);cursor:pointer}
+  #over[hidden],#helpPanel[hidden]{display:none}
+  .res{font-size:26px;font-weight:700;text-align:center}
+  .res span{display:block;font-size:13px;font-weight:400;color:var(--sub)}
+  .helpText{font-size:14px;line-height:1.9;text-align:center;color:var(--ink);max-width:440px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="side" id="sideBoss"><div class="hand" id="handBoss"></div></div>
+  <div class="note" id="noteBoss"></div>
+  <div id="board"></div>
+  <div class="note" id="notePlayer"></div>
+  <div class="side" id="sidePlayer"><div class="hand" id="handPlayer"></div></div>
+</div>
+
+<button class="corner" id="resign" type="button">降参</button>
+<button class="corner" id="helpBtn" type="button" aria-label="あそびかた">？</button>
+
+<!-- ボスは1プレイに1回しか出ないので、見たかどうかは覚えず毎回はじめに出す（何も保存しない） -->
+<div id="helpPanel">
+  <div class="res">ボス</div>
+  <div class="helpText">
+    交互に、持ち駒を置くか盤の自分の駒を動かす<br>
+    大きい駒は小さい駒にかぶせられる（相手のでも）<br>
+    かぶせた駒は下に残り、どけるとまた出てくる<br>
+    見えている自分の駒が3つ並んだら勝ち<br>
+    あなたは青・先手。20手のうちに並べないと負け
+  </div>
+</div>
+
+<div id="over" hidden><div class="res" id="res"></div></div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。Node で検証するため window.Boss に公開）
+   規則は本家 kabusekko/index.html の写し。ゲーム間でコードを共有しないので、
+   読みで何万局面も回せるよう、駒を数、持ち駒を個数で持つ形に書き直した
+
+   駒 = 大きさ × 向き（遊び手 +、ボス −）。1=小 2=中 3=大
+   state = { board:[9マスの積み重ね（末尾が見えている駒）], hands:[[_,小,中,大]×2],
+             turn:0|1, ply:指した数, winner:-1|0|1 }   0=遊び手（青・先手） 1=ボス（赤）
+   手 = { from:'hand'|マス, size, to }
+   ===================================================================== */
+var Boss = (function () {
+
+  var PLAYER = 0, BOSS = 1;
+  var DEPTH = 2;              /* 読みの深さ（手数）。叩き台。2 は「1手先だけ見る先手」に約15%、「3手読む先手」に約76%負ける（2026-10-01 実測）。3 は3手読みに毎回5手で破られる */
+  var MAX_PLIES = 40;         /* 合わせて40手（各20手）で決まらなければボスの勝ち（繰り返しで終わらないため） */
+  var LINES = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+    [0, 4, 8], [2, 4, 6]
+  ];
+
+  function initialState() {
+    return {
+      board: [[], [], [], [], [], [], [], [], []],
+      hands: [[0, 2, 2, 2], [0, 2, 2, 2]],   /* 各自 大2・中2・小2 */
+      turn: PLAYER, ply: 0, winner: -1
+    };
+  }
+
+  function clone(s) {
+    return {
+      board: s.board.map(function (st) { return st.slice(); }),
+      hands: [s.hands[0].slice(), s.hands[1].slice()],
+      turn: s.turn, ply: s.ply, winner: s.winner
+    };
+  }
+
+  function sign(who) { return who === PLAYER ? 1 : -1; }
+  function ownerOf(p) { return p > 0 ? PLAYER : BOSS; }
+
+  /* 見えている駒（一番上）。空きは 0。下の駒は返さない */
+  function top(s, c) { var st = s.board[c]; return st.length ? st[st.length - 1] : 0; }
+
+  /* 空きマス、または自分より小さい駒の上だけに置ける */
+  function canPlace(s, c, size) { var t = top(s, c); return t === 0 || Math.abs(t) < size; }
+
+  /* 手番の人が指せる手を全部。持ち駒は同じ大きさを1通りに数える（本家と同じ） */
+  function legalMoves(s) {
+    var out = [];
+    if (s.winner >= 0) return out;
+    var who = s.turn, h = s.hands[who], size, c, d;
+    for (size = 3; size >= 1; size--) {
+      if (!h[size]) continue;
+      for (c = 0; c < 9; c++) if (canPlace(s, c, size)) out.push({ from: 'hand', size: size, to: c });
+    }
+    for (c = 0; c < 9; c++) {
+      var p = top(s, c);
+      if (p === 0 || ownerOf(p) !== who) continue;
+      size = Math.abs(p);
+      for (d = 0; d < 9; d++) if (d !== c && canPlace(s, d, size)) out.push({ from: c, size: size, to: d });
+    }
+    return out;
+  }
+
+  /* 見えている駒だけで3並びができている人（[遊び手, ボス] の真偽） */
+  function lines(s) {
+    var has = [false, false];
+    for (var i = 0; i < 8; i++) {
+      var L = LINES[i], a = top(s, L[0]), b = top(s, L[1]), c = top(s, L[2]);
+      if (a > 0 && b > 0 && c > 0) has[PLAYER] = true;
+      else if (a < 0 && b < 0 && c < 0) has[BOSS] = true;
+    }
+    return has;
+  }
+
+  /* 指した本人の列が先。本人の列が無く相手の列が現れていれば相手の勝ち（本家 judgeAfter と同じ） */
+  function judge(s, mover) {
+    var has = lines(s);
+    if (has[mover]) return mover;
+    if (has[1 - mover]) return 1 - mover;
+    return -1;
+  }
+
+  /* その場で指す（読みの中で何万回も呼ぶので写さない）。戻すための控えを返す */
+  function make(s, m) {
+    var who = s.turn, undo = { winner: s.winner };
+    if (m.from === 'hand') s.hands[who][m.size]--;
+    else s.board[m.from].pop();              /* どけると下の駒がまた現れる */
+    s.board[m.to].push(sign(who) * m.size);
+    s.winner = judge(s, who);
+    s.turn = 1 - who;
+    s.ply++;
+    return undo;
+  }
+  function unmake(s, m, undo) {
+    s.ply--;
+    s.turn = 1 - s.turn;
+    var who = s.turn;
+    s.board[m.to].pop();
+    if (m.from === 'hand') s.hands[who][m.size]++;
+    else s.board[m.from].push(sign(who) * m.size);
+    s.winner = undo.winner;
+  }
+
+  function isLegal(s, m) {
+    if (!m) return false;
+    var ms = legalMoves(s);
+    for (var i = 0; i < ms.length; i++) {
+      if (ms[i].from === m.from && ms[i].to === m.to && (m.from !== 'hand' || ms[i].size === m.size)) return true;
+    }
+    return false;
+  }
+
+  /* 新しい状態を返す（元は変えない）。画面と検証用 */
+  function applyMove(s, m) {
+    if (!isLegal(s, m)) throw new Error('boss: 反則の手');
+    var ns = clone(s);
+    make(ns, m);
+    return ns;
+  }
+
+  /* ---- コンピュータ：ミニマックス（αβ・ネガマックス形） ---- */
+  var WIN = 10000;
+  var LW = [0, 1, 6];        /* 列の中の自分の駒の数ごとの重み（相手の駒が混じる列は数えない） */
+
+  /* 手番の人から見た局面の良さ。見えている駒の列だけで測る */
+  function evaluate(s) {
+    var v = 0;
+    for (var i = 0; i < 8; i++) {
+      var L = LINES[i], mine = 0, theirs = 0;
+      for (var k = 0; k < 3; k++) {
+        var p = top(s, L[k]);
+        if (p === 0) continue;
+        if (ownerOf(p) === s.turn) mine++; else theirs++;
+      }
+      if (!theirs) v += LW[mine];
+      else if (!mine) v -= LW[theirs];
+    }
+    return v;
+  }
+
+  function search(s, depth, alpha, beta) {
+    /* 決着は手番の人から見た値。残りの深さを足して、早い勝ち・遅い負けを選ぶ */
+    if (s.winner >= 0) return (s.winner === s.turn ? 1 : -1) * (WIN + depth);
+    if (s.ply >= MAX_PLIES) return (s.turn === BOSS ? 1 : -1) * (WIN + depth);
+    if (depth === 0) return evaluate(s);
+    var ms = legalMoves(s), best = -Infinity;
+    for (var i = 0; i < ms.length; i++) {
+      var u = make(s, ms[i]);
+      var v = -search(s, depth - 1, -beta, -alpha);
+      unmake(s, ms[i], u);
+      if (v > best) best = v;
+      if (v > alpha) alpha = v;
+      if (alpha >= beta) break;
+    }
+    return best;
+  }
+
+  /* 手番の人の手を選ぶ。手を混ぜてから「より良い手」だけを採るので、同じ値の手からは無作為に選ばれる */
+  function chooseMove(s, depth, rand) {
+    depth = depth || DEPTH;
+    rand = rand || Math.random;
+    var w = clone(s), ms = legalMoves(w), i, j, t;
+    for (i = ms.length - 1; i > 0; i--) { j = Math.floor(rand() * (i + 1)); t = ms[i]; ms[i] = ms[j]; ms[j] = t; }
+    var best = null, alpha = -Infinity;
+    for (i = 0; i < ms.length; i++) {
+      var u = make(w, ms[i]);
+      var v = -search(w, depth - 1, -Infinity, -alpha);
+      unmake(w, ms[i], u);
+      if (v > alpha) { alpha = v; best = ms[i]; }
+    }
+    return best;
+  }
+
+  return {
+    PLAYER: PLAYER, BOSS: BOSS, DEPTH: DEPTH, MAX_PLIES: MAX_PLIES, LINES: LINES,
+    initialState: initialState, clone: clone, top: top,
+    legalMoves: legalMoves, isLegal: isLegal, applyMove: applyMove,
+    lines: lines, judge: judge, make: make, unmake: unmake,
+    evaluate: evaluate, chooseMove: chooseMove
+  };
+})();
+
+if (typeof window !== 'undefined') window.Boss = Boss;
+if (typeof globalThis !== 'undefined') globalThis.Boss = Boss;
+</script>
+
+<script>
+/* =====================================================================
+   画面（1人用・縦持ち。相手はコンピュータなので180度は回さない）
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var P = Boss.PLAYER, B = Boss.BOSS;
+  var PAUSE = 500;            /* ボスが指すまでの間（ms）。何をしたか目で追えるように */
+
+  var elBoard = document.getElementById('board');
+  var elHand = [document.getElementById('handPlayer'), document.getElementById('handBoss')];
+  var elSide = [document.getElementById('sidePlayer'), document.getElementById('sideBoss')];
+  var elNote = [document.getElementById('notePlayer'), document.getElementById('noteBoss')];
+  var elApp = document.getElementById('app');
+  var elOver = document.getElementById('over');
+  var elHelp = document.getElementById('helpPanel');
+  var elResign = document.getElementById('resign');
+
+  var state = Boss.initialState();
+  var cells = [], drag = null, thinking = false, done = false, last = null;
+
+  for (var i = 0; i < 9; i++) {
+    var c = document.createElement('div');
+    c.className = 'cell';
+    elBoard.appendChild(c);
+    cells.push(c);
+  }
+
+  function pieceEl(who, size) {
+    var d = document.createElement('div');
+    d.className = 'piece s' + size + (who === P ? ' pbottom' : ' ptop');
+    return d;
+  }
+
+  function playerMoves() { return Math.ceil(state.ply / 2); }
+
+  /* 見えているのは一番上の駒だけ（下の駒は描かない） */
+  function render() {
+    var i, k, el;
+    for (i = 0; i < 9; i++) {
+      var box = cells[i];
+      while (box.firstChild) box.removeChild(box.firstChild);
+      box.classList.toggle('lastTo', !!last && last.to === i);
+      box.classList.toggle('lastFrom', !!last && last.from === i);
+      var p = Boss.top(state, i);
+      if (!p) continue;
+      el = pieceEl(p > 0 ? P : B, Math.abs(p));
+      el.dataset.from = String(i);
+      el.dataset.who = String(p > 0 ? P : B);
+      el.dataset.size = String(Math.abs(p));
+      box.appendChild(el);
+    }
+    [P, B].forEach(function (who) {
+      var box = elHand[who], h = state.hands[who];
+      while (box.firstChild) box.removeChild(box.firstChild);
+      for (var size = 3; size >= 1; size--) {
+        for (k = 0; k < h[size]; k++) {
+          el = pieceEl(who, size);
+          el.dataset.from = 'hand';
+          el.dataset.who = String(who);
+          el.dataset.size = String(size);
+          box.appendChild(el);
+        }
+      }
+      var mine = state.turn === who && !done;
+      elSide[who].classList.toggle('dim', !mine);
+      elNote[who].classList.toggle('now', mine);
+    });
+    var left = Boss.MAX_PLIES / 2 - playerMoves();
+    elNote[P].textContent = done ? '' : (state.turn === P ? 'あなたの番（あと ' + left + ' 手）' : '');
+    elNote[B].textContent = done ? '' : (state.turn === B ? 'ボスの番' : '');
+    if (drag && drag.origin) drag.origin.classList.add('held');
+  }
+
+  /* ---- 決着。親へは1回だけ知らせる ---- */
+  function finish(win, why) {
+    if (done) return;
+    done = true;
+    endDrag();
+    render();
+    elResign.hidden = true;
+    var n = playerMoves();
+    document.getElementById('res').innerHTML = win
+      ? 'かち<span>' + n + ' 手で勝ち</span>'
+      : 'まけ<span>' + why + '</span>';
+    elOver.hidden = false;
+    try { parent.postMessage({ type: 'quest-boss', win: win, moves: n }, '*'); } catch (e) {}
+  }
+
+  /* 1手ごとに：勝ち負け → 打ち切り → 次の手番 */
+  function afterMove() {
+    render();
+    if (state.winner === P) return finish(true);
+    if (state.winner === B) return finish(false, 'ボスの列がそろった');
+    if (state.ply >= Boss.MAX_PLIES) return finish(false, (Boss.MAX_PLIES / 2) + ' 手で決着つかず');
+    if (state.turn === B) bossTurn();
+  }
+
+  function bossTurn() {
+    thinking = true;
+    render();
+    setTimeout(function () {
+      if (done) return;
+      var m = Boss.chooseMove(state);
+      state = Boss.applyMove(state, m);
+      last = m;
+      thinking = false;
+      afterMove();
+    }, PAUSE);
+  }
+
+  /* ---- 操作：つまんで引く（本家と同じ） ---- */
+  function cellAt(x, y) {
+    for (var i = 0; i < 9; i++) {
+      var r = cells[i].getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return i;
+    }
+    return -1;
+  }
+  function moveGhost(x, y) {
+    if (!drag) return;
+    drag.ghost.style.left = (x - drag.w / 2) + 'px';
+    drag.ghost.style.top = (y - drag.h / 2) + 'px';
+  }
+  function endDrag() {
+    if (!drag) return;
+    if (drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
+    if (drag.origin) drag.origin.classList.remove('held');
+    drag = null;
+  }
+
+  elApp.addEventListener('pointerdown', function (e) {
+    if (done || thinking || drag || state.turn !== P) return;
+    var el = e.target && e.target.closest ? e.target.closest('.piece') : null;
+    if (!el || el.dataset.who !== String(P)) return;          /* ボスの駒は動かせない */
+    var size = Number(el.dataset.size);
+    var from = el.dataset.from === 'hand' ? 'hand' : Number(el.dataset.from);
+    e.preventDefault();
+    try { elApp.setPointerCapture(e.pointerId); } catch (err) {}
+    /* 持ち駒は小さく描いているが、つまんだら盤の大きさで見せる */
+    var g = document.createElement('div');
+    g.className = 'piece ghost s' + size + ' pbottom';
+    document.body.appendChild(g);
+    var r = g.getBoundingClientRect();
+    drag = { id: e.pointerId, from: from, size: size, origin: el, ghost: g, w: r.width, h: r.height };
+    el.classList.add('held');
+    moveGhost(e.clientX, e.clientY);
+  });
+  elApp.addEventListener('pointermove', function (e) {
+    if (!drag || drag.id !== e.pointerId) return;
+    e.preventDefault();
+    moveGhost(e.clientX, e.clientY);
+  });
+  elApp.addEventListener('pointerup', function (e) {
+    if (!drag || drag.id !== e.pointerId) return;
+    var move = { from: drag.from, size: drag.size, to: cellAt(e.clientX, e.clientY) };
+    endDrag();
+    /* 置けない所で離したら何も起きない。戻す動きは見せず、元の位置のまま */
+    if (done || !Boss.isLegal(state, move)) { render(); return; }
+    state = Boss.applyMove(state, move);
+    last = null;
+    afterMove();
+  });
+  elApp.addEventListener('pointercancel', function (e) {
+    if (!drag || drag.id !== e.pointerId) return;
+    endDrag();
+    render();
+  });
+
+  elResign.addEventListener('click', function () { finish(false, '降参'); });
+  document.getElementById('helpBtn').addEventListener('click', function () { elHelp.hidden = false; });
+  elHelp.addEventListener('click', function () { elHelp.hidden = true; });
+
+  render();
+})();
+</script>
+</body>
+</html>

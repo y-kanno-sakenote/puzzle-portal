@@ -88,6 +88,7 @@
   <div id="charRare"></div>
   <div class="num" id="finalScore"></div>
   <div class="line" id="finalDigits"></div>
+  <div class="line" id="finalBoss"></div>
   <div class="line time" id="finalTime" style="margin-bottom:30px"></div>
   <button type="button" class="big" id="again">もう一度</button>
   <button type="button" class="back" id="toTitle">‹ タイトルへ</button>
@@ -147,6 +148,15 @@ var SLACK = 2;
 var FLOOR = 10;
 /* キリ番（spec §6）。下3桁777 は別判定 */
 var KIRIBAN = [777777, 77777777, 123456, 1234567, 1000000000];
+/* 幕間とボス（spec §9 2版目）。添字＝そのステージを解いた後。早撃ちは勝てば×2、負けても減らない */
+var BOUTS = [
+  { type: 'quest-duel', name: '早撃ち', src: 'hayauchi.html?cpu=1200' },
+  { type: 'quest-duel', name: '早撃ち', src: 'hayauchi.html?cpu=800' },
+  { type: 'quest-boss', name: 'ボス',   src: 'boss.html' }
+];
+var DUEL_RATE = 2;
+/* ボスの倍率 = min(MAX, max(MIN, TOP − 手数))：3手で×10、11手以上は×2。負け・降参は×1。数値は叩き台 */
+var BOSS_TOP = 13, BOSS_MAX = 10, BOSS_MIN = 2;
 
 var $ = function (id) { return document.getElementById(id); };
 var SCREENS = ['title', 'choose', 'play', 'stageEnd', 'final', 'out', 'records'];
@@ -165,7 +175,7 @@ function digits(n) { return String(n).length; }
 function mmss(ms) { var s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); }
 
 function start() {
-  run = { stage: 0, total: 1, used: {}, systems: [], exact: false, time: 0 };
+  run = { stage: 0, total: 1, used: {}, systems: [], exact: false, time: 0, bouts: 0, bout: null, boss: 0 };
   choose();
 }
 
@@ -242,8 +252,8 @@ var RECORD_KEY = 'quest-records';
 var RECORD_MAX = 10;
 var lastRank = 0;   /* 直前のプレイが記録の何位に入ったか（圏外・未保存は0）。終わりの画面で使う */
 function validRecord(r) {
-  /* 満点は 100×1,000×10,000＝10億。それを超える点は書き換えられたデータ */
-  return !!r && Number.isInteger(r.score) && r.score > 0 && r.score <= 1000000000
+  /* 満点は 100×1,000×10,000×2×2×10＝400億。それを超える点は書き換えられたデータ */
+  return !!r && Number.isInteger(r.score) && r.score > 0 && r.score <= 40000000000
     && Number.isInteger(r.stages) && r.stages >= 1 && r.stages <= 3
     && Number.isInteger(r.time) && r.time >= 0 && Number.isFinite(r.at)
     && (r.end === 'clear' || r.end === 'out' || r.end === 'giveup')
@@ -327,11 +337,45 @@ function solved(d) {
     ? before + '桁 → <span class="up">' + after + '桁</span>' + (after > before ? ' ↑' : '')
     : '<span class="up">' + after + '桁</span>';
   $('endTime').textContent = 'タイム ' + mmss(t) + (before ? ' ／ 累計 ' + mmss(run.time) : '');
+  $('onward').textContent = run.stage < STAGES.length - 1 || BOUTS[run.stage] ? 'つぎへ' : 'けっか';
+  setTimeout(function () { show('stageEnd'); $('play').removeAttribute('src'); }, 700);
+}
+
+/* 幕間の早撃ち・ボス（spec §9）。持ち点の帯と「やめる」は出さない（早撃ちは一瞬・ボスには降参がある） */
+function bout() {
+  run.bout = BOUTS[run.stage].type;
+  $('play').src = BOUTS[run.stage].src;
+  show('play');
+  $('quit').hidden = $('hud').hidden = true;
+}
+function bossRate(moves) {
+  if (!(moves > 0)) return BOSS_MIN;   /* 手数が届かなければ一番低い倍率 */
+  return Math.min(BOSS_MAX, Math.max(BOSS_MIN, BOSS_TOP - moves));
+}
+/* 決着：勝てば累計に倍率を掛ける。結果はステージの終わりと同じ画面で見せる */
+function boutEnd(d) {
+  var b = BOUTS[run.stage], win = d.win === true;
+  var rate = !win ? 1 : b.type === 'quest-boss' ? bossRate(d.moves) : DUEL_RATE;
+  var before = digits(run.total);
+  run.bout = null;
+  run.bouts++;
+  run.total *= rate;
+  if (b.type === 'quest-boss') run.boss = win ? rate : 0;
+  var after = digits(run.total);
+  $('endStage').textContent = b.name;
+  $('endScore').textContent = win ? '勝ち ×' + rate : '負け';
+  $('endDetail').textContent = win && b.type === 'quest-boss' ? d.moves + '手' : '';
+  $('endTotal').innerHTML = fmt(run.total) + '<small>点</small>';
+  $('endDigits').innerHTML = win
+    ? before + '桁 → <span class="up">' + after + '桁</span>' + (after > before ? ' ↑' : '')
+    : after + '桁';
+  $('endTime').textContent = '';
   $('onward').textContent = run.stage < STAGES.length - 1 ? 'つぎへ' : 'けっか';
   setTimeout(function () { show('stageEnd'); $('play').removeAttribute('src'); }, 700);
 }
 
 function onward() {
+  if (BOUTS[run.stage] && run.bouts <= run.stage) { bout(); return; }   /* このステージの後の幕間・ボスがまだ */
   run.stage++;
   if (run.stage < STAGES.length) { choose(); return; }
   var sy = run.systems.map(function (i) { return SYSTEMS[i]; });
@@ -346,6 +390,7 @@ function onward() {
   $('charRare').innerHTML = rare ? '✨レア版<small>' + why.join('・') + '</small>' : '';
   $('finalScore').innerHTML = fmt(run.total) + '<small>点</small>';
   $('finalDigits').textContent = digits(run.total) + '桁' + best();
+  $('finalBoss').textContent = run.boss ? 'ボス 勝ち ×' + run.boss : 'ボス 負け';
   $('finalTime').textContent = 'タイム ' + mmss(run.time);
   run = null;
   show('final');
@@ -363,6 +408,14 @@ window.addEventListener('message', function (e) {
     hud(); return;
   }
   solved(d);
+});
+
+/* 幕間・ボスの決着（{type, win[, moves]}）。今その段階にいるときだけ、1回だけ受ける */
+window.addEventListener('message', function (e) {
+  var d = e.data;
+  if (!run || !run.bout || e.source !== $('play').contentWindow) return;
+  if (!d || d.type !== run.bout) return;
+  boutEnd(d);
 });
 
 /* 問題が表示されたら計測開始 */

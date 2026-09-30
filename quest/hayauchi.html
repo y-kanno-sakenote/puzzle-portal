@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>早撃ち</title>
+<style>
+  /* 色ははやつかみ本家とクエストの流儀のまま（新しい色は足さない） */
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --thick:#5d5952;
+    --motif:64px; --gap:8px;
+    --item:min(64px, calc((100vw - 28px - var(--gap) * 4) / 5));
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+  }
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+       gap:min(36px,6vh);padding:0 14px}
+
+  /* 札の枠。「はじめる」・合図の数字・札を同じ枠に出す（本家と同じく目の置き場を1か所に揃える） */
+  .slot{position:relative}
+  .card{
+    position:relative;
+    display:flex;align-items:center;justify-content:center;gap:16px;
+    padding:10px 18px;
+    background:var(--panel);border:2px solid var(--thick);border-radius:14px;
+    min-width:calc(var(--motif) * 2 + 60px);min-height:calc(var(--motif) + 20px);
+  }
+  .card svg{width:var(--motif);height:var(--motif);display:block}
+  .card.empty{border-color:var(--frame)}
+  .cueNum{position:absolute;inset:0;pointer-events:none;
+          display:flex;align-items:center;justify-content:center;
+          font-size:calc((var(--motif) + 20px) * .65);font-weight:800;line-height:1;color:var(--thick)}
+  .startBtn{position:absolute;inset:0;width:100%;height:100%;
+            font:inherit;font-size:18px;font-weight:700;
+            border:1px solid var(--frame);border-radius:14px;background:var(--panel);color:var(--ink);
+            cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .startBtn:active{background:#eeece7}
+  .startBtn[hidden]{display:none}
+
+  /* 品は本家と同じ5つを横一列。1人用なので引き寄せずタップで取る */
+  #items{display:flex;justify-content:center;gap:var(--gap);touch-action:manipulation}
+  .item{width:var(--item);height:var(--item);padding:4px;margin:0;border:0;border-radius:12px;
+        background:none;cursor:pointer;-webkit-tap-highlight-color:transparent;
+        outline:3px solid transparent;outline-offset:1px}
+  .item svg{width:100%;height:100%;display:block;pointer-events:none}
+  /* 決着後：正しい品を枠で囲み、ほかは薄くする（本家の取られた札と同じ薄さ） */
+  .item.right{outline-color:var(--thick)}
+  .item.dim{opacity:.25}
+
+  #res{min-height:34px;font-size:26px;font-weight:700;line-height:34px;text-align:center}
+  .note{min-height:48px;font-size:13px;line-height:1.85;color:var(--sub);text-align:center}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="slot">
+    <div class="card empty" id="card"></div>
+    <button class="startBtn" id="startBtn" type="button">はじめる</button>
+  </div>
+  <div id="items"></div>
+  <div>
+    <div id="res"></div>
+    <div class="note" id="note">形と色が正しい品が1つあれば、それを取る<br>無ければ、形も色も札に出ていない品を取る</div>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.Hayauchi として公開する）。本家はやつかみから写したもの
+   （パズル箱はゲーム間でコードを共有しない）
+   ===================================================================== */
+
+/* 札は本家の CARDS をそのまま写す（tools/gen_cards.py で正解が1つに定まると検証済みのものだけ）。手で書き換えない */
+var CARDS = [
+{"a":["ろっかく","黒"],"b":["リボン","緑"],"answer":"リボン","kind":1},
+{"a":["はな","黒"],"b":["ダイヤ","黄"],"answer":"リボン","kind":2},
+{"a":["ろっかく","赤"],"b":["わ","黒"],"answer":"わ","kind":1},
+{"a":["ろっかく","青"],"b":["わ","赤"],"answer":"リボン","kind":2},
+{"a":["ダイヤ","緑"],"b":["ろっかく","黄"],"answer":"ろっかく","kind":1},
+{"a":["ダイヤ","黄"],"b":["わ","緑"],"answer":"はな","kind":2},
+{"a":["はな","緑"],"b":["ろっかく","黄"],"answer":"ろっかく","kind":1},
+{"a":["リボン","青"],"b":["わ","黒"],"answer":"わ","kind":1},
+{"a":["ろっかく","黄"],"b":["わ","赤"],"answer":"ろっかく","kind":1},
+{"a":["リボン","黄"],"b":["わ","赤"],"answer":"ダイヤ","kind":2},
+{"a":["はな","赤"],"b":["わ","緑"],"answer":"はな","kind":1},
+{"a":["ダイヤ","黄"],"b":["リボン","赤"],"answer":"わ","kind":2},
+{"a":["ダイヤ","青"],"b":["ろっかく","黒"],"answer":"ダイヤ","kind":1},
+{"a":["ろっかく","黄"],"b":["リボン","赤"],"answer":"ろっかく","kind":1},
+{"a":["ろっかく","赤"],"b":["リボン","黒"],"answer":"ダイヤ","kind":2},
+{"a":["ろっかく","青"],"b":["わ","黒"],"answer":"わ","kind":1},
+{"a":["リボン","緑"],"b":["わ","赤"],"answer":"リボン","kind":1},
+{"a":["はな","緑"],"b":["ダイヤ","青"],"answer":"ダイヤ","kind":1},
+{"a":["はな","黄"],"b":["わ","緑"],"answer":"ダイヤ","kind":2},
+{"a":["リボン","緑"],"b":["わ","黄"],"answer":"リボン","kind":1},
+{"a":["はな","赤"],"b":["ダイヤ","黒"],"answer":"はな","kind":1},
+{"a":["ろっかく","青"],"b":["リボン","緑"],"answer":"リボン","kind":1},
+{"a":["ダイヤ","黒"],"b":["リボン","緑"],"answer":"リボン","kind":1},
+{"a":["ろっかく","赤"],"b":["リボン","青"],"answer":"わ","kind":2},
+{"a":["リボン","青"],"b":["わ","赤"],"answer":"ろっかく","kind":2},
+{"a":["ダイヤ","黄"],"b":["わ","黒"],"answer":"わ","kind":1},
+{"a":["リボン","赤"],"b":["わ","青"],"answer":"ろっかく","kind":2},
+{"a":["ダイヤ","黒"],"b":["リボン","赤"],"answer":"ろっかく","kind":2},
+{"a":["ダイヤ","赤"],"b":["リボン","緑"],"answer":"リボン","kind":1},
+{"a":["ダイヤ","青"],"b":["ろっかく","赤"],"answer":"ダイヤ","kind":1},
+{"a":["ダイヤ","赤"],"b":["わ","緑"],"answer":"ろっかく","kind":2},
+{"a":["リボン","緑"],"b":["わ","青"],"answer":"リボン","kind":1},
+{"a":["はな","緑"],"b":["ろっかく","黒"],"answer":"ダイヤ","kind":2},
+{"a":["ろっかく","黒"],"b":["リボン","赤"],"answer":"ダイヤ","kind":2},
+{"a":["はな","青"],"b":["ろっかく","緑"],"answer":"わ","kind":2},
+{"a":["ダイヤ","青"],"b":["わ","黄"],"answer":"ダイヤ","kind":1},
+{"a":["ろっかく","緑"],"b":["わ","青"],"answer":"はな","kind":2},
+{"a":["はな","赤"],"b":["ろっかく","緑"],"answer":"はな","kind":1},
+{"a":["はな","緑"],"b":["ろっかく","青"],"answer":"わ","kind":2},
+{"a":["ダイヤ","緑"],"b":["わ","黄"],"answer":"はな","kind":2},
+{"a":["はな","青"],"b":["リボン","緑"],"answer":"リボン","kind":1},
+{"a":["ろっかく","青"],"b":["リボン","黒"],"answer":"はな","kind":2},
+{"a":["ダイヤ","緑"],"b":["ろっかく","赤"],"answer":"わ","kind":2},
+{"a":["はな","黄"],"b":["リボン","緑"],"answer":"リボン","kind":1},
+{"a":["ダイヤ","緑"],"b":["わ","黒"],"answer":"わ","kind":1},
+{"a":["ダイヤ","青"],"b":["リボン","赤"],"answer":"ダイヤ","kind":1},
+{"a":["はな","黒"],"b":["リボン","青"],"answer":"ろっかく","kind":2},
+{"a":["ろっかく","黄"],"b":["リボン","青"],"answer":"ろっかく","kind":1},
+{"a":["はな","青"],"b":["わ","緑"],"answer":"ろっかく","kind":2},
+{"a":["はな","赤"],"b":["リボン","黒"],"answer":"はな","kind":1},
+{"a":["はな","緑"],"b":["わ","青"],"answer":"ろっかく","kind":2},
+{"a":["はな","赤"],"b":["ダイヤ","黄"],"answer":"はな","kind":1},
+{"a":["はな","黒"],"b":["ろっかく","黄"],"answer":"ろっかく","kind":1},
+{"a":["ダイヤ","黄"],"b":["リボン","黒"],"answer":"はな","kind":2},
+{"a":["はな","黄"],"b":["ダイヤ","緑"],"answer":"わ","kind":2},
+{"a":["はな","青"],"b":["ろっかく","黒"],"answer":"リボン","kind":2},
+{"a":["はな","緑"],"b":["わ","黒"],"answer":"わ","kind":1},
+{"a":["はな","黒"],"b":["ダイヤ","緑"],"answer":"ろっかく","kind":2},
+{"a":["はな","赤"],"b":["ろっかく","青"],"answer":"はな","kind":1},
+{"a":["はな","黄"],"b":["ダイヤ","青"],"answer":"ダイヤ","kind":1},
+{"a":["はな","赤"],"b":["わ","青"],"answer":"はな","kind":1},
+{"a":["はな","緑"],"b":["ダイヤ","黄"],"answer":"わ","kind":2},
+{"a":["ダイヤ","赤"],"b":["ろっかく","緑"],"answer":"わ","kind":2},
+{"a":["ダイヤ","赤"],"b":["わ","黒"],"answer":"わ","kind":1},
+{"a":["はな","赤"],"b":["ダイヤ","緑"],"answer":"はな","kind":1},
+{"a":["ろっかく","赤"],"b":["わ","青"],"answer":"リボン","kind":2},
+{"a":["はな","黄"],"b":["ダイヤ","黒"],"answer":"リボン","kind":2},
+{"a":["ダイヤ","黒"],"b":["ろっかく","赤"],"answer":"リボン","kind":2},
+{"a":["ダイヤ","緑"],"b":["わ","赤"],"answer":"ろっかく","kind":2},
+{"a":["リボン","青"],"b":["わ","黄"],"answer":"はな","kind":2},
+{"a":["ろっかく","青"],"b":["リボン","赤"],"answer":"わ","kind":2},
+{"a":["ダイヤ","青"],"b":["リボン","黄"],"answer":"ダイヤ","kind":1},
+{"a":["ダイヤ","黒"],"b":["ろっかく","緑"],"answer":"はな","kind":2},
+{"a":["はな","黒"],"b":["ろっかく","緑"],"answer":"ダイヤ","kind":2},
+{"a":["はな","緑"],"b":["わ","黄"],"answer":"ダイヤ","kind":2},
+{"a":["はな","赤"],"b":["ろっかく","黒"],"answer":"はな","kind":1},
+{"a":["ダイヤ","緑"],"b":["ろっかく","黒"],"answer":"はな","kind":2},
+{"a":["ダイヤ","青"],"b":["わ","緑"],"answer":"ダイヤ","kind":1},
+{"a":["ダイヤ","黒"],"b":["リボン","黄"],"answer":"はな","kind":2},
+{"a":["リボン","赤"],"b":["わ","黒"],"answer":"わ","kind":1},
+{"a":["ダイヤ","青"],"b":["ろっかく","緑"],"answer":"ダイヤ","kind":1},
+{"a":["はな","黄"],"b":["わ","青"],"answer":"リボン","kind":2},
+{"a":["ダイヤ","黄"],"b":["リボン","緑"],"answer":"リボン","kind":1},
+{"a":["リボン","赤"],"b":["わ","黄"],"answer":"ダイヤ","kind":2},
+{"a":["はな","黒"],"b":["ダイヤ","青"],"answer":"ダイヤ","kind":1},
+{"a":["ろっかく","赤"],"b":["リボン","緑"],"answer":"リボン","kind":1},
+{"a":["はな","赤"],"b":["わ","黄"],"answer":"はな","kind":1},
+{"a":["はな","緑"],"b":["ダイヤ","黒"],"answer":"ろっかく","kind":2},
+{"a":["はな","青"],"b":["リボン","黄"],"answer":"わ","kind":2},
+{"a":["ダイヤ","赤"],"b":["わ","黄"],"answer":"リボン","kind":2},
+{"a":["ダイヤ","青"],"b":["リボン","黒"],"answer":"ダイヤ","kind":1},
+{"a":["ダイヤ","赤"],"b":["リボン","黄"],"answer":"わ","kind":2},
+{"a":["はな","青"],"b":["わ","黄"],"answer":"リボン","kind":2},
+{"a":["ろっかく","青"],"b":["わ","緑"],"answer":"はな","kind":2},
+{"a":["ダイヤ","青"],"b":["わ","赤"],"answer":"ダイヤ","kind":1},
+{"a":["はな","赤"],"b":["リボン","黄"],"answer":"はな","kind":1},
+{"a":["ろっかく","黄"],"b":["リボン","黒"],"answer":"ろっかく","kind":1},
+{"a":["はな","青"],"b":["わ","黒"],"answer":"わ","kind":1},
+{"a":["リボン","黄"],"b":["わ","黒"],"answer":"わ","kind":1},
+{"a":["はな","青"],"b":["リボン","黒"],"answer":"ろっかく","kind":2},
+{"a":["ろっかく","赤"],"b":["わ","緑"],"answer":"ダイヤ","kind":2},
+{"a":["ダイヤ","黄"],"b":["わ","赤"],"answer":"リボン","kind":2},
+{"a":["はな","黄"],"b":["リボン","黒"],"answer":"ダイヤ","kind":2},
+{"a":["ダイヤ","赤"],"b":["ろっかく","黒"],"answer":"リボン","kind":2},
+{"a":["はな","黒"],"b":["リボン","黄"],"answer":"ダイヤ","kind":2},
+{"a":["はな","赤"],"b":["リボン","青"],"answer":"はな","kind":1},
+{"a":["はな","黒"],"b":["ろっかく","青"],"answer":"リボン","kind":2},
+{"a":["ダイヤ","赤"],"b":["リボン","黒"],"answer":"ろっかく","kind":2},
+{"a":["ダイヤ","赤"],"b":["ろっかく","黄"],"answer":"ろっかく","kind":1},
+{"a":["はな","黒"],"b":["リボン","緑"],"answer":"リボン","kind":1},
+{"a":["ろっかく","緑"],"b":["わ","赤"],"answer":"ダイヤ","kind":2},
+{"a":["ろっかく","黄"],"b":["わ","緑"],"answer":"ろっかく","kind":1},
+{"a":["ろっかく","黒"],"b":["リボン","青"],"answer":"はな","kind":2},
+{"a":["ろっかく","緑"],"b":["わ","黒"],"answer":"わ","kind":1},
+{"a":["はな","黄"],"b":["わ","黒"],"answer":"わ","kind":1},
+{"a":["はな","黄"],"b":["リボン","青"],"answer":"わ","kind":2},
+{"a":["ろっかく","黄"],"b":["わ","青"],"answer":"ろっかく","kind":1},
+{"a":["リボン","黄"],"b":["わ","青"],"answer":"はな","kind":2},
+{"a":["ダイヤ","黒"],"b":["ろっかく","黄"],"answer":"ろっかく","kind":1},
+{"a":["はな","青"],"b":["ろっかく","黄"],"answer":"ろっかく","kind":1}
+];
+
+var Hayauchi = (function () {
+
+  var SHAPES = ["はな", "ダイヤ", "ろっかく", "リボン", "わ"];
+  var COLORS = ["赤", "青", "黄", "緑", "黒"];
+  var TRUE = { "はな": "赤", "ダイヤ": "青", "ろっかく": "黄", "リボン": "緑", "わ": "黒" };
+  var OWNER = { "赤": "はな", "青": "ダイヤ", "黄": "ろっかく", "緑": "リボン", "黒": "わ" };
+  var CPU_DEFAULT = 1200;
+
+  function motif(m) {
+    if (!m || m.length !== 2) return null;
+    if (!TRUE.hasOwnProperty(m[0]) || !OWNER.hasOwnProperty(m[1])) return null;
+    return m;
+  }
+
+  /* 札の正解（本家と同じ決め方）。定まらない札は null
+       1. 形と色が両方合う絵柄がちょうど1つ → その品
+       2. 1つも無い → 形としても色としても出ていない品が1つ残る → その品 */
+  function answerOf(card) {
+    if (!card) return null;
+    var a = motif(card.a), b = motif(card.b);
+    if (!a || !b) return null;
+    if (a[0] === b[0]) return null;
+    if (a[1] === b[1]) return null;
+    var hit = [];
+    if (TRUE[a[0]] === a[1]) hit.push(a[0]);
+    if (TRUE[b[0]] === b[1]) hit.push(b[0]);
+    if (hit.length === 2) return null;
+    if (hit.length === 1) return hit[0];
+    var used = {}, rest = [], i;
+    used[a[0]] = 1; used[b[0]] = 1;
+    used[OWNER[a[1]]] = 1; used[OWNER[b[1]]] = 1;
+    for (i = 0; i < SHAPES.length; i++) if (!used[SHAPES[i]]) rest.push(SHAPES[i]);
+    if (rest.length !== 1) return null;
+    return rest[0];
+  }
+
+  function isValidCard(card) { return answerOf(card) !== null; }
+
+  /* 札を1枚引く。本家と同じく検証済みの札から無作為に（両方合う札と合わない札が半々で入っている） */
+  function drawCard(rnd) {
+    var r = (rnd || Math.random)();
+    return CARDS[Math.min(CARDS.length - 1, Math.floor(r * CARDS.length))];
+  }
+
+  /* ?cpu=<ミリ秒>。正の整数だけ受ける。それ以外は幕間1と同じ 1200 */
+  function parseCpu(search) {
+    var m = /[?&]cpu=([^&#]*)/.exec(search || '');
+    if (!m || !/^[1-9][0-9]{0,4}$/.test(m[1])) return CPU_DEFAULT;
+    return parseInt(m[1], 10);
+  }
+
+  /* タップの判定。ms は札が出てからの経過。
+     札が出る前（card が無い／ms<0）は無視＝null。コンピュータが取った後のタップは遅れ扱い */
+  function outcome(card, shape, ms, cpu) {
+    if (!card || !(ms >= 0)) return null;
+    if (ms >= cpu) return 'late';
+    return shape === answerOf(card) ? 'win' : 'miss';
+  }
+
+  return {
+    CARDS: CARDS, SHAPES: SHAPES, COLORS: COLORS, TRUE: TRUE, OWNER: OWNER, CPU_DEFAULT: CPU_DEFAULT,
+    answerOf: answerOf, isValidCard: isValidCard, drawCard: drawCard, parseCpu: parseCpu, outcome: outcome
+  };
+})();
+
+if (typeof window !== 'undefined') window.Hayauchi = Hayauchi;
+if (typeof globalThis !== 'undefined') globalThis.Hayauchi = Hayauchi;
+</script>
+
+<script>
+/* =====================================================================
+   画面（1回きり。決着したら親に1度だけ知らせる）
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var CUE = 1000;        /* 合図の1数字あたり（本家と同じ 3→2→1 を1秒刻み） */
+  var SHOW = 1500;       /* 結果を見せてから親に知らせるまで */
+  var CPU = Hayauchi.parseCpu(location.search);
+  var SHAPES = Hayauchi.SHAPES, TRUE = Hayauchi.TRUE;
+
+  var PAINT = { "赤": "#d94f43", "青": "#2f7fd4", "黄": "#e0a90c", "緑": "#3f9b52", "黒": "#2b2b2b" };
+  var PATH = {
+    "はな":     { d: "M50 35A15 15 0 1 1 50 65A15 15 0 1 1 50 35Z M50 2A19 19 0 1 1 50 40A19 19 0 1 1 50 2Z M98 50A19 19 0 1 1 60 50A19 19 0 1 1 98 50Z M50 98A19 19 0 1 1 50 60A19 19 0 1 1 50 98Z M2 50A19 19 0 1 1 40 50A19 19 0 1 1 2 50Z" },
+    "ダイヤ":   { d: "M50 5L79 50 50 95 21 50Z" },
+    "ろっかく": { d: "M5 50L27 13 73 13 95 50 73 87 27 87Z" },
+    "リボン":   { d: "M11 11L50 50 11 89Z M89 11L50 50 89 89Z" },
+    "わ":       { d: "M50 7A43 43 0 1 0 50 93A43 43 0 1 0 50 7Z M50 29A21 21 0 1 0 50 71A21 21 0 1 0 50 29Z", rule: "evenodd" }
+  };
+  function drawMotif(shape, color) {
+    var svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    var p = document.createElementNS(SVGNS, 'path');
+    p.setAttribute('d', PATH[shape].d);
+    p.setAttribute('fill', PAINT[color]);
+    if (PATH[shape].rule) p.setAttribute('fill-rule', PATH[shape].rule);
+    svg.appendChild(p);
+    return svg;
+  }
+
+  var elCard = document.getElementById('card');
+  var elStart = document.getElementById('startBtn');
+  var elItems = document.getElementById('items');
+  var elRes = document.getElementById('res');
+  var elNote = document.getElementById('note');
+
+  var items = [];
+  var card = null;         /* 出ている札。null の間のタップは無視 */
+  var dealtAt = 0;
+  var done = false;        /* 決着済み。以後は何も受けない・送らない */
+  var sent = false;
+  var cpuTimer = 0;
+
+  function now() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+
+  SHAPES.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'item';
+    b.setAttribute('aria-label', s);
+    b.appendChild(drawMotif(s, TRUE[s]));
+    /* 早さを競うので click ではなく指が触れた瞬間に取る */
+    b.addEventListener('pointerdown', function (e) { e.preventDefault(); tap(i); });
+    elItems.appendChild(b);
+    items.push(b);
+  });
+
+  function cue(text) {
+    while (elCard.firstChild) elCard.removeChild(elCard.firstChild);
+    if (!text) return;
+    var n = document.createElement('div');
+    n.className = 'cueNum';
+    n.textContent = text;
+    elCard.appendChild(n);
+  }
+
+  function start() {
+    if (elStart.hidden || done) return;
+    elStart.hidden = true;
+    elNote.textContent = '';
+    cue('3');
+    setTimeout(function () { cue('2'); }, CUE);
+    setTimeout(function () { cue('1'); }, CUE * 2);
+    setTimeout(deal, CUE * 3);
+  }
+  elStart.addEventListener('click', start);
+
+  function deal() {
+    cue('');
+    card = Hayauchi.drawCard();
+    elCard.className = 'card';
+    elCard.appendChild(drawMotif(card.a[0], card.a[1]));
+    elCard.appendChild(drawMotif(card.b[0], card.b[1]));
+    elNote.textContent = '正しい品をタップ';
+    dealtAt = now();
+    cpuTimer = setTimeout(function () { finish('late'); }, CPU);
+  }
+
+  function tap(i) {
+    if (done || !card) return;
+    /* タイマーが遅れても、時間を過ぎたタップは勝ちにしない */
+    var r = Hayauchi.outcome(card, SHAPES[i], now() - dealtAt, CPU);
+    if (r) finish(r);
+  }
+
+  function finish(r) {
+    if (done) return;
+    done = true;
+    clearTimeout(cpuTimer);
+    var want = Hayauchi.answerOf(card);
+    items.forEach(function (b, i) { b.classList.add(SHAPES[i] === want ? 'right' : 'dim'); });
+    elRes.textContent = r === 'win' ? 'かち' : 'まけ';
+    elNote.textContent = r === 'win' ? '' : r === 'miss' ? 'おてつき' : 'コンピュータが先に取った';
+    setTimeout(function () {
+      if (sent) return;
+      sent = true;
+      parent.postMessage({ type: 'quest-duel', win: r === 'win' }, '*');
+    }, SHOW);
+  }
+})();
+</script>
+</body>
+</html>
