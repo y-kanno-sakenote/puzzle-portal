@@ -337,7 +337,14 @@ function solved(d) {
     ? before + '桁 → <span class="up">' + after + '桁</span>' + (after > before ? ' ↑' : '')
     : '<span class="up">' + after + '桁</span>';
   $('endTime').textContent = 'タイム ' + mmss(t) + (before ? ' ／ 累計 ' + mmss(run.time) : '');
-  $('onward').textContent = run.stage < STAGES.length - 1 || BOUTS[run.stage] ? 'つぎへ' : 'けっか';
+  /* つぎが幕間・ボスなら、ボタンをその名前にして、押す前に何が賭かるかを小さく1行（札と同じ形） */
+  var nb = BOUTS[run.stage];
+  $('onward').textContent = nb ? nb.name : run.stage < STAGES.length - 1 ? 'つぎへ' : 'けっか';
+  if (nb) {
+    var hint = document.createElement('small');
+    hint.textContent = (nb.type === 'quest-boss' ? '勝てば最大×' + BOSS_MAX : '勝てば×' + DUEL_RATE) + '・負けても減らない';
+    $('onward').appendChild(hint);
+  }
   setTimeout(function () { show('stageEnd'); $('play').removeAttribute('src'); }, 700);
 }
 

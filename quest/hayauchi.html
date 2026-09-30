@@ -373,7 +373,8 @@ if (typeof document !== 'undefined') (function () {
     var want = Hayauchi.answerOf(card);
     items.forEach(function (b, i) { b.classList.add(SHAPES[i] === want ? 'right' : 'dim'); });
     elRes.textContent = r === 'win' ? 'かち' : 'まけ';
-    elNote.textContent = r === 'win' ? '' : r === 'miss' ? 'おてつき' : 'コンピュータが先に取った';
+    /* 相手は画面に出てこないので名指ししない。本家の「早い方が取る」に合わせた言い方 */
+    elNote.textContent = r === 'win' ? '' : r === 'miss' ? 'おてつき' : '先に取られた';
     setTimeout(function () {
       if (sent) return;
       sent = true;

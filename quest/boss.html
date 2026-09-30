@@ -45,11 +45,12 @@
   .cell:nth-child(3){border-top-right-radius:10px}
   .cell:nth-child(7){border-bottom-left-radius:10px}
   .cell:nth-child(9){border-bottom-right-radius:10px}
-  /* ボスの直前の手：どこから（点線）どこへ（太枠）。間をおいても見落としたときの手がかり */
+  /* ボスの直前の手：置いた先だけ太枠。見落としたときの手がかり（どこからの点線は枠が2種になるので出さない） */
   .cell.lastTo{box-shadow:inset 0 0 0 3px var(--thick)}
-  .cell.lastFrom{outline:2px dashed var(--frame);outline-offset:-6px}
 
-  .piece{border-radius:50%;border:2px solid rgba(0,0,0,.16);flex:0 0 auto}
+  .piece{position:relative;border-radius:50%;border:2px solid rgba(0,0,0,.16);flex:0 0 auto}
+  /* 小さい駒（幅360pxで持ち駒の小は約25px）も指で44px四方つまめるよう、見た目は変えずに当たりだけ広げる */
+  .piece::before{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}
   .piece.s3{width:var(--p3);height:var(--p3)}
   .piece.s2{width:var(--p2);height:var(--p2)}
   .piece.s1{width:var(--p1);height:var(--p1)}
@@ -72,12 +73,15 @@
   .corner:active{background:#eeece7}
   #resign{left:16px;padding:0 12px;border-radius:14px}
   #helpBtn{right:16px;width:28px;padding:0;border-radius:50%;font-size:14px;font-weight:700}
+  /* ？は見た目28pxのまま当たりを44pxに。降参は確認なしで負けるので広げない */
+  #helpBtn::before{content:"";position:absolute;inset:-8px}
   .corner[hidden]{display:none}
 
   #over,#helpPanel{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
                    gap:10px;background:rgba(245,244,241,.94);padding:24px 16px}
   #over{z-index:30}
-  #helpPanel{z-index:35;background:rgba(245,244,241,.96);cursor:pointer}
+  /* あそびかたは降参・？より上に出す。板を閉じようと左上を押して降参にならないように */
+  #helpPanel{z-index:37;background:rgba(245,244,241,.96);cursor:pointer}
   #over[hidden],#helpPanel[hidden]{display:none}
   .res{font-size:26px;font-weight:700;text-align:center}
   .res span{display:block;font-size:13px;font-weight:400;color:var(--sub)}
@@ -340,7 +344,6 @@ if (typeof document !== 'undefined') (function () {
       var box = cells[i];
       while (box.firstChild) box.removeChild(box.firstChild);
       box.classList.toggle('lastTo', !!last && last.to === i);
-      box.classList.toggle('lastFrom', !!last && last.from === i);
       var p = Boss.top(state, i);
       if (!p) continue;
       el = pieceEl(p > 0 ? P : B, Math.abs(p));
@@ -366,7 +369,8 @@ if (typeof document !== 'undefined') (function () {
       elNote[who].classList.toggle('now', mine);
     });
     var left = Boss.MAX_PLIES / 2 - playerMoves();
-    elNote[P].textContent = done ? '' : (state.turn === P ? 'あなたの番（あと ' + left + ' 手）' : '');
+    /* 残り手数は終わりが近づいてから出す（20手の決まりはあそびかたに書いてある）。5は叩き台 */
+    elNote[P].textContent = done ? '' : (state.turn === P ? 'あなたの番' + (left <= 5 ? '（あと' + left + '手）' : '') : '');
     elNote[B].textContent = done ? '' : (state.turn === B ? 'ボスの番' : '');
     if (drag && drag.origin) drag.origin.classList.add('held');
   }
@@ -380,7 +384,7 @@ if (typeof document !== 'undefined') (function () {
     elResign.hidden = true;
     var n = playerMoves();
     document.getElementById('res').innerHTML = win
-      ? 'かち<span>' + n + ' 手で勝ち</span>'
+      ? 'かち<span>' + n + '手</span>'
       : 'まけ<span>' + why + '</span>';
     elOver.hidden = false;
     try { parent.postMessage({ type: 'quest-boss', win: win, moves: n }, '*'); } catch (e) {}
@@ -390,8 +394,8 @@ if (typeof document !== 'undefined') (function () {
   function afterMove() {
     render();
     if (state.winner === P) return finish(true);
-    if (state.winner === B) return finish(false, 'ボスの列がそろった');
-    if (state.ply >= Boss.MAX_PLIES) return finish(false, (Boss.MAX_PLIES / 2) + ' 手で決着つかず');
+    if (state.winner === B) return finish(false, 'ボスの駒が3つ並んだ');
+    if (state.ply >= Boss.MAX_PLIES) return finish(false, (Boss.MAX_PLIES / 2) + '手で決着つかず');
     if (state.turn === B) bossTurn();
   }
 
