@@ -40,13 +40,25 @@
   #hud.down{color:#d94436}
   #quit{position:fixed;left:4px;top:env(safe-area-inset-top);height:36px;z-index:5;font:inherit;font-size:14px;padding:0 10px;color:var(--sub);background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
   .time{font-size:13px}
+  /* 自分の記録：1件1行（左=系統の絵文字と✨・右=点）。点は右揃えで桁の多さが並びで見える */
+  #recordList{list-style:none;margin:0 0 24px;padding:0;text-align:left}
+  #recordList li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--frame);font-size:20px}
+  #recordList b{font-variant-numeric:tabular-nums;white-space:nowrap}
+  #recordList small{font-size:13px;font-weight:400;color:var(--sub);margin-left:2px}
 </style>
 </head>
 <body>
 <section class="screen" id="title">
   <h1>クエスト</h1>
   <button type="button" class="big" id="start">はじめる</button>
+  <!-- 記録が1件もないうちは出さない（空の画面へ案内しない） -->
+  <button type="button" class="back" id="toRecords" hidden>きろく</button>
   <a class="back" href="../">‹ パズル箱</a>
+</section>
+
+<section class="screen" id="records" hidden>
+  <ol id="recordList"></ol>
+  <button type="button" class="back" id="recordsBack">‹ タイトルへ</button>
 </section>
 
 <section class="screen" id="choose" hidden>
@@ -137,7 +149,7 @@ var FLOOR = 10;
 var KIRIBAN = [777777, 77777777, 123456, 1234567, 1000000000];
 
 var $ = function (id) { return document.getElementById(id); };
-var SCREENS = ['title', 'choose', 'play', 'stageEnd', 'final', 'out'];
+var SCREENS = ['title', 'choose', 'play', 'stageEnd', 'final', 'out', 'records'];
 var run = null;      /* 1プレイの状態 */
 var current = null;  /* いま解いている問題 */
 
@@ -215,12 +227,82 @@ function out(gaveUp) {
   current = null;
   $('play').removeAttribute('src');
   $('outHead').textContent = gaveUp ? 'ギブアップ' : 'アウト';
+  recordRun(gaveUp ? 'giveup' : 'out');
   var cleared = run.stage > 0;
   $('outScore').innerHTML = (cleared ? fmt(run.total) : '0') + '<small>点</small>';
-  $('outDigits').textContent = cleared ? digits(run.total) + '桁' : '';
+  $('outDigits').textContent = cleared ? digits(run.total) + '桁' + best() : '';
   $('outTime').textContent = cleared ? 'タイム ' + mmss(run.time) : '';
   run = null;
   show('out');
+}
+
+/* 自分の記録（spec §11 2026-09-30）。この端末の中だけに残し、どこにも送らない。
+   1ステージでもクリアしたプレイだけを、点の高い順に上位 RECORD_MAX 件。同点はタイムの速い方が上 */
+var RECORD_KEY = 'quest-records';
+var RECORD_MAX = 10;
+var lastRank = 0;   /* 直前のプレイが記録の何位に入ったか（圏外・未保存は0）。終わりの画面で使う */
+function validRecord(r) {
+  /* 満点は 100×1,000×10,000＝10億。それを超える点は書き換えられたデータ */
+  return !!r && Number.isInteger(r.score) && r.score > 0 && r.score <= 1000000000
+    && Number.isInteger(r.stages) && r.stages >= 1 && r.stages <= 3
+    && Number.isInteger(r.time) && r.time >= 0 && Number.isFinite(r.at)
+    && (r.end === 'clear' || r.end === 'out' || r.end === 'giveup')
+    && typeof r.emoji === 'string' && typeof r.name === 'string' && typeof r.rare === 'boolean';
+}
+function loadRecords() {
+  try {
+    var a = JSON.parse(localStorage.getItem(RECORD_KEY) || '[]');
+    return Array.isArray(a) ? a.filter(validRecord) : [];
+  } catch (e) { return []; }
+}
+/* 記録を足し、何位に入ったかを返す（圏外なら0） */
+function addRecord(r) {
+  var a = loadRecords();
+  a.push(r);
+  a.sort(function (x, y) { return y.score - x.score || x.time - y.time || x.at - y.at; });
+  a = a.slice(0, RECORD_MAX);
+  try { localStorage.setItem(RECORD_KEY, JSON.stringify(a)); } catch (e) { return 0; }
+  return a.indexOf(r) + 1;
+}
+/* 1プレイの終わりに記録を作る。キャラ名は完走したときだけ */
+function recordRun(end, name, rare) {
+  lastRank = 0;
+  if (run.stage < 1 && end !== 'clear') return;   /* 1つもクリアしていないプレイは残さない */
+  lastRank = addRecord({
+    score: run.total, stages: end === 'clear' ? 3 : run.stage, end: end, time: Math.round(run.time), at: Date.now(),
+    emoji: run.systems.map(function (i) { return SYSTEMS[i].emoji; }).join(''), name: name || '', rare: !!rare
+  });
+}
+
+/* 終わりの画面では1位に入ったときだけ「自己ベスト」と添える（2位以下の順位は出さない）。
+   記録がこの1件だけのとき（初回）は毎回1位になるので言わない */
+function best() {
+  return lastRank === 1 && loadRecords().length > 1 ? '・自己ベスト' : '';
+}
+
+/* 記録の一覧。並び順が順位なので順位の数字は出さない。キャラ名は絵文字の並びから決まるので重ねて出さない。
+   保存データは書き換えられうるので textContent で入れる */
+function records() {
+  var box = $('recordList');
+  box.textContent = '';
+  loadRecords().forEach(function (r) {
+    var li = document.createElement('li');
+    var face = document.createElement('span');
+    face.textContent = r.emoji + (r.rare ? '✨' : '');
+    var sc = document.createElement('b');
+    sc.textContent = fmt(r.score);
+    var unit = document.createElement('small');
+    unit.textContent = '点';
+    sc.appendChild(unit);
+    li.appendChild(face);
+    li.appendChild(sc);
+    box.appendChild(li);
+  });
+  show('records');
+}
+function title() {
+  $('toRecords').hidden = !loadRecords().length;
+  show('title');
 }
 
 function isKiriban(n) { return n % 1000 === 777 || KIRIBAN.indexOf(n) >= 0; }
@@ -255,13 +337,15 @@ function onward() {
   var sy = run.systems.map(function (i) { return SYSTEMS[i]; });
   var rare = run.exact || isKiriban(run.total);
   $('charEmoji').textContent = sy.map(function (x) { return x.emoji; }).join('');
-  $('charName').textContent = sy[1].parts[1] + sy[0].parts[0] + 'の' + sy[2].parts[2];
+  var name = sy[1].parts[1] + sy[0].parts[0] + 'の' + sy[2].parts[2];
+  $('charName').textContent = name;
+  recordRun('clear', name, rare);
   var why = [];
   if (run.exact) why.push('最短で解いた');
   if (isKiriban(run.total)) why.push('キリ番');
   $('charRare').innerHTML = rare ? '✨レア版<small>' + why.join('・') + '</small>' : '';
   $('finalScore').innerHTML = fmt(run.total) + '<small>点</small>';
-  $('finalDigits').textContent = digits(run.total) + '桁';
+  $('finalDigits').textContent = digits(run.total) + '桁' + best();
   $('finalTime').textContent = 'タイム ' + mmss(run.time);
   run = null;
   show('final');
@@ -295,9 +379,12 @@ $('again').addEventListener('click', start);
 $('onward').addEventListener('click', onward);
 $('quit').addEventListener('click', giveUp);
 $('giveup').addEventListener('click', giveUp);
-$('toTitle').addEventListener('click', function () { show('title'); });
+$('toTitle').addEventListener('click', title);
 $('outAgain').addEventListener('click', start);
-$('outTitle').addEventListener('click', function () { show('title'); });
+$('outTitle').addEventListener('click', title);
+$('toRecords').addEventListener('click', records);
+$('recordsBack').addEventListener('click', title);
+$('toRecords').hidden = !loadRecords().length;
 </script>
 </body>
 </html>
