@@ -155,7 +155,8 @@ var BOUTS = [
   { type: 'quest-boss', name: 'ボス',   src: 'boss.html' }
 ];
 var DUEL_RATE = 2;
-/* ボスの倍率 = min(MAX, max(MIN, TOP − 手数))：3手で×10、11手以上は×2。負け・降参は×1。数値は叩き台 */
+/* ボスの倍率 = min(MAX, max(MIN, TOP − 手数))：3手で×10、11手以上は×2。負け・降参は×1。数値は叩き台
+   ボス先手での実測（2026-10-01・各2000局）：3手読みの勝ちの7%が3手（×10）、初心者役の勝ちは×2〜×10に散る。出ない倍率は無い */
 var BOSS_TOP = 13, BOSS_MAX = 10, BOSS_MIN = 2;
 
 var $ = function (id) { return document.getElementById(id); };

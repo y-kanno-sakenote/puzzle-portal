@@ -108,7 +108,8 @@
     大きい駒は小さい駒にかぶせられる（相手のでも）<br>
     かぶせた駒は下に残り、どけるとまた出てくる<br>
     見えている自分の駒が3つ並んだら勝ち<br>
-    あなたは青・先手。20手のうちに並べないと負け
+    ボスが先に指す。あなたは青<br>
+    20手のうちに並べないと負け
   </div>
 </div>
 
@@ -122,13 +123,16 @@
 
    駒 = 大きさ × 向き（遊び手 +、ボス −）。1=小 2=中 3=大
    state = { board:[9マスの積み重ね（末尾が見えている駒）], hands:[[_,小,中,大]×2],
-             turn:0|1, ply:指した数, winner:-1|0|1 }   0=遊び手（青・先手） 1=ボス（赤）
+             turn:0|1, ply:指した数, winner:-1|0|1 }   0=遊び手（青・後手） 1=ボス（赤・先手）
    手 = { from:'hand'|マス, size, to }
    ===================================================================== */
 var Boss = (function () {
 
   var PLAYER = 0, BOSS = 1;
-  var DEPTH = 2;              /* 読みの深さ（手数）。叩き台。2 は「1手先だけ見る先手」に約15%、「3手読む先手」に約76%負ける（2026-10-01 実測）。3 は3手読みに毎回5手で破られる */
+  /* 読みの深さ（手数）。1手ごとにこの中から1つ選ぶ（2が半分・1と3が1/4ずつ）。叩き台。2026-10-01 実測（ボス先手・各2000局）：
+     深さを1つに決めると、どれでも「ボスがどの同点手を選んでも必ず勝てる筋」が残る（深さ1と3は5手・2は6手）。
+     混ぜると8手以内にその筋は無い。初心者役（1手先の勝ちを取り・塞ぐだけ）が約20%、3手読みが約67%勝つ。3手で勝つこともある */
+  var DEPTHS = [1, 2, 2, 3];
   var MAX_PLIES = 40;         /* 合わせて40手（各20手）で決まらなければボスの勝ち（繰り返しで終わらないため） */
   var LINES = [
     [0, 1, 2], [3, 4, 5], [6, 7, 8],
@@ -140,7 +144,7 @@ var Boss = (function () {
     return {
       board: [[], [], [], [], [], [], [], [], []],
       hands: [[0, 2, 2, 2], [0, 2, 2, 2]],   /* 各自 大2・中2・小2 */
-      turn: PLAYER, ply: 0, winner: -1
+      turn: BOSS, ply: 0, winner: -1   /* ボスが先手。かぶせっこは先手必勝なので、遊び手が先手だと覚えた筋で毎回勝てる */
     };
   }
 
@@ -198,12 +202,13 @@ var Boss = (function () {
     return -1;
   }
 
-  /* その場で指す（読みの中で何万回も呼ぶので写さない）。戻すための控えを返す */
+  /* その場で指す（読みの中で何万回も呼ぶので写さない）。戻すための控えを返す
+     盤の駒を動かすときは一番上の駒そのものを運ぶ（m.size は見ない。偽っても化けない） */
   function make(s, m) {
-    var who = s.turn, undo = { winner: s.winner };
-    if (m.from === 'hand') s.hands[who][m.size]--;
-    else s.board[m.from].pop();              /* どけると下の駒がまた現れる */
-    s.board[m.to].push(sign(who) * m.size);
+    var who = s.turn, undo = { winner: s.winner }, p;
+    if (m.from === 'hand') { s.hands[who][m.size]--; p = sign(who) * m.size; }
+    else p = s.board[m.from].pop();          /* どけると下の駒がまた現れる */
+    s.board[m.to].push(p);
     s.winner = judge(s, who);
     s.turn = 1 - who;
     s.ply++;
@@ -212,10 +217,9 @@ var Boss = (function () {
   function unmake(s, m, undo) {
     s.ply--;
     s.turn = 1 - s.turn;
-    var who = s.turn;
-    s.board[m.to].pop();
-    if (m.from === 'hand') s.hands[who][m.size]++;
-    else s.board[m.from].push(sign(who) * m.size);
+    var who = s.turn, p = s.board[m.to].pop();
+    if (m.from === 'hand') s.hands[who][Math.abs(p)]++;
+    else s.board[m.from].push(p);
     s.winner = undo.winner;
   }
 
@@ -273,10 +277,10 @@ var Boss = (function () {
     return best;
   }
 
-  /* 手番の人の手を選ぶ。手を混ぜてから「より良い手」だけを採るので、同じ値の手からは無作為に選ばれる */
+  /* 手番の人の手を選ぶ。深さを省くと DEPTHS から選ぶ。手を混ぜてから「より良い手」だけを採るので、同じ値の手からは無作為に選ばれる（初手も） */
   function chooseMove(s, depth, rand) {
-    depth = depth || DEPTH;
     rand = rand || Math.random;
+    depth = depth || DEPTHS[Math.floor(rand() * DEPTHS.length)];
     var w = clone(s), ms = legalMoves(w), i, j, t;
     for (i = ms.length - 1; i > 0; i--) { j = Math.floor(rand() * (i + 1)); t = ms[i]; ms[i] = ms[j]; ms[j] = t; }
     var best = null, alpha = -Infinity;
@@ -290,7 +294,7 @@ var Boss = (function () {
   }
 
   return {
-    PLAYER: PLAYER, BOSS: BOSS, DEPTH: DEPTH, MAX_PLIES: MAX_PLIES, LINES: LINES,
+    PLAYER: PLAYER, BOSS: BOSS, DEPTHS: DEPTHS, MAX_PLIES: MAX_PLIES, LINES: LINES,
     initialState: initialState, clone: clone, top: top,
     legalMoves: legalMoves, isLegal: isLegal, applyMove: applyMove,
     lines: lines, judge: judge, make: make, unmake: unmake,
@@ -335,7 +339,7 @@ if (typeof document !== 'undefined') (function () {
     return d;
   }
 
-  function playerMoves() { return Math.ceil(state.ply / 2); }
+  function playerMoves() { return Math.floor(state.ply / 2); }   /* ボスが先手なので、遊び手は偶数手目のあと */
 
   /* 見えているのは一番上の駒だけ（下の駒は描かない） */
   function render() {
@@ -472,7 +476,12 @@ if (typeof document !== 'undefined') (function () {
 
   elResign.addEventListener('click', function () { finish(false, '降参'); });
   document.getElementById('helpBtn').addEventListener('click', function () { elHelp.hidden = false; });
-  elHelp.addEventListener('click', function () { elHelp.hidden = true; });
+  /* ボスの初手は、はじめのあそびかたを閉じてから（何を置いたか見えるように） */
+  var started = false;
+  elHelp.addEventListener('click', function () {
+    elHelp.hidden = true;
+    if (!started) { started = true; bossTurn(); }
+  });
 
   render();
 })();
