@@ -279,6 +279,7 @@ if (typeof document !== 'undefined') (function () {
   var SVGNS = 'http://www.w3.org/2000/svg';
   var CUE = 1000;        /* 合図の1数字あたり（本家と同じ 3→2→1 を1秒刻み） */
   var SHOW = 1500;       /* 結果を見せてから親に知らせるまで */
+  var SHOW_WIN = 2000;   /* かちは取った秒数も読むので少し長く。叩き台 */
   var CPU = Hayauchi.parseCpu(location.search);
   var SHAPES = Hayauchi.SHAPES, TRUE = Hayauchi.TRUE;
 
@@ -362,11 +363,12 @@ if (typeof document !== 'undefined') (function () {
   function tap(i) {
     if (done || !card) return;
     /* タイマーが遅れても、時間を過ぎたタップは勝ちにしない */
-    var r = Hayauchi.outcome(card, SHAPES[i], now() - dealtAt, CPU);
-    if (r) finish(r);
+    var ms = now() - dealtAt;   /* 判定と表示で同じ値を使う（測り直さない） */
+    var r = Hayauchi.outcome(card, SHAPES[i], ms, CPU);
+    if (r) finish(r, ms);
   }
 
-  function finish(r) {
+  function finish(r, ms) {
     if (done) return;
     done = true;
     clearTimeout(cpuTimer);
@@ -374,12 +376,15 @@ if (typeof document !== 'undefined') (function () {
     items.forEach(function (b, i) { b.classList.add(SHAPES[i] === want ? 'right' : 'dim'); });
     elRes.textContent = r === 'win' ? 'かち' : 'まけ';
     /* 相手は画面に出てこないので名指ししない。本家の「早い方が取る」に合わせた言い方 */
-    elNote.textContent = r === 'win' ? '' : r === 'miss' ? 'おてつき' : '先に取られた';
+    /* かちのときだけ取った秒数を出す。0.01秒未満は切り捨て（四捨五入だと持ち時間と同じ数字で勝って見えるため）。
+       おてつき・先に取られたは理由だけ（外した秒数や相手の持ち時間は記録にならないので出さない） */
+    elNote.textContent = r === 'win' ? (Math.floor(ms / 10) / 100).toFixed(2) + '秒で取った'
+                       : r === 'miss' ? 'おてつき' : '先に取られた';
     setTimeout(function () {
       if (sent) return;
       sent = true;
       parent.postMessage({ type: 'quest-duel', win: r === 'win' }, '*');
-    }, SHOW);
+    }, r === 'win' ? SHOW_WIN : SHOW);
   }
 })();
 </script>
