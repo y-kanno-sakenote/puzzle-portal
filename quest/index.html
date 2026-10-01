@@ -150,8 +150,9 @@ var FLOOR = 10;
 var KIRIBAN = [777777, 77777777, 123456, 1234567, 1000000000];
 /* 幕間とボス（spec §9 2版目）。添字＝そのステージを解いた後。早撃ちは勝てば×2、負けても減らない */
 var BOUTS = [
-  { type: 'quest-duel', name: '早撃ち', src: 'hayauchi.html?cpu=1200' },
-  { type: 'quest-duel', name: '早撃ち', src: 'hayauchi.html?cpu=800' },
+  /* コンピュータが取るまでの時間。1.2秒／0.8秒では実機で勝てなかった（2026-10-01）。叩き台 */
+  { type: 'quest-duel', name: '早撃ち', src: 'hayauchi.html?cpu=2000' },
+  { type: 'quest-duel', name: '早撃ち', src: 'hayauchi.html?cpu=1500' },
   { type: 'quest-boss', name: 'ボス',   src: 'boss.html' }
 ];
 var DUEL_RATE = 2;
