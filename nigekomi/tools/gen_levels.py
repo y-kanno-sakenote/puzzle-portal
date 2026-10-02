@@ -25,6 +25,7 @@
   - いらない線が0本：消しても problem_ok が保たれ、かつ最短の筋の上の罠の手の数（trap_info）が減らない線が無い。
     生成した地図からいらない線を消し切って作る（prune。2026-10-02 オーナー実機「いらない道多すぎない？」→ qa 差し戻しで改訂）
   - 同型の重複0（canon）・読みどころの下限（READING_MIN）・初級以上は最初の一手が2通り以上
+  - 地図の形（SHAPES・shape_map・shape_kept）と解き方の型（TYPES・solution_types）を持ち、段ごとに混ぜる（pick_tier）
   - 鬼2体（上級）は (a) どちらの鬼を外しても最短手数が縮む（2体とも効いている）
     (b) 最短解のすべての筋で2体が重ならない（2026-10-02 qa 差し戻しで追加）
 
@@ -33,17 +34,19 @@
   段ごとに勝率の帯を重ねずに決める（TIERS）。段の中は勝率の高い順。
 
 出力: JSON 配列 [{"nodes":[[c,r],...],"edges":[[i,j],...],"you":i,"home":i,
-                 "onis":[[i,歩数],...],"min":n,"rate":勝率の目安,"tier":"入門"}, ...]
+                 "onis":[[i,歩数],...],"min":n,"rate":勝率の目安,"tier":"入門",
+                 "shape":"輪","types":["誘い出し",...]}, ...]   types の先頭が主な型
   onis の2番目の数＝その鬼が1回の番に動く歩数（採用分はすべて1）。
   c=列(0..3), r=行(0..5)。点の番号は nodes の並び順。
 
 使い方:
-  python3 tools/gen_levels.py --seed 20261002 > tools/levels.json     # 12並列で約5分
+  python3 tools/gen_levels.py --seed 20261002 > tools/levels.json     # 12並列で約6分
   python3 tools/gen_levels.py --keep tools/levels.json --embed index.html > /dev/null   # 埋め込みだけ
   python3 tools/gen_levels.py --stats 3000      # 採用率の測定だけ（出力しない）
 """
 
 import argparse
+import collections
 import json
 import math
 import random
@@ -151,6 +154,208 @@ def random_map(rng, k, extra):
         return None
     edges = sorted(tuple(sorted(e)) for e in edges)
     return nodes, edges
+
+
+# ---------------------------------------------------------------- 地図の形（2026-10-02 オーナー「どれも同じに見える」）
+SHAPES = ["格子", "輪", "はしご", "星", "八の字", "木と輪"]
+
+
+def _on_grid(p):
+    return 0 <= p[0] < COLS and 0 <= p[1] < ROWS
+
+
+def _edge_ok(a, b, pts, edges):
+    """a-b を足してよいか：縦横2マス以内・他の点の上を通らない・既存の線と交差しない"""
+    if a == b or max(abs(a[0] - b[0]), abs(a[1] - b[1])) > 2:
+        return False
+    if any(seg_hits_point(a, b, p) for p in pts):
+        return False
+    return not any(segs_cross(a, b, c, d) for c, d in edges)
+
+
+def _point_free(p, pts, edges):
+    return p not in pts and not any(seg_hits_point(a, b, p) for a, b in edges)
+
+
+def _rect_ring(rng, x0, y0, x1, y1, keep=()):
+    """長方形の周の点（時計回り）。角と keep 以外の点を、間隔2以内を保って間引く"""
+    ring = [(x, y0) for x in range(x0, x1)] + [(x1, y) for y in range(y0, y1)] + \
+           [(x, y1) for x in range(x1, x0, -1)] + [(x0, y) for y in range(y1, y0, -1)]
+    corners = {(x0, y0), (x1, y0), (x1, y1), (x0, y1)} | set(keep)
+    out = []
+    dropped_prev = False
+    for p in ring:
+        if p not in corners and not dropped_prev and rng.random() < 0.3:
+            dropped_prev = True
+            continue
+        dropped_prev = False
+        out.append(p)
+    return out
+
+
+def _cycle_edges(ring):
+    return [(ring[i], ring[(i + 1) % len(ring)]) for i in range(len(ring))]
+
+
+def _finish(rng, pts, edges, n_branch, n_chord=0):
+    """骨組み（点と線・座標）を検査し、行き止まりの枝と弦を足して (nodes, edges) にする"""
+    pts = list(dict.fromkeys(pts))
+    ok_edges = []
+    for a, b in edges:
+        if not _edge_ok(a, b, pts, ok_edges):
+            return None
+        ok_edges.append((a, b))
+    edges = ok_edges
+    free = [(c, r) for r in range(ROWS) for c in range(COLS)]
+    for _ in range(n_branch):
+        rng.shuffle(free)
+        for p in free:
+            if not _point_free(p, pts, edges):
+                continue
+            anchors = [q for q in pts if _edge_ok(p, q, pts + [p], edges)]
+            if anchors:
+                q = rng.choice(anchors)
+                pts.append(p); edges.append((p, q))
+                break
+    for _ in range(n_chord):
+        pairs = [(a, b) for i, a in enumerate(pts) for b in pts[i + 1:]
+                 if (a, b) not in edges and (b, a) not in edges and _edge_ok(a, b, pts, edges)]
+        if pairs:
+            edges.append(rng.choice(pairs))
+    nodes = sorted(pts, key=lambda p: (p[1], p[0]))
+    idx = {p: i for i, p in enumerate(nodes)}
+    E = sorted(tuple(sorted((idx[a], idx[b]))) for a, b in edges)
+    if not connected(len(nodes), E):
+        return None
+    return nodes, E
+
+
+def shape_map(rng, shape):
+    """形の型ごとに地図を作る。戻り値 (nodes, edges, 骨組みの線（座標の組の集合）, 形の情報) か None"""
+    if shape == "格子":
+        m = random_map(rng, rng.randint(10, 17), rng.randint(2, 6))
+        return None if m is None else (m[0], m[1], set(), {})
+    if shape == "輪":
+        w, h = rng.choice([2, 3]), rng.choice([3, 4, 5])
+        x0, y0 = rng.randint(0, COLS - 1 - w), rng.randint(0, ROWS - 1 - h)
+        ring = _rect_ring(rng, x0, y0, x0 + w, y0 + h)
+        sk = _cycle_edges(ring)
+        m = _finish(rng, ring, list(sk), rng.randint(2, 5))
+        return None if m is None else (m[0], m[1], {frozenset(e) for e in sk}, {"rings": [sk]})
+    if shape == "はしご":
+        g = rng.choice([1, 2])
+        a = rng.randint(0, COLS - 1 - g)
+        h = rng.choice([3, 4, 5])
+        y0 = rng.randint(0, ROWS - 1 - h)
+        rows = list(range(y0, y0 + h + 1))
+        rails = [(a, y) for y in rows] + [(a + g, y) for y in rows]
+        sk_rail = [((x, y), (x, y + 1)) for x in (a, a + g) for y in rows[:-1]]
+        rungs = rng.sample(rows, rng.randint(3, len(rows)))
+        sk_rung = [((a, y), (a + g, y)) for y in rungs]
+        m = _finish(rng, rails, sk_rail + sk_rung, rng.randint(1, 4))
+        return None if m is None else (m[0], m[1], {frozenset(e) for e in sk_rail + sk_rung},
+                                       {"rungs": [frozenset(e) for e in sk_rung]})
+    if shape == "星":
+        c = rng.choice([(1, 2), (2, 2), (1, 3), (2, 3)])
+        dirs = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]
+        pick = sorted(rng.sample(range(8), rng.randint(4, 6)))
+        pts, sk, arms = [c], [], []
+        for di in pick:
+            d = dirs[di]
+            prev, arm = c, []
+            for k in range(1, rng.randint(1, 3) + 1):
+                p = (c[0] + d[0] * k, c[1] + d[1] * k)
+                if not _on_grid(p):
+                    break
+                pts.append(p); sk.append((prev, p)); arm.append(p); prev = p
+            if arm:
+                arms.append(arm)
+        if len(arms) < 4:
+            return None
+        # 隣り合う腕どうしを1〜2本の弦でつなぐ（中心を通る輪ができる）
+        chords = []
+        for _ in range(rng.randint(1, 2)):
+            i = rng.randrange(len(arms))
+            A, B = arms[i], arms[(i + 1) % len(arms)]
+            a, b = rng.choice(A), rng.choice(B)
+            if _edge_ok(a, b, pts, sk + chords):
+                chords.append((a, b))
+        if not chords:
+            return None
+        m = _finish(rng, pts, sk + chords, rng.randint(0, 3))
+        return None if m is None else (m[0], m[1], {frozenset(e) for e in sk}, {"center": c})
+    if shape == "八の字":
+        xj, yj = rng.choice([1, 2]), rng.randint(1, 4)
+        xa, ya = rng.randint(0, xj - 1), rng.randint(max(0, yj - 3), yj - 1)
+        xb, yb = rng.randint(xj + 1, min(COLS - 1, xj + 2)), rng.randint(yj + 1, min(ROWS - 1, yj + 3))
+        top = _rect_ring(rng, xa, ya, xj, yj)
+        bot = _rect_ring(rng, xj, yj, xb, yb)
+        if len(top) < 4 or len(bot) < 4:
+            return None
+        flip = rng.random() < 0.5
+        f = (lambda p: (COLS - 1 - p[0], p[1])) if flip else (lambda p: p)
+        top = [f(p) for p in top]; bot = [f(p) for p in bot]
+        sk1, sk2 = _cycle_edges(top), _cycle_edges(bot)
+        m = _finish(rng, top + bot, sk1 + sk2, rng.randint(1, 4))
+        return None if m is None else (m[0], m[1], {frozenset(e) for e in sk1 + sk2}, {"rings": [sk1, sk2]})
+    if shape == "木と輪":
+        k = rng.randint(9, 15)
+        allp = [(c, r) for r in range(ROWS) for c in range(COLS)]
+        pts = [rng.choice(allp)]
+        edges = []
+        tries = 0
+        while len(pts) < k and tries < 200:
+            tries += 1
+            p = rng.choice(allp)
+            if not _point_free(p, pts, edges):
+                continue
+            anchors = [q for q in pts if _edge_ok(p, q, pts + [p], edges)]
+            if anchors:
+                pts.append(p); edges.append((p, rng.choice(anchors)))
+        # 長さ4以上の輪を1つだけ作る弦
+        nodes0 = pts
+        adj = {p: [] for p in pts}
+        for a, b in edges:
+            adj[a].append(b); adj[b].append(a)
+        def tdist(a, b):
+            d = {a: 0}; q = deque([a])
+            while q:
+                v = q.popleft()
+                for w in adj[v]:
+                    if w not in d:
+                        d[w] = d[v] + 1; q.append(w)
+            return d[b]
+        pairs = [(a, b) for i, a in enumerate(pts) for b in pts[i + 1:]
+                 if b not in adj[a] and _edge_ok(a, b, pts, edges) and tdist(a, b) >= 3]
+        if not pairs:
+            return None
+        edges.append(rng.choice(pairs))
+        m = _finish(rng, nodes0, edges, 0)
+        return None if m is None else (m[0], m[1], set(), {"one_ring": True})
+    raise ValueError(shape)
+
+
+def cycle_rank(nodes, edges):
+    return len(edges) - len(nodes) + 1
+
+
+def shape_kept(shape, nodes, edges, sk, info):
+    """削った後も形の特徴が残っているか"""
+    es = {frozenset((tuple(nodes[i]), tuple(nodes[j]))) for i, j in edges}
+    if shape == "格子":
+        return True
+    if shape in ("輪", "八の字"):
+        return all(all(frozenset(e) in es for e in ring) for ring in info["rings"])
+    if shape == "はしご":
+        return sum(1 for r in info["rungs"] if r in es) >= 2 and cycle_rank(nodes, edges) >= 1 and \
+            sum(1 for e in sk if e in es) >= len(sk) - 2
+    if shape == "星":
+        c = info["center"]
+        deg = sum(1 for e in es if c in e)
+        return deg >= 3 and cycle_rank(nodes, edges) >= 1
+    if shape == "木と輪":
+        return cycle_rank(nodes, edges) == 1
+    return False
 
 
 def connected(k, edges):
@@ -287,8 +492,8 @@ def similar(lv, chosen):
     """既採用と似すぎ：線の集合の Jaccard > MAX_J（左右反転込み）か、役割つきグラフとして同型"""
     if any(c.get("_canon") is not None and c["_canon"] == lv.get("_canon") for c in chosen):
         return True
-    e = edge_set(lv["_nodes"], lv["_edges"])
-    m = edge_set(lv["_nodes"], lv["_edges"], mirror=True)
+    e = lv["_eset"]
+    m = lv.get("_mset") or edge_set(lv["_nodes"], lv["_edges"], mirror=True)
     for c in chosen:
         ce = c["_eset"]
         if jaccard(e, ce) > MAX_J or jaccard(m, ce) > MAX_J:
@@ -536,6 +741,117 @@ def unused(g, you, home, onis, steps):
     return ne - len(used_e), g.k - len(used_v)
 
 
+# ---------------------------------------------------------------- 解き方の型（2026-10-02）
+TYPES = ["誘い出し", "輪でまく", "枝でやり過ごす"]   # ① ② ③。主な型はこの順で先に当てはまるもの
+
+
+def edge_kinds(g, home):
+    """有向の線 (u,v) の種類（qa_solver の罠の型の分類と同じ定義）：橋でなければ 'ring'。
+    橋なら v 側に家があれば 'home'、v 側が木（行き止まりの枝）なら 'branch'、それ以外 'back'"""
+    kind = {}
+    for u in range(g.k):
+        for v in g.adj[u]:
+            seen = {v}; st = [v]
+            while st:
+                x = st.pop()
+                for y in g.adj[x]:
+                    if {x, y} == {u, v} or y in seen:
+                        continue
+                    seen.add(y); st.append(y)
+            if u in seen:
+                kind[(u, v)] = 'ring'
+            elif home in seen:
+                kind[(u, v)] = 'home'
+            else:
+                ne = sum(len(g.adj[x]) for x in seen) // 2
+                kind[(u, v)] = 'branch' if ne == len(seen) - 1 else 'back'
+    return kind
+
+
+def solution_types(g, you, home, onis, steps, limit=20000):
+    """最短解のすべての筋に共通する型の集合と、家から遠ざかる手数（筋ごとの最大の、筋どうしの最小）。
+    ① 誘い出し：家までの道のりが始めより2以上増える（鬼を引きつける）うえに、一度通った点をもう一度通って
+       戻ってくる（引きつけた鬼の脇を抜けて家へ向かう）
+    ② 輪でまく：筋の中に、互いに異なる k(>=4) 個の点を続けて通り、最初と最後の点が線でつながる区間がある
+       （長さ k の輪を k-1 本以上ぐるりと回る）
+    ③ 枝でやり過ごす：筋の上の罠の手に、行き止まりの枝へ入る手（edge_kinds が 'branch'）がある
+    罠の手＝すぐ捕まらないのに、その先もう勝てない局面へ落ちる手。筋が多すぎれば None
+    （叩き台では①②にも「その場面の罠の手」を求めたが、鬼はすぐ後ろを追ってくるので家の方へ引き返す手・
+      逆回りの手はほぼ「すぐ捕まる手」になり罠にならない。①の罠つきは候補約2000中0〜3件だった）"""
+    start = (you,) + tuple(onis)
+    dist = {start: 0}; order = [start]; out = {}; wins = {}
+    q = deque([start])
+    while q:
+        s = q.popleft(); out[s] = []; wins[s] = []
+        for to in g.adj[s[0]]:
+            r, ns, _ = g.play(s, to, home, steps)
+            if r == 'win':
+                wins[s].append(to)
+            elif r is None:
+                out[s].append((to, ns))
+                if ns not in dist:
+                    dist[ns] = dist[s] + 1; order.append(ns); q.append(ns)
+    rev = {}
+    for s, lst in out.items():
+        for _, ns in lst:
+            rev.setdefault(ns, []).append(s)
+    dtw = {s: 1 for s in order if wins[s]}
+    q = deque(dtw)
+    while q:
+        s = q.popleft()
+        for pp in rev.get(s, []):
+            if pp not in dtw:
+                dtw[pp] = dtw[s] + 1; q.append(pp)
+    lines = []
+    def rec(s, path):
+        if len(lines) > limit:
+            return
+        d = dtw[s]
+        if d == 1:
+            for to in wins[s]:
+                lines.append(path + [(s, to)])
+            return
+        for to, ns in out[s]:
+            if dtw.get(ns) == d - 1:
+                rec(ns, path + [(s, to)])
+    rec(start, [])
+    if len(lines) > limit:
+        return None
+    kind = edge_kinds(g, home)
+    Dh = g.D[home]
+    d0 = Dh[you]
+    common = None
+    away_min = None
+    for line in lines:
+        traps = [(s, to) for s, _ in line for to, ns in out[s] if ns not in dtw]
+        pos = [s[0] for s, _ in line] + [home]
+        t = set()
+        # ①
+        if max(Dh[p] for p in pos) - d0 >= 2 and len(set(pos)) < len(pos):
+            t.add(TYPES[0])
+        # ②
+        done = False
+        for i in range(len(pos)):
+            for j in range(i + 3, len(pos)):
+                seg = pos[i:j + 1]
+                if len(set(seg)) != len(seg):
+                    break
+                if seg[0] in g.adj[seg[-1]]:
+                    done = True
+                    break
+            if done:
+                break
+        if done:
+            t.add(TYPES[1])
+        # ③
+        if any(kind[(s[0], to)] == 'branch' for s, to in traps):
+            t.add(TYPES[2])
+        common = t if common is None else common & t
+        away = max(Dh[p] for p in pos) - d0
+        away_min = away if away_min is None else min(away_min, away)
+    return {"types": sorted(common, key=TYPES.index), "away": away_min, "nlines": len(lines)}
+
+
 def make_record(nodes, edges, you, home, onis, steps, g, a):
     rate = random_rate(g, you, home, onis, list(steps))
     ti = trap_info(g, you, home, onis, steps)
@@ -548,7 +864,7 @@ def make_record(nodes, edges, you, home, onis, steps, g, a):
     return {"nodes": [list(p) for p in nodes], "edges": [list(e) for e in edges],
             "you": you, "home": home, "onis": [[o, n] for o, n in zip(onis, steps)],
             "min": a["min"], "_nodes": nodes, "_edges": edges,
-            "_eset": edge_set(nodes, edges), "_states": a["nstates"],
+            "_eset": edge_set(nodes, edges), "_mset": edge_set(nodes, edges, mirror=True), "_states": a["nstates"],
             "_detour": a["min"] - g.D[you][home], "_wfirst": wfirst, "rate": round(rate, 4),
             "_reading": ti["reading"], "_traps": ti["traps"], "_first": len(g.adj[you]),
             "_canon": canon(nodes, edges, you, home, onis)}
@@ -597,16 +913,20 @@ def canon(nodes, edges, you, home, onis):
     return best[0]
 
 
-def try_one(rng, steps, tie_mode, stat, do_prune=True):
-    k = rng.randint(10, 17)
-    extra = rng.randint(2, 6)
-    m = random_map(rng, k, extra)
+def try_one(rng, steps, tie_mode, stat, shape="格子", do_prune=True, need_type=True):
+    m = shape_map(rng, shape)
     if m is None:
         stat["bad_map"] += 1
         return None
-    nodes, edges = m
+    nodes, edges, sk, info = m
+    k = len(nodes)
+    if k < 2 + len(steps):
+        return None
     g = Game(nodes, edges)
-    ids = rng.sample(range(k), 2 + len(steps))
+    # 形のある地図は、駒と家を骨組みの点に置きやすくする（削った後も形が残りやすい）
+    skel = sorted({i for i, p in enumerate(nodes) for e in sk if tuple(p) in e})
+    pool = skel if (len(skel) >= 2 + len(steps) and rng.random() < 0.7) else list(range(k))
+    ids = rng.sample(pool, 2 + len(steps))
     you, home, onis = ids[0], ids[1], ids[2:]
     stat["tried"] += 1
     if g.D[you][home] < 2:
@@ -628,7 +948,6 @@ def try_one(rng, steps, tie_mode, stat, do_prune=True):
         if not two_oni_ok(g, you, home, onis, list(steps), a["min"]):
             return None
         stat["two_ok"] += 1
-    stat["ok"] += 1
     if do_prune and tie_mode == "unique":
         ok, g, a = problem_ok(nodes, edges, you, home, onis, steps, a["min"])
         if not ok:          # 判定の順を逆にすると最短が変わる地図
@@ -636,48 +955,132 @@ def try_one(rng, steps, tie_mode, stat, do_prune=True):
         nodes, edges, you, home, onis = prune(rng, nodes, edges, you, home, onis, steps, a["min"])
         ok, g, a = problem_ok(nodes, edges, you, home, onis, steps, a["min"])
         assert ok
-    return make_record(nodes, edges, you, home, onis, steps, g, a)
+        if not shape_kept(shape, nodes, edges, sk, info):
+            stat["shape_lost"] += 1
+            return None
+    st = solution_types(g, you, home, onis, steps)
+    if st is None or (need_type and not st["types"]):
+        stat["no_type"] += 1
+        return None
+    stat["ok"] += 1
+    rec = make_record(nodes, edges, you, home, onis, steps, g, a)
+    rec["shape"] = shape
+    rec["types"] = st["types"]
+    rec["_away"] = st["away"]
+    return rec
 
 
 def new_stat():
-    return {"tried": 0, "bad_map": 0, "winnable": 0, "naive_lose": 0, "tie_bad": 0, "two_ok": 0, "ok": 0}
+    return {"tried": 0, "bad_map": 0, "winnable": 0, "naive_lose": 0, "tie_bad": 0, "two_ok": 0, "shape_lost": 0, "no_type": 0, "ok": 0}
 
 
 def run_chunk(job):
     """並列生成の1かたまり（multiprocessing から呼ぶので最上位に置く）"""
-    steps, seed, n, tie_mode = job
+    steps, shape, seed, n, tie_mode = job
     rng = random.Random(seed)
     st = new_stat()
     out = []
     for _ in range(n):
-        lv = try_one(rng, steps, tie_mode, st)
+        lv = try_one(rng, steps, tie_mode, st, shape)
         if lv is not None:
             out.append(lv)
-    return steps, st, out
+    return steps, shape, st, out
 
 
-def collect(seed, tie_mode, rounds, log, kinds=None, workers=None):
-    """鬼の構成ごとに rounds 回試し、候補を集める。rounds は {構成: 回数}"""
+def collect(seed, tie_mode, rounds, log, workers=None):
+    """(鬼の構成, 形) ごとに rounds 回試し、候補を集める。rounds は {(構成, 形): 回数}"""
     import multiprocessing
-    kinds = kinds or [(1,), (1, 1)]
     jobs = []
-    for ki, steps in enumerate(kinds):
-        total = rounds[steps]
+    for ki, (steps, shape) in enumerate(sorted(rounds, key=lambda k: (len(k[0]), SHAPES.index(k[1])))):
+        total = rounds[(steps, shape)]
         for c in range((total + CHUNK - 1) // CHUNK):
-            jobs.append((steps, seed * 1000 + ki * 100 + c, min(CHUNK, total - c * CHUNK), tie_mode))
+            jobs.append((steps, shape, seed * 10000 + ki * 1000 + c, min(CHUNK, total - c * CHUNK), tie_mode))
     with multiprocessing.Pool(workers) as pool:
-        results = pool.map(run_chunk, jobs)
-    cands = {steps: [] for steps in kinds}
-    stats = {steps: new_stat() for steps in kinds}
-    for steps, st, out in results:
-        cands[steps] += out
+        results = pool.map(run_chunk, jobs, chunksize=1)
+    cands = {}
+    stats = {}
+    for steps, shape, st, out in results:
+        cands.setdefault(steps, []).extend(out)
+        acc = stats.setdefault((steps, shape), new_stat())
         for k in st:
-            stats[steps][k] += st[k]
-    for steps in kinds:
-        st = stats[steps]
-        log("鬼 %s: 試行 %d / 勝てる %d / 素直に負ける %d / 同点あり %d / 2体とも効いて重ならない %d / 採用候補 %d" % (
-            steps, st["tried"], st["winnable"], st["naive_lose"], st["tie_bad"], st["two_ok"], st["ok"]))
+            acc[k] += st[k]
+    for (steps, shape), st in sorted(stats.items(), key=lambda kv: (len(kv[0][0]), SHAPES.index(kv[0][1]))):
+        log("鬼%d体 %s: 試行 %d / 勝てる %d / 素直に負ける %d / 同点あり %d / 形が崩れた %d / 型なし %d / 採用候補 %d" % (
+            len(steps), shape, st["tried"], st["winnable"], st["naive_lose"], st["tie_bad"],
+            st["shape_lost"], st["no_type"], st["ok"]))
     return cands, stats
+
+
+MAX_SAME_SHAPE = 4   # 1段の中で同じ形は4問まで
+
+
+def arrange(picked):
+    """勝率の高い順に並べ、同じ勝率の中で並べ替えて、隣どうしが同じ形にならない並びを返す（無ければ None）"""
+    rest = sorted(picked, key=lambda l: -l["rate"])
+    out = []
+    while rest:
+        top = rest[0]["rate"]
+        block = [l for l in rest if l["rate"] == top]
+        cnt = collections.Counter(l["shape"] for l in block)
+        cand = [l for l in block if not out or l["shape"] != out[-1]["shape"]]
+        if not cand:
+            return None
+        nxt = max(cand, key=lambda l: (cnt[l["shape"]], -l["min"]))
+        out.append(nxt)
+        rest.remove(nxt)
+    return out
+
+
+def pick_tier(rng, name, pool, chosen, attempts=1500):
+    """1段10問を選ぶ。条件：主な型①②③をそれぞれ2問以上（候補が足りない型は取れるだけ）・形3種類以上・
+    同じ形は4問まで・勝率順に並べて隣が同じ形にならない・既採用と似すぎない。手数の偏りも抑える"""
+    if name == "上級":
+        key = lambda l: (l["rate"], l["_wfirst"])
+    else:
+        key = lambda l: (l["_wfirst"], -l["_detour"], -l["_states"])
+    base = sorted(pool, key=key)
+    best = None
+    for at in range(attempts):
+        # 2回目からは品質順に揺らぎを足す（揺らぎは回を追うごとに大きく）
+        w = len(base) * min(1.0, at / 300.0)
+        order = base if at == 0 else [l for _, l in sorted(((k + rng.random() * w, l) for k, l in enumerate(base)),
+                                                           key=lambda t: t[0])]
+        picked, shp, mins = [], collections.Counter(), collections.Counter()
+        def can(c):
+            return (shp[c["shape"]] < MAX_SAME_SHAPE and mins[c["min"]] < 4
+                    and not similar(c, chosen + picked))
+        def take(c):
+            picked.append(c); shp[c["shape"]] += 1; mins[c["min"]] += 1
+        for t in TYPES:
+            got = 0
+            for c in order:
+                if got >= 2:
+                    break
+                if c["types"][0] == t and c not in picked and can(c):
+                    take(c); got += 1
+        # 形の種類を先に3つ以上に
+        for c in order:
+            if len(picked) >= PER_TIER or len(shp) >= 3:
+                break
+            if c["shape"] not in shp and c not in picked and can(c):
+                take(c)
+        for c in sorted(order, key=lambda l: shp[l["shape"]]):
+            if len(picked) >= PER_TIER:
+                break
+            if c not in picked and can(c):
+                take(c)
+        if len(picked) < PER_TIER or len(shp) < 3:
+            continue
+        seq = arrange(picked)
+        if seq is None:
+            continue
+        tc = collections.Counter(l["types"][0] for l in seq)
+        score = (sum(min(tc[t], 2) for t in TYPES), len(shp))
+        if best is None or score > best[0]:
+            best = (score, seq)
+        if score[0] == 6:
+            break
+    return None if best is None else best[1]
 
 
 def select(rng, cands, log):
@@ -688,44 +1091,22 @@ def select(rng, cands, log):
                 if mlo <= c["min"] <= mhi and rlo <= c["rate"] < rhi
                 and c["_reading"] >= READING_MIN[name] and c["_canon"] is not None
                 and (name == "入門" or c["_first"] >= 2)]
-        rng.shuffle(pool)
-        picked = []
-        if len(steps) > 1:
-            # 上級は勝率の低い順
-            pool.sort(key=lambda l: (l["rate"], l["_wfirst"]))
-            for c in pool:
-                if len(picked) >= PER_TIER:
-                    break
-                if not similar(c, chosen + picked):
-                    picked.append(c)
-        else:
-            # 最初の一手で勝ちにつながる手が少ない・回り道が大きい・状態が多いものを優先し、最短手数を散らす
-            pool.sort(key=lambda l: (l["_wfirst"], -l["_detour"], -l["_states"]))
-            used_min = {}
-            for c in pool:
-                if len(picked) >= PER_TIER:
-                    break
-                if used_min.get(c["min"], 0) >= 4:
-                    continue
-                if similar(c, chosen + picked):
-                    continue
-                picked.append(c)
-                used_min[c["min"]] = used_min.get(c["min"], 0) + 1
-        if len(picked) < PER_TIER:
-            log("!! %s が %d 本しか集まらない（候補 %d）" % (name, len(picked), len(pool)))
-        # 段の中は勝率の目安の高い順（やさしい順）
-        picked.sort(key=lambda l: (-l["rate"], l["min"]))
-        log("%s: %d本（候補 %d） 最短 %s 勝率 %s" % (name, len(picked), len(pool),
-            [p["min"] for p in picked], [p["rate"] for p in picked]))
-        chosen += picked
-        for p in picked:
+        seq = pick_tier(rng, name, pool, chosen)
+        if seq is None:
+            log("!! %s が選べない（候補 %d）" % (name, len(pool)))
+            continue
+        log("%s: 候補 %d / 最短 %s / 勝率 %s" % (name, len(pool), [p["min"] for p in seq], [p["rate"] for p in seq]))
+        log("    形 %s" % [p["shape"] for p in seq])
+        log("    型 %s" % ["/".join(p["types"]) for p in seq])
+        chosen += seq
+        for p in seq:
             p["tier"] = name
             out.append(p)
     return out
 
 
 def public(lv):
-    return {k: lv[k] for k in ("nodes", "edges", "you", "home", "onis", "min", "rate", "tier")}
+    return {k: lv[k] for k in ("nodes", "edges", "you", "home", "onis", "min", "rate", "tier", "shape", "types")}
 
 
 def embed(path, levels):
@@ -744,8 +1125,8 @@ def embed(path, levels):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=20261002)
-    ap.add_argument("--rounds1", type=int, default=120000, help="鬼1体の試行回数")
-    ap.add_argument("--rounds2", type=int, default=3000000, help="鬼2体の試行回数（条件が厳しいので多め）")
+    ap.add_argument("--rounds1", type=int, default=200000, help="鬼1体の、形1種類あたりの試行回数")
+    ap.add_argument("--rounds2", type=int, default=800000, help="鬼2体の、形1種類あたりの試行回数（条件が厳しいので多め）")
     ap.add_argument("--workers", type=int, default=None, help="並列数（既定=CPU数。結果は変わらない）")
     ap.add_argument("--tie", choices=["unique", "clock"], default="unique",
                     help="unique=到達しうる全局面で鬼の候補が1つの地図だけ採る / clock=12時から時計回りで決める")
@@ -757,15 +1138,18 @@ def main():
     rng = random.Random(args.seed)
 
     if args.stats:
-        collect(args.seed, "clock", {k: args.stats for k in STATS_KINDS}, log, STATS_KINDS, args.workers)
+        collect(args.seed, "clock", {(k, "格子"): args.stats for k in STATS_KINDS}, log, args.workers)
         return
 
     if args.keep:
         with open(args.keep, encoding="utf-8") as f:
             levels = json.load(f)
     else:
-        cands, _ = collect(args.seed, args.tie, {(1,): args.rounds1, (1, 1): args.rounds2}, log,
-                           workers=args.workers)
+        rounds = {}
+        for sh in SHAPES:
+            rounds[((1,), sh)] = args.rounds1
+            rounds[((1, 1), sh)] = args.rounds2
+        cands, _ = collect(args.seed, args.tie, rounds, log, workers=args.workers)
         levels = [public(l) for l in select(rng, cands, log)]
     if args.embed:
         embed(args.embed, levels)
