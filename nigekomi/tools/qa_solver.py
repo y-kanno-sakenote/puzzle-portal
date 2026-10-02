@@ -18,9 +18,14 @@
   9 同じ問題の描き直し: 駒・家の位置込みでグラフ同型な問題の組（鬼の動きは道のりだけで決まり同点も無いので、
     同型なら遊びとして同じ問題。座標の Jaccard では見つからない）
   埋め込み一致: index.html の LEVELS と levels.json が同一か
+  10 鍵（spec 2026-10-02 §鍵）: 入門は鍵なし・初級〜上級は鍵あり。置き場所＝家と同じ点・家の隣は不可／あなたから道のり2以上／
+    最初の鬼と同じ点は不可／行き止まりの先っぽ（次数1）の鍵は1段5問まで。素直な道＝鍵への最短→家への最短（すべて）で負け。
+    同型は鍵の位置込み。罠の型 branch 以外が鍵ありの問題ごとに半分以上。鍵を考えた呼び名（鍵へ急ぐ/家へ急ぐ/輪の向き/枝/その他）も出す
+  上級: 鬼2体を5問以上・残りは1体。(a)(b) は鬼2体の問題だけに当てる（spec §鬼が2体）
 規則の解釈（spec §規則）:
   あなた: 隣へ必ず1歩 → 🏠なら勝ち（🏠に鬼がいても勝ち＝spec 2026-10-02 訂正。逆順でも解いて最短が変わらないか比べる）
   → 鬼の点なら負け → 各鬼が「あなたまでの道のり(線の本数)」最小の隣へ1歩 → 重なったら負け
+  鍵: 🔑の点に入るとその手で拾う（入った手で負ければ意味なし）。鍵を持つまで🏠はただの点。局面＝(あなた, 鬼たち, 鍵を持つか)
 """
 import json, sys, math, re, itertools
 from collections import deque
@@ -41,7 +46,7 @@ class Map:
         for a, b in lv['edges']:
             self.adj[a].append(b); self.adj[b].append(a)
         self.dist = [self._bfs(s) for s in range(n)]
-        self.home = lv['home']
+        self.home = lv['home']; self.key = lv.get('key')
     def _bfs(self, s):
         d = [None] * len(self.P); d[s] = 0; q = deque([s])
         while q:
@@ -60,11 +65,12 @@ class Map:
         return min(cands, key=ang)
 
 def step(m, state, v, home_win=True, ties=None):
-    """state=(you, onis tuple 鬼ごとの順序を保持)。戻り値 ('win'|'lose'|'go', newstate)"""
-    you, onis = state
-    if home_win and v == m.home: return 'win', None
+    """state=(you, onis tuple 鬼ごとの順序を保持, 鍵を持つか)。戻り値 ('win'|'lose'|'go', newstate)"""
+    you, onis, hk = state
+    if home_win and v == m.home and hk: return 'win', None
     if v in onis: return 'lose', None
-    if v == m.home: return 'win', None
+    if v == m.home and hk: return 'win', None
+    hk2 = hk or v == m.key
     new = []
     for o in onis:
         c = m.oni_cands(o, v)
@@ -73,11 +79,11 @@ def step(m, state, v, home_win=True, ties=None):
             c = [m.clock_pick(o, c)]
         new.append(c[0])
     if v in new: return 'lose', None
-    return 'go', (v, tuple(new))
+    return 'go', (v, tuple(new), hk2)
 
 def explore(lv, home_win=True):
     m = Map(lv)
-    s0 = (lv['you'], tuple(o[0] for o in lv['onis']))
+    s0 = (lv['you'], tuple(o[0] for o in lv['onis']), lv.get('key') is None)
     seen = {s0: 0}; par = {s0: None}; q = deque([s0]); ties = []
     edges = {}; win_moves = {}; best = None; nonterm_oni_moves = 0
     while q:
@@ -127,6 +133,11 @@ def straight_paths(m, a, b):
             if d[w] == d[u] - 1: rec(w, p + [w])
     rec(a, [])
     return out
+
+def straight_paths_key(m, lv):
+    """spec §鍵: 素直な道＝鍵への最短の道→家への最短の道（鍵なしは家への最短）。複数ならすべての組"""
+    if lv.get('key') is None: return straight_paths(m, lv['you'], lv['home'])
+    return [a + b for a in straight_paths(m, lv['you'], lv['key']) for b in straight_paths(m, lv['key'], lv['home'])]
 
 def play_path(m, s0, path, home_win=True):
     s = s0
@@ -213,11 +224,11 @@ def edge_set(lv, f=lambda x, y: (x, y)):
 
 def jacc(A, B): return len(A & B) / len(A | B)
 
-TIERS = {  # spec §段: (鬼, 最短の下限, 最短の上限, 勝率の下限, 下限を含む, 勝率の上限, 上限を含む)
-    '入門': (1, 4, 6, 0.35, True, 0.75, True),
-    '初級': (1, 6, 9, 0.15, True, 0.35, False),
-    '中級': (1, 8, 99, 0.06, True, 0.15, False),
-    '上級': (2, 8, 99, 0.0, True, 0.06, False),
+TIERS = {  # spec §段（鍵の版）: (鬼の数の集合, 最短の下限, 最短の上限, 勝率の下限, 下限を含む, 勝率の上限, 上限を含む, 鍵)
+    '入門': ({1}, 4, 6, 0.35, True, 0.75, True, False),
+    '初級': ({1}, 6, 14, 0.10, True, 0.35, False, True),
+    '中級': ({1}, 8, 99, 0.03, True, 0.10, False, True),
+    '上級': ({1, 2}, 9, 16, 0.001, True, 0.03, False, True),   # 鬼2体を5問以上（main で数える）
 }
 
 def problem_ok(lv, ref_min):
@@ -228,7 +239,7 @@ def problem_ok(lv, ref_min):
     if ex['best'] != ref_min: why.append(f"(1)最短{ex['best']}")
     if ex['best'] is None: return why
     if explore(lv, home_win=False)['best'] != ex['best']: why.append('判定順で最短が変わる')
-    for p in straight_paths(m, lv['you'], lv['home']):
+    for p in straight_paths_key(m, lv):
         if play_path(m, ex['s0'], p)[0] != 'lose': why.append('(2)素直な道で勝てる'); break
     if ex['ties']: why.append('(3)同点')
     if len(lv['onis']) == 2:
@@ -243,14 +254,16 @@ def remove_edge(lv, k):
     deg = [0] * len(lv['nodes'])
     for a, b in E: deg[a] += 1; deg[b] += 1
     keep = [i for i in range(len(lv['nodes'])) if deg[i] > 0]
-    special = {lv['you'], lv['home']} | {o[0] for o in lv['onis']}
+    special = {lv['you'], lv['home']} | {o[0] for o in lv['onis']} | ({lv['key']} if lv.get('key') is not None else set())
     if any(deg[i] == 0 for i in special): return None
     idx = {old: new for new, old in enumerate(keep)}
     return dict(lv, nodes=[lv['nodes'][i] for i in keep], edges=[[idx[a], idx[b]] for a, b in E],
-                you=idx[lv['you']], home=idx[lv['home']], onis=[[idx[o[0]], o[1]] for o in lv['onis']])
+                you=idx[lv['you']], home=idx[lv['home']], onis=[[idx[o[0]], o[1]] for o in lv['onis']],
+                key=None if lv.get('key') is None else idx[lv['key']])
 
-def bridges_side(m, home):
-    """各有向辺 (u,v) について: 橋でなければ 'ring'。橋なら v 側に家があれば 'home'、無ければ枝(v側が木)か 'back'"""
+def bridges_side(m, home, far=None):
+    """各有向辺 (u,v) について: 橋でなければ 'ring'。橋なら v 側に家があれば 'home'、無ければ枝(v側が木)か 'back'。鍵は見ない（spec §罠の型）
+    far を dict で渡すと橋の先の点の集合を入れて返す"""
     n = len(m.adj); kind = {}
     for u in range(n):
         for v in m.adj[u]:
@@ -261,6 +274,7 @@ def bridges_side(m, home):
                     if (x, y) in ((v, u), (u, v)) or y in seen: continue
                     seen.add(y); st.append(y)
             if u in seen: kind[(u, v)] = 'ring'; continue
+            if far is not None: far[(u, v)] = seen
             if home in seen: kind[(u, v)] = 'home'; continue
             nv = len(seen); ne = sum(len(m.adj[x]) for x in seen) // 2
             kind[(u, v)] = 'branch' if ne == nv - 1 else 'back'   # v側が木＝行き止まりの枝
@@ -291,8 +305,18 @@ def removable_edges(lv, new_def=True):
         out.append(lv['edges'][k])
     return out
 
+def key_kind(m, lv, kind, far, s, v):
+    """spec §罠の型「鍵を考えた呼び名」: 鍵へ急ぐ／家へ急ぐ／輪の向き／枝／その他（この順に判定）"""
+    u, _, hk = s; key = lv.get('key')
+    if not hk and key is not None and m.dist[v][key] < m.dist[u][key]: return '鍵へ急ぐ'
+    if hk and m.dist[v][lv['home']] < m.dist[u][lv['home']]: return '家へ急ぐ'
+    if kind[(u, v)] == 'ring': return '輪の向き'
+    if kind[(u, v)] == 'branch' and key not in far[(u, v)]: return '枝'
+    return 'その他'
+
 def _labels(lv):
     lab = ['.'] * len(lv['nodes']); lab[lv['you']] = 'Y'; lab[lv['home']] = 'H'
+    if lv.get('key') is not None: lab[lv['key']] += 'K'
     for o in lv['onis']: lab[o[0]] += 'O'
     return lab
 
@@ -331,7 +355,7 @@ def main():
         if ex['best'] != lv['min']: fails.append(f'#{i} 最短 自前{ex["best"]} != データ{lv["min"]}')
         if exB['best'] != ex['best']: fails.append(f'#{i} 判定順を逆にすると最短が変わる 家先={ex["best"]} 鬼先={exB["best"]}')
         if ex['ties']: fails.append(f'#{i} 同点 {len(ex["ties"])}件 例 {ex["ties"][0]}')
-        sp = straight_paths(m, lv['you'], lv['home'])
+        sp = straight_paths_key(m, lv)
         sres = [play_path(m, ex['s0'], p) for p in sp]
         if any(r != 'lose' for r, _ in sres): fails.append(f'#{i} 素直な道で負けない')
         lines = optimal_lines(ex); merge = solo = None
@@ -341,14 +365,20 @@ def main():
             merge = sum(1 for ln in lines if any(on and on[0] == on[1] for _, on in ln))
             if merge: fails.append(f'#{i} (b) 最短解 {merge}/{len(lines)} 筋で重なる')
         rate = win_rate_horizon(ex)
-        if lv.get('rate') is None or abs(rate - lv['rate']) > 5e-5: fails.append(f'#{i} 勝率 自前{rate:.4f} != データ{lv.get("rate")}')
+        if lv.get('rate') is None or abs(rate - lv['rate']) > 5e-5 + 1e-9: fails.append(f'#{i} 勝率 自前{rate:.4f} != データ{lv.get("rate")}')
         t = TIERS.get(lv['tier'])
         if t is None: fails.append(f'#{i} 段名 {lv["tier"]}')
         else:
-            no, lo, hi, rlo, rloi, rhi, rhii = t
-            if len(lv['onis']) != no: fails.append(f'#{i} 鬼の数')
+            no, lo, hi, rlo, rloi, rhi, rhii, haskey = t
+            if len(lv['onis']) not in no: fails.append(f'#{i} 鬼の数')
+            if (lv.get('key') is not None) != haskey: fails.append(f'#{i} 鍵の有無が段と合わない')
             if not (lo <= ex['best'] <= hi): fails.append(f'#{i} 最短{ex["best"]}が段の条件外')
             if not ((rate >= rlo if rloi else rate > rlo) and (rate <= rhi if rhii else rate < rhi)): fails.append(f'#{i} 勝率{rate:.4f}が帯の外')
+        key = lv.get('key')
+        if key is not None:
+            if key == lv['home'] or key in m.adj[lv['home']]: fails.append(f'#{i} 鍵が家と同じ点か隣')
+            if m.dist[lv['you']][key] < 2: fails.append(f'#{i} 鍵があなたから近い')
+            if key in [o[0] for o in lv['onis']]: fails.append(f'#{i} 鍵が最初の鬼と同じ点')
         oni0 = min(m.dist[o[0]][lv['you']] for o in lv['onis'])
         if oni0 < 2: fails.append(f'#{i} 最初の鬼が近い {oni0}')
         bad, mind, minang = geometry(lv)
@@ -357,18 +387,26 @@ def main():
         if rem: fails.append(f'#{i} いらない線 {len(rem)}本 {rem}')
         first = len(m.adj[lv['you']]); first_win = sum(1 for v, ns in ex['edges'][ex['s0']] if ns in ex['dtw']) + len(ex['win_moves'][ex['s0']])
         ntrap, rp, traps = trap_info(ex)
-        kind = bridges_side(m, lv['home']); tk = {}
-        for st_, v in traps: tk[kind[(st_[0], v)]] = tk.get(kind[(st_[0], v)], 0) + 1
+        far = {}; kind = bridges_side(m, lv['home'], far); tk = {}; kk = {}
+        for st_, v in traps:
+            tk[kind[(st_[0], v)]] = tk.get(kind[(st_[0], v)], 0) + 1
+            n_ = key_kind(m, lv, kind, far, st_, v); kk[n_] = kk.get(n_, 0) + 1
+        if key is not None and ntrap and (ntrap - tk.get('branch', 0)) * 2 < ntrap: fails.append(f'#{i} 罠の branch 以外が半分未満 {tk}')
         lower = {'入門': 1, '初級': 2, '中級': 3, '上級': 4}.get(lv['tier'], 0)
         if rp < lower: fails.append(f'#{i} 読みどころ{rp} < 下限{lower}')
         if lv['tier'] != '入門' and first < 2: fails.append(f'#{i} 初手が{first}通り')
         rows.append(dict(i=i, tier=lv['tier'], onis=len(lv['onis']), nodes=len(lv['nodes']), edges=len(lv['edges']),
                          min=ex['best'], dist=m.dist[lv['you']][lv['home']], detour=ex['best'] - m.dist[lv['you']][lv['home']],
-                         rate=round(rate, 4), first=f'{first_win}/{first}', reading=rp, traps=ntrap, trap_kind=tk, removable_old=len(rem_old), n_opt=len(lines),
+                         rate=round(rate, 4), first=f'{first_win}/{first}', reading=rp, traps=ntrap, trap_kind=tk, key_kind=kk, key=key, key_deg=None if key is None else len(m.adj[key]), removable_old=len(rem_old), n_opt=len(lines),
                          states=len(ex['seen']), straight_caught_at=[k for _, k in sres], oni0=oni0, solo=solo,
                          min_pt_edge=round(mind, 3), min_angle=round(minang, 1), removable=len(rem)))
-    # 段の中は勝率降順・段どうしの逆転
+    # 段の中は勝率降順・段どうしの逆転・鍵が先っぽの問題は段に5問まで・上級の鬼2体は5問以上
     order = ['入門', '初級', '中級', '上級']; prev_min = None
+    for tn in order:
+        nd = sum(1 for r in rows if r['tier'] == tn and r['key_deg'] == 1)
+        if nd > 5: fails.append(f'{tn} 鍵が行き止まりの先っぽの問題 {nd} > 5')
+    n2 = sum(1 for r in rows if r['tier'] == '上級' and r['onis'] == 2)
+    if n2 < 5: fails.append(f'上級の鬼2体 {n2} < 5')
     for tn in order:
         rs = [r['rate'] for r in rows if r['tier'] == tn]
         if rs != sorted(rs, reverse=True): fails.append(f'{tn} 段の中が勝率降順でない')
@@ -398,7 +436,10 @@ def main():
                      '勝率', min(r['rate'] for r in rs), '〜', max(r['rate'] for r in rs),
                      '読みどころ', min(r['reading'] for r in rs), '〜', max(r['reading'] for r in rs),
                      '初手1通り', sum(1 for r in rs if r['first'].endswith('/1')), '旧定義の消せる線', sum(r['removable_old'] for r in rs),
-                     '罠の型', {k: sum(r['trap_kind'].get(k, 0) for r in rs) for k in ('branch', 'home', 'back', 'ring')})
+                     '罠の型', {k: sum(r['trap_kind'].get(k, 0) for r in rs) for k in ('branch', 'home', 'back', 'ring')},
+                     'branch以外', f"{1 - sum(r['trap_kind'].get('branch', 0) for r in rs) / max(1, sum(r['traps'] for r in rs)):.0%}",
+                     '呼び名', {k: sum(r['key_kind'].get(k, 0) for r in rs) for k in ('鍵へ急ぐ', '家へ急ぐ', '輪の向き', '枝', 'その他')},
+                     '鍵が先っぽ', sum(1 for r in rs if r['key_deg'] == 1), '鬼2体', sum(1 for r in rs if r['onis'] == 2))
     print('top Jaccard (同一/左右反転):', sims[:3])
     print('top Jaccard (上下反転/180度):', res['top_sim_ud'][:3])
     print('FAILS:', len(fails)); [print(' ', f) for f in fails]

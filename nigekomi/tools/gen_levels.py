@@ -26,6 +26,9 @@
     生成した地図からいらない線を消し切って作る（prune。2026-10-02 オーナー実機「いらない道多すぎない？」→ qa 差し戻しで改訂）
   - 同型の重複0（canon）・読みどころの下限（READING_MIN）・初級以上は最初の一手が2通り以上
   - 地図の形（SHAPES・shape_map・shape_kept）と解き方の型（TYPES・solution_types）を持ち、段ごとに混ぜる（pick_tier）
+  - 🔑（2026-10-02）：鍵の点に入ると拾い、持つまで家はただの点。局面は (あなた, 鍵, 鬼...)。初級〜上級は鍵あり。
+    鍵ありの問題は罠のうち qa の branch 以外が半分以上（trap_kinds）。素直な道＝鍵への最短→家への最短
+    鍵ありの問題は鍵を外すと最短手数が縮む（鍵が効いている）
   - 鬼2体（上級）は (a) どちらの鬼を外しても最短手数が縮む（2体とも効いている）
     (b) 最短解のすべての筋で2体が重ならない（2026-10-02 qa 差し戻しで追加）
 
@@ -33,15 +36,16 @@
   random_rate():「すぐ捕まる手だけ避けて、あとはでたらめに選ぶ人」が40手以内に家へ着く確率（厳密計算）。
   段ごとに勝率の帯を重ねずに決める（TIERS）。段の中は勝率の高い順。
 
-出力: JSON 配列 [{"nodes":[[c,r],...],"edges":[[i,j],...],"you":i,"home":i,
+出力: JSON 配列 [{"nodes":[[c,r],...],"edges":[[i,j],...],"you":i,"home":i,"key":i または null,
                  "onis":[[i,歩数],...],"min":n,"rate":勝率の目安,"tier":"入門",
                  "shape":"輪","types":["誘い出し",...]}, ...]   types の先頭が主な型
   onis の2番目の数＝その鬼が1回の番に動く歩数（採用分はすべて1）。
   c=列(0..3), r=行(0..5)。点の番号は nodes の並び順。
 
 使い方:
-  python3 tools/gen_levels.py --seed 20261002 > tools/levels.json     # 12並列で約6分
+  python3 tools/gen_levels.py --seed 20261002 > tools/levels.json     # 12並列で約4分半
   python3 tools/gen_levels.py --keep tools/levels.json --embed index.html > /dev/null   # 埋め込みだけ
+  python3 tools/gen_levels.py --keep tools/levels.json --replace 24 > new.json          # 1問だけ差し替え（他は動かさない）
   python3 tools/gen_levels.py --stats 3000      # 採用率の測定だけ（出力しない）
 """
 
@@ -60,12 +64,17 @@ MAX_J = 0.5
 # 段: (名前, 鬼の構成, 最短手数の下限, 上限)  鬼の構成は歩数のタプル
 # 段: (名前, 鬼の構成, 最短手数の下限, 上限, 勝率の目安の下限, 上限)  鬼の構成は歩数のタプル
 #   勝率の目安＝random_rate()。帯を重ねないので、上の段ほど必ず勝率が低い（段どうしの逆転が無い）
+# 段: (名前, 使う候補 [(鬼の構成, 鍵あり)...], 最短の下限, 上限, 勝率の下限, 上限)  2026-10-02 鍵を導入
 TIERS = [
-    ("入門", (1,), 4, 6, 0.35, 0.75),
-    ("初級", (1,), 6, 9, 0.15, 0.35),
-    ("中級", (1,), 8, 99, 0.06, 0.15),
-    ("上級", (1, 1), 8, 99, 0.0, 0.06),    # 鬼2体（2体とも効いていて、最短解の筋で重ならない）
+    ("入門", [((1,), False)], 4, 6, 0.35, 0.75),          # 鍵なし（規則に慣れる）
+    ("初級", [((1,), True)], 6, 14, 0.10, 0.35),
+    ("中級", [((1,), True)], 8, 99, 0.03, 0.10),
+    ("上級", [((1, 1), True), ((1,), True)], 9, 16, 0.001, 0.03),   # 鬼2体が基本（5問以上）、残りは鬼1体の難しいもの
+    # 上級の下限 0.001・17手以上を外す：40手以内の勝率が 0 に張り付き、目安として働かないため
 ]
+TWO_ONI_MIN = 5        # 上級のうち鬼2体の問題の下限
+NONBRANCH_MIN = 0.5    # 鍵ありの問題は、罠のうち枝（qa_solver の branch）以外が半分以上
+KEY_TIP_MAX = 5        # 鍵が行き止まりの先っぽ（次数1）にある問題は1段に5問まで
 # 勝率 0.75 超は「すぐ捕まる手を避けるだけでほぼ勝てる」ので、どの段にも採らない（線を減らすと増える）
 # 読みどころ（trap_info の reading）の下限。初級以上は最初の一手が2通り以上（入門だけ1通りを許す）
 READING_MIN = {"入門": 1, "初級": 2, "中級": 3, "上級": 4}
@@ -372,8 +381,10 @@ def connected(k, edges):
 
 
 class Game:
-    def __init__(self, nodes, edges):
+    """局面は (あなたの点, 鍵を持っているか 0/1, 鬼の点...)。鍵の無い問題は最初から 1（家に入れば勝ち）"""
+    def __init__(self, nodes, edges, key=None):
         self.nodes = nodes
+        self.key = key
         self.k = len(nodes)
         self.adj = [[] for _ in range(self.k)]
         for i, j in edges:
@@ -398,6 +409,9 @@ class Game:
                     d[w] = d[v] + 1; q.append(w)
         return d
 
+    def start(self, you, onis):
+        return (you, 1 if self.key is None else 0) + tuple(onis)
+
     def oni_cands(self, o, y):
         dy = self.D[y]
         return [w for w in self.adj[o] if dy[w] == dy[o] - 1]
@@ -409,13 +423,17 @@ class Game:
         return min(c, key=lambda w: self.ang[(o, w)]), True
 
     def play(self, st, to, home, steps, home_first=True):
-        """st=(you, onis...)。戻り値 ('win'|'lose'|None, 新しい st, 同点が出たか)
+        """st=(you, 鍵, onis...)。戻り値 ('win'|'lose'|None, 新しい st, 同点が出たか)
+        鍵を持たずに家へ入っても勝ちにならない（ただの点）。鍵の点に入るとその手で拾う。
         home_first=False は「🏠に鬼がいたら負け」の逆順（採用条件の確認にだけ使う）"""
-        onis = st[1:]
-        if to == home and (home_first or to not in onis):
+        onis = st[2:]
+        k = st[1]
+        if to == home and k and (home_first or to not in onis):
             return 'win', st, False
         if to in onis:
             return 'lose', st, False
+        if to == self.key:
+            k = 1
         tie = False
         new = []
         caught = False
@@ -427,13 +445,13 @@ class Game:
                     caught = True
                     break
             new.append(o)
-        ns = (to,) + tuple(new)
+        ns = (to, k) + tuple(new)
         return ('lose' if caught else None), ns, tie
 
 
-def analyze(g, you, home, onis, steps, home_first=True):
-    """BFS。戻り値 dict(min, ties, nstates)。勝てなければ min=-1"""
-    start = (you,) + tuple(onis)
+def analyze(g, you, home, onis, steps, home_first=True, start=None):
+    """BFS。戻り値 dict(min, ties, nstates)。勝てなければ min=-1。start で途中の局面から始められる"""
+    start = start or g.start(you, onis)
     dist = {start: 0}
     q = deque([start])
     best = -1
@@ -457,10 +475,11 @@ def analyze(g, you, home, onis, steps, home_first=True):
 
 
 def naive_loses(g, you, home, onis, steps):
-    """家への最短の道（鬼を無視）をどれを選んでもそのまま進むと捕まるか"""
-    dh = g.D[home]
+    """素直な道（鬼を無視）をどれを選んでもそのまま進むと捕まるか。鍵の無い問題は家への最短の道、
+    鍵のある問題は「鍵への最短の道→家への最短の道」（鍵を持つまでは鍵へ、持ったら家へ道のりが縮む隣だけ）"""
     def rec(s):
         v = s[0]
+        dh = g.D[home] if s[1] else g.D[g.key]
         for to in g.adj[v]:
             if dh[to] != dh[v] - 1:
                 continue
@@ -470,7 +489,7 @@ def naive_loses(g, you, home, onis, steps):
             if r is None and not rec(ns):
                 return False
         return True
-    return rec((you,) + tuple(onis))
+    return rec(g.start(you, onis))
 
 
 def edge_set(nodes, edges, mirror=False):
@@ -509,7 +528,7 @@ def random_rate(g, you, home, onis, steps, horizon=HORIZON):
     """「すぐ捕まる手だけ避けて、あとはでたらめに選ぶ人」が horizon 手以内に家へ着く確率。
     各局面で、動いた直後に負けにならない手（鬼のいる点へ入る・鬼の番で追いつかれる、を除く）から
     等確率で1つ選ぶ。家へ入る手も候補の1つ（見えていても特別扱いしない）。安全な手が無ければ負け。"""
-    start = (you,) + tuple(onis)
+    start = g.start(you, onis)
     trans = {}
     q = [start]
     while q:
@@ -535,7 +554,7 @@ def random_rate(g, you, home, onis, steps, horizon=HORIZON):
 
 def optimal_states(g, you, home, onis, steps):
     """最短解のどれかの筋に乗る局面の集合（始めの局面を含む）"""
-    start = (you,) + tuple(onis)
+    start = g.start(you, onis)
     dist = {start: 0}
     order = [start]
     q = deque([start])
@@ -575,18 +594,18 @@ def two_oni_ok(g, you, home, onis, steps, m):
     good, best = optimal_states(g, you, home, onis, steps)
     if best != m:
         return False
-    return all(len(set(s[1:])) == len(s) - 1 for s in good)
+    return all(len(set(s[2:])) == len(s) - 2 for s in good)
 
 
 # ---------------------------------------------------------------- 生成
 # ---------------------------------------------------------------- 線を意味のあるものだけに減らす
-def problem_ok(nodes, edges, you, home, onis, steps, want_min, want_traps=None):
+def problem_ok(nodes, edges, you, home, onis, key, steps, want_min, want_traps=None):
     """「問題が変わらない」の判定（2026-10-02）。(1) 最短手数 want_min で解ける (2) 新しい地図での
     家への最短の道はすべて素直に進むと負け (3) 到達しうる全局面で鬼の行き先が1つ (4) 鬼2体なら (a)(b)。
     地図が連結であることも要る。戻り値 (ok, Game, analyze の結果)"""
     if not connected(len(nodes), edges):
         return False, None, None
-    g = Game(nodes, edges)
+    g = Game(nodes, edges, key)
     a = analyze(g, you, home, onis, steps)
     if a["min"] != want_min or a["ties"]:
         return False, g, a
@@ -607,7 +626,7 @@ def trap_info(g, you, home, onis, steps):
     traps   = 最短解のどれかの筋に乗る局面すべての罠の手の合計（線を消すときに減らしてはいけない数）
     reading = 読みどころ＝最短の筋の上で、罠の手が1つ以上ある手番の数。筋が複数あれば一番少ない筋の値
     first_trap = 最初の局面に罠の手があるか"""
-    start = (you,) + tuple(onis)
+    start = g.start(you, onis)
     dist = {start: 0}
     order = [start]
     out = {}
@@ -656,42 +675,42 @@ def trap_info(g, you, home, onis, steps):
     return {"traps": sum(nt.values()), "reading": R[start], "first_trap": nt[start] > 0}
 
 
-def remove_edge(nodes, edges, you, home, onis, ei):
-    """ei 番目の線を消す。孤立した点は点ごと消して番号を詰める。駒や家の点が孤立するなら None"""
+def remove_edge(nodes, edges, you, home, onis, key, ei):
+    """ei 番目の線を消す。孤立した点は点ごと消して番号を詰める。駒・家・鍵の点が孤立するなら None"""
     rest = [e for i, e in enumerate(edges) if i != ei]
     deg = [0] * len(nodes)
     for i, j in rest:
         deg[i] += 1; deg[j] += 1
-    if any(deg[v] == 0 for v in [you, home] + list(onis)):
+    if any(deg[v] == 0 for v in [you, home] + list(onis) + ([key] if key is not None else [])):
         return None
     keep = [v for v in range(len(nodes)) if deg[v] > 0]
     idx = {v: n for n, v in enumerate(keep)}
     return ([nodes[v] for v in keep], sorted((idx[i], idx[j]) for i, j in rest),
-            idx[you], idx[home], [idx[o] for o in onis])
+            idx[you], idx[home], [idx[o] for o in onis], (idx[key] if key is not None else None))
 
 
-def removable(nodes, edges, you, home, onis, steps, want_min, keep_traps=True):
+def removable(nodes, edges, you, home, onis, key, steps, want_min, keep_traps=True):
     """いらない線の番号の一覧。keep_traps=False は旧定義（罠の数を見ない・2026-10-02 前半）"""
     out = []
-    t0 = trap_info(Game(nodes, edges), you, home, onis, steps)["traps"] if keep_traps else None
+    t0 = trap_info(Game(nodes, edges, key), you, home, onis, steps)["traps"] if keep_traps else None
     for ei in range(len(edges)):
-        r = remove_edge(nodes, edges, you, home, onis, ei)
+        r = remove_edge(nodes, edges, you, home, onis, key, ei)
         if r is not None and problem_ok(*r, steps, want_min, t0)[0]:
             out.append(ei)
     return out
 
 
 def cur_traps(cur, steps):
-    return trap_info(Game(cur[0], cur[1]), cur[2], cur[3], cur[4], steps)["traps"]
+    return trap_info(Game(cur[0], cur[1], cur[5]), cur[2], cur[3], cur[4], steps)["traps"]
 
 
-def prune(rng, nodes, edges, you, home, onis, steps, want_min, tries=4):
+def prune(rng, nodes, edges, you, home, onis, key, steps, want_min, tries=4):
     """いらない線（消しても problem_ok が保たれ、かつ最短の筋の上の罠の手の数が減らない線）を
     1本ずつ消し、消せなくなるまで続ける（2026-10-02 qa 差し戻し：罠を作る線は残す）。消す順を
     ランダムに tries 通り試し、残る線が一番少ない（同じなら点が少ない）ものを返す"""
     best = None
     for _ in range(tries):
-        cur = (nodes, edges, you, home, onis)
+        cur = (nodes, edges, you, home, onis, key)
         while True:
             order = list(range(len(cur[1])))
             rng.shuffle(order)
@@ -711,7 +730,7 @@ def prune(rng, nodes, edges, you, home, onis, steps, want_min, tries=4):
 def unused(g, you, home, onis, steps):
     """最短解のどの筋でも、あなたも鬼も一度も通らない線と点の数"""
     good, best = optimal_states(g, you, home, onis, steps)
-    start = (you,) + tuple(onis)
+    start = g.start(you, onis)
     dist = {start: 0}
     q = deque([start])
     while q:
@@ -729,7 +748,7 @@ def unused(g, you, home, onis, steps):
             if (r == 'win' and d + 1 == best) or (r is None and ns in good and dist[ns] == d + 1):
                 used_e.add(frozenset((s[0], to))); used_v.add(to)
                 if r is None:
-                    for o, n in zip(s[1:], steps):
+                    for o, n in zip(s[2:], steps):
                         # 鬼の通った線（1歩ずつたどり直す）
                         for _ in range(n):
                             o2, _t = g.oni_step(o, to)
@@ -778,7 +797,7 @@ def solution_types(g, you, home, onis, steps, limit=20000):
     罠の手＝すぐ捕まらないのに、その先もう勝てない局面へ落ちる手。筋が多すぎれば None
     （叩き台では①②にも「その場面の罠の手」を求めたが、鬼はすぐ後ろを追ってくるので家の方へ引き返す手・
       逆回りの手はほぼ「すぐ捕まる手」になり罠にならない。①の罠つきは候補約2000中0〜3件だった）"""
-    start = (you,) + tuple(onis)
+    start = g.start(you, onis)
     dist = {start: 0}; order = [start]; out = {}; wins = {}
     q = deque([start])
     while q:
@@ -819,15 +838,25 @@ def solution_types(g, you, home, onis, steps, limit=20000):
         return None
     kind = edge_kinds(g, home)
     Dh = g.D[home]
-    d0 = Dh[you]
     common = None
     away_min = None
     for line in lines:
         traps = [(s, to) for s, _ in line for to, ns in out[s] if ns not in dtw]
         pos = [s[0] for s, _ in line] + [home]
+        # 目標までの道のり：鍵を持つまでは鍵、持ったら家。区間（鍵の前・後）ごとに始めより何手遠ざかったか
+        flags = [s[1] for s, _ in line] + [1]
+        tgt = [g.D[home][p] if f else g.D[g.key][p] for p, f in zip(pos, flags)]
+        away, base, seen_phase, revisit = 0, tgt[0], set(), False
+        for i, (p, f) in enumerate(zip(pos, flags)):
+            if i > 0 and f != flags[i - 1]:
+                base, seen_phase = tgt[i], set()
+            away = max(away, tgt[i] - base)
+            if p in seen_phase:
+                revisit = True
+            seen_phase.add(p)
         t = set()
         # ①
-        if max(Dh[p] for p in pos) - d0 >= 2 and len(set(pos)) < len(pos):
+        if away >= 2 and revisit:
             t.add(TYPES[0])
         # ②
         done = False
@@ -847,9 +876,64 @@ def solution_types(g, you, home, onis, steps, limit=20000):
         if any(kind[(s[0], to)] == 'branch' for s, to in traps):
             t.add(TYPES[2])
         common = t if common is None else common & t
-        away = max(Dh[p] for p in pos) - d0
         away_min = away if away_min is None else min(away_min, away)
     return {"types": sorted(common, key=TYPES.index), "away": away_min, "nlines": len(lines)}
+
+
+def trap_kinds(g, you, home, onis, steps):
+    """最短の筋に乗る局面すべての罠の手を種類別に数える。
+    qa: qa_solver と同じ線の種類（edge_kinds：ring/home/back/branch。鍵は見ない）
+    key: 鍵を考えた呼び名（2026-10-02 鍵の導入で追加）
+      鍵へ急ぐ＝鍵を持たずに鍵への道のりが縮む罠／家へ急ぐ＝鍵を持って家への道のりが縮む罠／
+      輪の向き＝橋でない線で上のどちらでもない罠／枝＝行き止まりの枝（鍵も家も無い木）へ入る罠／その他"""
+    start = g.start(you, onis)
+    dist = {start: 0}; order = [start]; out = {}; wins = {}
+    q = deque([start])
+    while q:
+        s = q.popleft(); out[s] = []; wins[s] = False
+        for to in g.adj[s[0]]:
+            r, ns, _ = g.play(s, to, home, steps)
+            if r == 'win':
+                wins[s] = True
+            elif r is None:
+                out[s].append((to, ns))
+                if ns not in dist:
+                    dist[ns] = dist[s] + 1; order.append(ns); q.append(ns)
+    rev = {}
+    for s, lst in out.items():
+        for _, ns in lst:
+            rev.setdefault(ns, []).append(s)
+    dtw = {s: 1 for s in order if wins[s]}
+    q = deque(dtw)
+    while q:
+        s = q.popleft()
+        for pp in rev.get(s, []):
+            if pp not in dtw:
+                dtw[pp] = dtw[s] + 1; q.append(pp)
+    qa, kk = collections.Counter(), collections.Counter()
+    if start not in dtw:
+        return {"qa": {}, "key": {}}
+    best = dtw[start]
+    kind = edge_kinds(g, home)
+    kind_k = edge_kinds(g, g.key) if g.key is not None else None
+    for s in order:
+        if s not in dtw or dist[s] + dtw[s] != best:
+            continue
+        for to, ns in out[s]:
+            if ns in dtw:
+                continue
+            u = s[0]
+            qa[kind[(u, to)]] += 1
+            tgt = g.D[home] if s[1] else g.D[g.key]
+            if tgt[to] < tgt[u]:
+                kk["家へ急ぐ" if s[1] else "鍵へ急ぐ"] += 1
+            elif kind[(u, to)] == 'ring':
+                kk["輪の向き"] += 1
+            elif kind[(u, to)] == 'branch' and (kind_k is None or kind_k[(u, to)] == 'branch'):
+                kk["枝"] += 1
+            else:
+                kk["その他"] += 1
+    return {"qa": dict(qa), "key": dict(kk)}
 
 
 def make_record(nodes, edges, you, home, onis, steps, g, a):
@@ -858,19 +942,21 @@ def make_record(nodes, edges, you, home, onis, steps, g, a):
     # 最初の一手のうち、まだ勝てる手の数（少ないほど読みが要る）
     wfirst = 0
     for to in g.adj[you]:
-        r, ns, _ = g.play((you,) + tuple(onis), to, home, steps)
-        if r == 'win' or (r is None and analyze(g, ns[0], home, ns[1:], steps)["min"] >= 0):
+        r, ns, _ = g.play(g.start(you, onis), to, home, steps)
+        if r == 'win' or (r is None and analyze(g, None, home, None, steps, start=ns)["min"] >= 0):
             wfirst += 1
     return {"nodes": [list(p) for p in nodes], "edges": [list(e) for e in edges],
             "you": you, "home": home, "onis": [[o, n] for o, n in zip(onis, steps)],
             "min": a["min"], "_nodes": nodes, "_edges": edges,
             "_eset": edge_set(nodes, edges), "_mset": edge_set(nodes, edges, mirror=True), "_states": a["nstates"],
-            "_detour": a["min"] - g.D[you][home], "_wfirst": wfirst, "rate": round(rate, 4),
+            "_detour": a["min"] - (g.D[you][home] if g.key is None else g.D[you][g.key] + g.D[g.key][home]),
+            "_wfirst": wfirst, "rate": round(rate, 4),
             "_reading": ti["reading"], "_traps": ti["traps"], "_first": len(g.adj[you]),
-            "_canon": canon(nodes, edges, you, home, onis)}
+            "_canon": canon(nodes, edges, you, home, onis, g.key), "key": g.key,
+            "_tk": trap_kinds(g, you, home, onis, steps)}
 
 
-def canon(nodes, edges, you, home, onis):
+def canon(nodes, edges, you, home, onis, key=None):
     """駒・家の役割つきグラフの正準形（同型なら同じ値）。点の色を道のりの分布で細分してから、
     同じ色の中の並べ方を全部試して辞書順最小の隣接行列を採る（点は最大17・色が細かいので軽い）"""
     n = len(nodes)
@@ -879,6 +965,8 @@ def canon(nodes, edges, you, home, onis):
         adj[i].add(j); adj[j].add(i)
     role = ['.'] * n
     role[you] = 'Y'; role[home] = 'H'
+    if key is not None:
+        role[key] += 'K'
     for o in onis:
         role[o] += 'O'
     color = [(role[v], len(adj[v])) for v in range(n)]
@@ -913,23 +1001,27 @@ def canon(nodes, edges, you, home, onis):
     return best[0]
 
 
-def try_one(rng, steps, tie_mode, stat, shape="格子", do_prune=True, need_type=True):
+def try_one(rng, steps, tie_mode, stat, shape="格子", do_prune=True, need_type=True, use_key=False):
     m = shape_map(rng, shape)
     if m is None:
         stat["bad_map"] += 1
         return None
     nodes, edges, sk, info = m
     k = len(nodes)
-    if k < 2 + len(steps):
+    need = 2 + len(steps) + (1 if use_key else 0)
+    if k < need:
         return None
-    g = Game(nodes, edges)
-    # 形のある地図は、駒と家を骨組みの点に置きやすくする（削った後も形が残りやすい）
+    # 形のある地図は、駒と家（と鍵）を骨組みの点に置きやすくする（削った後も形が残りやすい）
     skel = sorted({i for i, p in enumerate(nodes) for e in sk if tuple(p) in e})
-    pool = skel if (len(skel) >= 2 + len(steps) and rng.random() < 0.7) else list(range(k))
-    ids = rng.sample(pool, 2 + len(steps))
-    you, home, onis = ids[0], ids[1], ids[2:]
+    pool = skel if (len(skel) >= need and rng.random() < 0.7) else list(range(k))
+    ids = rng.sample(pool, need)
+    you, home, onis = ids[0], ids[1], ids[2:2 + len(steps)]
+    key = ids[-1] if use_key else None
+    g = Game(nodes, edges, key)
     stat["tried"] += 1
-    if g.D[you][home] < 2:
+    if key is None and g.D[you][home] < 2:
+        return None
+    if key is not None and (g.D[key][home] < 2 or g.D[you][key] < 2):   # 鍵は家と同じ点・隣は不可
         return None
     if any(g.D[o][you] < 2 for o in onis):
         return None
@@ -949,14 +1041,19 @@ def try_one(rng, steps, tie_mode, stat, shape="格子", do_prune=True, need_type
             return None
         stat["two_ok"] += 1
     if do_prune and tie_mode == "unique":
-        ok, g, a = problem_ok(nodes, edges, you, home, onis, steps, a["min"])
+        ok, g, a = problem_ok(nodes, edges, you, home, onis, key, steps, a["min"])
         if not ok:          # 判定の順を逆にすると最短が変わる地図
             return None
-        nodes, edges, you, home, onis = prune(rng, nodes, edges, you, home, onis, steps, a["min"])
-        ok, g, a = problem_ok(nodes, edges, you, home, onis, steps, a["min"])
+        nodes, edges, you, home, onis, key = prune(rng, nodes, edges, you, home, onis, key, steps, a["min"])
+        ok, g, a = problem_ok(nodes, edges, you, home, onis, key, steps, a["min"])
         assert ok
         if not shape_kept(shape, nodes, edges, sk, info):
             stat["shape_lost"] += 1
+            return None
+    if key is not None:
+        # 鍵が効いている：鍵を外すと最短手数が縮む（2026-10-02 qa 指摘：鍵が解の通り道の上にあるだけの問題を除く）
+        if analyze(Game(nodes, edges, None), you, home, onis, steps)["min"] >= a["min"]:
+            stat["key_idle"] += 1
             return None
     st = solution_types(g, you, home, onis, steps)
     if st is None or (need_type and not st["types"]):
@@ -967,47 +1064,52 @@ def try_one(rng, steps, tie_mode, stat, shape="格子", do_prune=True, need_type
     rec["shape"] = shape
     rec["types"] = st["types"]
     rec["_away"] = st["away"]
+    rec["_keydeg"] = len(g.adj[key]) if key is not None else None
     return rec
 
 
 def new_stat():
-    return {"tried": 0, "bad_map": 0, "winnable": 0, "naive_lose": 0, "tie_bad": 0, "two_ok": 0, "shape_lost": 0, "no_type": 0, "ok": 0}
+    return {"tried": 0, "bad_map": 0, "winnable": 0, "naive_lose": 0, "tie_bad": 0, "two_ok": 0, "shape_lost": 0, "no_type": 0, "key_idle": 0, "ok": 0}
 
 
 def run_chunk(job):
     """並列生成の1かたまり（multiprocessing から呼ぶので最上位に置く）"""
-    steps, shape, seed, n, tie_mode = job
+    steps, use_key, shape, seed, n, tie_mode = job
     rng = random.Random(seed)
     st = new_stat()
     out = []
     for _ in range(n):
-        lv = try_one(rng, steps, tie_mode, st, shape)
+        lv = try_one(rng, steps, tie_mode, st, shape, use_key=use_key)
         if lv is not None:
             out.append(lv)
-    return steps, shape, st, out
+    return steps, use_key, shape, st, out
 
 
 def collect(seed, tie_mode, rounds, log, workers=None):
-    """(鬼の構成, 形) ごとに rounds 回試し、候補を集める。rounds は {(構成, 形): 回数}"""
+    """(鬼の構成, 鍵の有無, 形) ごとに rounds 回試し、候補を集める。rounds は {(構成, 鍵, 形): 回数}。
+    戻り値の候補は {(構成, 鍵): [...]}"""
     import multiprocessing
+    order = sorted(rounds, key=lambda k: (len(k[0]), k[1], SHAPES.index(k[2])))
     jobs = []
-    for ki, (steps, shape) in enumerate(sorted(rounds, key=lambda k: (len(k[0]), SHAPES.index(k[1])))):
-        total = rounds[(steps, shape)]
+    for ki, (steps, use_key, shape) in enumerate(order):
+        total = rounds[(steps, use_key, shape)]
         for c in range((total + CHUNK - 1) // CHUNK):
-            jobs.append((steps, shape, seed * 10000 + ki * 1000 + c, min(CHUNK, total - c * CHUNK), tie_mode))
+            jobs.append((steps, use_key, shape, seed * 10000 + ki * 1000 + c,
+                         min(CHUNK, total - c * CHUNK), tie_mode))
     with multiprocessing.Pool(workers) as pool:
         results = pool.map(run_chunk, jobs, chunksize=1)
     cands = {}
     stats = {}
-    for steps, shape, st, out in results:
-        cands.setdefault(steps, []).extend(out)
-        acc = stats.setdefault((steps, shape), new_stat())
+    for steps, use_key, shape, st, out in results:
+        cands.setdefault((steps, use_key), []).extend(out)
+        acc = stats.setdefault((steps, use_key, shape), new_stat())
         for k in st:
             acc[k] += st[k]
-    for (steps, shape), st in sorted(stats.items(), key=lambda kv: (len(kv[0][0]), SHAPES.index(kv[0][1]))):
-        log("鬼%d体 %s: 試行 %d / 勝てる %d / 素直に負ける %d / 同点あり %d / 形が崩れた %d / 型なし %d / 採用候補 %d" % (
-            len(steps), shape, st["tried"], st["winnable"], st["naive_lose"], st["tie_bad"],
-            st["shape_lost"], st["no_type"], st["ok"]))
+    for kk in order:
+        st = stats[kk]
+        log("鬼%d体 %s %s: 試行 %d / 勝てる %d / 素直に負ける %d / 同点あり %d / 形が崩れた %d / 型なし %d / 採用候補 %d" % (
+            len(kk[0]), "鍵あり" if kk[1] else "鍵なし", kk[2], st["tried"], st["winnable"], st["naive_lose"],
+            st["tie_bad"], st["shape_lost"], st["no_type"], st["ok"]))
     return cands, stats
 
 
@@ -1048,15 +1150,22 @@ def pick_tier(rng, name, pool, chosen, attempts=1500):
         picked, shp, mins = [], collections.Counter(), collections.Counter()
         def can(c):
             return (shp[c["shape"]] < MAX_SAME_SHAPE and mins[c["min"]] < 4
+                    and sum(1 for p in picked if p["_keydeg"] == 1) + (c["_keydeg"] == 1) <= KEY_TIP_MAX
                     and not similar(c, chosen + picked))
         def take(c):
             picked.append(c); shp[c["shape"]] += 1; mins[c["min"]] += 1
+        if name == "上級":   # 鬼2体を先に TWO_ONI_MIN 問
+            for c in order:
+                if sum(1 for p in picked if len(p["onis"]) == 2) >= TWO_ONI_MIN:
+                    break
+                if len(c["onis"]) == 2 and can(c):
+                    take(c)
         for t in TYPES:
             got = 0
             for c in order:
                 if got >= 2:
                     break
-                if c["types"][0] == t and c not in picked and can(c):
+                if c["types"][0] == t and c not in picked and can(c) and len(picked) < PER_TIER:
                     take(c); got += 1
         # 形の種類を先に3つ以上に
         for c in order:
@@ -1071,6 +1180,8 @@ def pick_tier(rng, name, pool, chosen, attempts=1500):
                 take(c)
         if len(picked) < PER_TIER or len(shp) < 3:
             continue
+        if name == "上級" and sum(1 for p in picked if len(p["onis"]) == 2) < TWO_ONI_MIN:
+            continue
         seq = arrange(picked)
         if seq is None:
             continue
@@ -1083,14 +1194,21 @@ def pick_tier(rng, name, pool, chosen, attempts=1500):
     return None if best is None else best[1]
 
 
+def nonbranch(c):
+    q = c["_tk"]["qa"]
+    t = sum(q.values())
+    return (t - q.get("branch", 0)) / t if t else 0.0
+
+
 def select(rng, cands, log):
     chosen = []
     out = []
-    for name, steps, mlo, mhi, rlo, rhi in TIERS:
-        pool = [c for c in cands.get(steps, [])
+    for name, kinds, mlo, mhi, rlo, rhi in TIERS:
+        pool = [c for kd in kinds for c in cands.get(kd, [])
                 if mlo <= c["min"] <= mhi and rlo <= c["rate"] < rhi
                 and c["_reading"] >= READING_MIN[name] and c["_canon"] is not None
-                and (name == "入門" or c["_first"] >= 2)]
+                and (name == "入門" or c["_first"] >= 2)
+                and (c["key"] is None or nonbranch(c) >= NONBRANCH_MIN)]
         seq = pick_tier(rng, name, pool, chosen)
         if seq is None:
             log("!! %s が選べない（候補 %d）" % (name, len(pool)))
@@ -1098,6 +1216,7 @@ def select(rng, cands, log):
         log("%s: 候補 %d / 最短 %s / 勝率 %s" % (name, len(pool), [p["min"] for p in seq], [p["rate"] for p in seq]))
         log("    形 %s" % [p["shape"] for p in seq])
         log("    型 %s" % ["/".join(p["types"]) for p in seq])
+        log("    鬼 %s 鍵の次数 %s" % ([len(p["onis"]) for p in seq], [p["_keydeg"] for p in seq]))
         chosen += seq
         for p in seq:
             p["tier"] = name
@@ -1105,8 +1224,85 @@ def select(rng, cands, log):
     return out
 
 
+def tier_pool(cands, name):
+    """select と同じ条件で、その段の候補を返す"""
+    for nm, kinds, mlo, mhi, rlo, rhi in TIERS:
+        if nm != name:
+            continue
+        return [c for kd in kinds for c in cands.get(kd, [])
+                if mlo <= c["min"] <= mhi and rlo <= c["rate"] < rhi
+                and c["_reading"] >= READING_MIN[name] and c["_canon"] is not None
+                and (name == "入門" or c["_first"] >= 2)
+                and (c["key"] is None or nonbranch(c) >= NONBRANCH_MIN)]
+    raise ValueError(name)
+
+
+def replace_some(cands, levels, idxs, log):
+    """levels の idxs（同じ段）だけを差し替える。他の段の問題は動かさない。
+    差し替える各問題と同じ主な型の候補から、既存の問題と似すぎず、段の並び（勝率順・隣が同じ形にならない）と
+    形・鍵の配分を保てる組を選ぶ。同じ段の残りの問題の位置が動かない組を優先する"""
+    import itertools
+    name = levels[idxs[0]]["tier"]
+    assert all(levels[i]["tier"] == name for i in idxs)
+    def full(l):   # 埋め込み済みの問題を similar / arrange で扱える形にする
+        nodes = [tuple(p) for p in l["nodes"]]
+        edges = [tuple(e) for e in l["edges"]]
+        g = Game(nodes, edges, l.get("key"))
+        o = [x for x, _ in l["onis"]]
+        return dict(l, _nodes=nodes, _edges=edges, _eset=edge_set(nodes, edges),
+                    _mset=edge_set(nodes, edges, mirror=True),
+                    _canon=canon(nodes, edges, l["you"], l["home"], o, l.get("key")),
+                    _keydeg=(len(g.adj[l["key"]]) if l.get("key") is not None else None))
+    others_f = [full(l) for i, l in enumerate(levels) if i not in idxs]
+    tier_idx = [i for i, l in enumerate(levels) if l["tier"] == name]
+    rest = [full(levels[i]) for i in tier_idx if i not in idxs]
+    pool = [c for c in tier_pool(cands, name) if not similar(c, others_f)]
+    pool.sort(key=lambda l: (l["_wfirst"], -l["_detour"], -l["_states"]))
+    lists = [[c for c in pool if c["types"][0] == levels[i]["types"][0]] for i in idxs]
+    best = None
+    for combo in itertools.product(*lists):
+        if len(set(map(id, combo))) < len(combo):
+            continue
+        if any(similar(x, list(combo[:k])) for k, x in enumerate(combo)):
+            continue
+        group = rest + list(combo)
+        shp = collections.Counter(l["shape"] for l in group)
+        if len(shp) < 3 or max(shp.values()) > MAX_SAME_SHAPE:
+            continue
+        if sum(1 for l in group if l["_keydeg"] == 1) > KEY_TIP_MAX:
+            continue
+        # 元の位置のまま入るか
+        seq_same = list(rest)
+        pos = [tier_idx.index(i) for i in idxs]
+        for p_, x in sorted(zip(pos, combo), key=lambda t: t[0]):
+            seq_same.insert(p_, x)
+        rates = [l["rate"] for l in seq_same]
+        if rates == sorted(rates, reverse=True) and all(
+                seq_same[k]["shape"] != seq_same[k + 1]["shape"] for k in range(len(seq_same) - 1)):
+            best = (combo, seq_same, True)
+            break
+        if best is None:
+            seq = arrange(group)
+            if seq is not None:
+                best = (combo, seq, False)
+    if best is None:
+        raise SystemExit("差し替えられる候補が無い")
+    combo, seq, kept = best
+    new = list(levels)
+    ids = set(map(id, combo))
+    for i, l in zip(tier_idx, seq):
+        if id(l) in ids:
+            l["tier"] = name
+            new[i] = public(l)
+        else:
+            new[i] = {k: l[k] for k in levels[0].keys()}
+    log("%s の %s を差し替え（%s）: %s" % (name, idxs, "残りの位置はそのまま" if kept else "段の中の並びが動いた",
+        [(c["min"], c["rate"], c["shape"], c["types"][0]) for c in combo]))
+    return new
+
+
 def public(lv):
-    return {k: lv[k] for k in ("nodes", "edges", "you", "home", "onis", "min", "rate", "tier", "shape", "types")}
+    return {k: lv[k] for k in ("nodes", "edges", "you", "home", "key", "onis", "min", "rate", "tier", "shape", "types")}
 
 
 def embed(path, levels):
@@ -1125,30 +1321,37 @@ def embed(path, levels):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=20261002)
-    ap.add_argument("--rounds1", type=int, default=200000, help="鬼1体の、形1種類あたりの試行回数")
-    ap.add_argument("--rounds2", type=int, default=800000, help="鬼2体の、形1種類あたりの試行回数（条件が厳しいので多め）")
+    ap.add_argument("--rounds0", type=int, default=40000, help="鍵なし鬼1体（入門）の、形1種類あたりの試行回数")
+    ap.add_argument("--rounds1", type=int, default=60000, help="鍵あり鬼1体の、形1種類あたりの試行回数")
+    ap.add_argument("--rounds2", type=int, default=600000, help="鍵あり鬼2体の、形1種類あたりの試行回数（条件が厳しいので多め）")
     ap.add_argument("--workers", type=int, default=None, help="並列数（既定=CPU数。結果は変わらない）")
     ap.add_argument("--tie", choices=["unique", "clock"], default="unique",
                     help="unique=到達しうる全局面で鬼の候補が1つの地図だけ採る / clock=12時から時計回りで決める")
     ap.add_argument("--stats", type=int, metavar="N", help="採用率の測定だけ（出力しない）")
     ap.add_argument("--keep", metavar="JSON", help="生成し直さずこの JSON を使う")
     ap.add_argument("--embed", metavar="HTML", help="LEVELS-BEGIN / LEVELS-END の間へ埋め込む")
+    ap.add_argument("--replace", type=int, action="append", metavar="IDX",
+                    help="--keep の問題のうちこの添字（同じ段）だけ、同じ seed で候補を集め直して差し替える（何度でも指定可）")
     args = ap.parse_args()
     log = lambda *a: print(*a, file=sys.stderr)
     rng = random.Random(args.seed)
 
     if args.stats:
-        collect(args.seed, "clock", {(k, "格子"): args.stats for k in STATS_KINDS}, log, args.workers)
+        collect(args.seed, "clock", {(k, False, "格子"): args.stats for k in STATS_KINDS}, log, args.workers)
         return
 
+    rounds = {}
+    for sh in SHAPES:
+        rounds[((1,), False, sh)] = args.rounds0
+        rounds[((1,), True, sh)] = args.rounds1
+        rounds[((1, 1), True, sh)] = args.rounds2
     if args.keep:
         with open(args.keep, encoding="utf-8") as f:
             levels = json.load(f)
+        if args.replace:
+            cands, _ = collect(args.seed, args.tie, rounds, log, workers=args.workers)
+            levels = replace_some(cands, levels, args.replace, log)
     else:
-        rounds = {}
-        for sh in SHAPES:
-            rounds[((1,), sh)] = args.rounds1
-            rounds[((1, 1), sh)] = args.rounds2
         cands, _ = collect(args.seed, args.tie, rounds, log, workers=args.workers)
         levels = [public(l) for l in select(rng, cands, log)]
     if args.embed:
