@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>にげこみ</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --red:#d94436; --edge:#a9a59c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  #app{max-width:480px;margin:0 auto;padding:10px 10px 40px}
+  header{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:2px 2px 8px}
+  #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+  #titleWrap{display:flex;align-items:baseline;gap:8px;min-width:0}
+  #home{font-size:13px;color:var(--sub);text-decoration:none;white-space:nowrap;padding:12px 6px;margin:-12px -6px}
+  #counts{font-size:14px;color:var(--sub);white-space:nowrap}
+  #counts b{color:var(--ink);font-weight:700}
+
+  #stage{position:relative;background:var(--panel);border:3px solid var(--sub);border-radius:10px}
+  #map{display:block;width:100%;height:auto;max-height:62vh;max-height:62svh;margin:0 auto;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+  #map .edge{stroke:var(--edge);stroke-width:5;stroke-linecap:round}
+  #map .dot{fill:var(--panel);stroke:var(--sub);stroke-width:3}
+  #map .dot.can{stroke:var(--ink);stroke-width:5}
+  #map .hit{fill:transparent;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  #map .piece{transition:transform .2s ease;pointer-events:none}
+  #map .piece text{font-size:46px;text-anchor:middle;dominant-baseline:central}
+  #map .boom{fill:var(--red);opacity:.28}
+  #map .homeMark{font-size:46px;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+
+  #msg{min-height:1.5em;padding:8px 2px 0;font-size:15px;text-align:center}
+  #msg.lose{color:var(--red);font-weight:700}
+
+  #buttons{display:flex;gap:8px;padding:8px 0 4px}
+  button{
+    font:inherit;font-size:15px;padding:11px 14px;border:1px solid var(--frame);
+    border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button:active{background:#eeece7}
+  button:disabled{opacity:.4;cursor:default}
+  #buttons button{flex:1}
+
+  /* 箱の他のゲームと同じく1行1か条・句点なし。置き場所は盤の下のまま（上に置くと小さい画面で「もどす」が画面外に落ちる） */
+  #rules{font-size:13px;color:var(--sub);padding:8px 2px 0;line-height:1.7}
+
+  #clear{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:10px;
+    background:rgba(245,244,241,.93);border-radius:8px;z-index:20;
+  }
+  #clear[hidden]{display:none}
+  #clearTitle{font-size:26px;font-weight:700}
+  #clearSub{font-size:15px;color:var(--sub)}
+  #next{font-size:17px;padding:12px 28px}
+
+  #levels{padding-top:16px}
+  .tier{margin-bottom:10px}
+  .tierName{font-size:13px;color:var(--sub);padding:2px 2px 4px}
+  .tierRow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .lv{padding:0;height:44px;font-size:14px;border-radius:7px;display:flex;align-items:center;justify-content:center}
+  .lv.cur{border-color:var(--ink);font-weight:700}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div id="titleWrap"><a id="home" href="../#puzzle">‹ パズル箱</a><div id="title">入門 1</div></div>
+    <div id="counts">手数 <b id="moves">0</b> ／ 最短 <b id="best">4</b></div>
+  </header>
+
+  <div id="stage">
+    <svg id="map" viewBox="0 0 400 600" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div id="clear" hidden>
+      <div id="clearTitle">にげこんだ！</div>
+      <div id="clearSub"></div>
+      <button id="next">つぎへ</button>
+    </div>
+  </div>
+
+  <div id="msg"></div>
+
+  <div id="buttons">
+    <button id="undo">もどす</button>
+    <button id="reset">はじめから</button>
+  </div>
+
+  <div id="rules">
+    <!-- 「線の数で」＝見た目の距離でなく、たどる線の本数で近づく、の意 -->
+    <div>となりの点へ1歩ずつ動いて🏠へ（待てない）</div>
+    <div>👹はそのあと1歩、線の数で一番近づく方へ</div>
+    <div>👹の行き先はいつも1つに決まる</div>
+    <div id="rule2" hidden>2体の👹は同じ決まりで動き、重なることもある</div>
+  </div>
+
+  <section id="levels"></section>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.Nigekomi として公開する）
+   ===================================================================== */
+
+/* LEVELS-BEGIN  tools/gen_levels.py の出力をそのまま貼る。手で書き換えない */
+var LEVELS = [
+  {"nodes":[[0,0],[0,1],[1,1],[3,1],[0,2],[2,2],[3,2],[1,3],[2,3],[0,4],[1,4],[2,4],[3,4],[0,5],[1,5]],"edges":[[0,1],[1,2],[1,4],[2,3],[2,4],[2,7],[3,6],[5,6],[5,7],[6,12],[7,8],[7,9],[8,10],[8,12],[9,13],[10,14],[11,12],[11,14],[13,14]],"you":11,"home":13,"onis":[[10,1]],"min":4,"rate":0.6206,"tier":"入門"},
+  {"nodes":[[3,0],[1,2],[2,2],[3,2],[2,3],[3,3],[0,4],[3,4],[2,5],[3,5]],"edges":[[0,1],[0,2],[0,3],[1,6],[2,3],[3,4],[3,5],[4,5],[4,7],[4,8],[5,7],[6,8],[8,9]],"you":2,"home":4,"onis":[[5,1]],"min":5,"rate":0.5,"tier":"入門"},
+  {"nodes":[[0,0],[1,0],[2,0],[1,1],[2,1],[0,2],[0,3],[2,3],[3,3],[0,4],[1,4],[2,4],[3,4],[0,5],[3,5]],"edges":[[0,3],[0,5],[1,4],[2,4],[3,5],[4,5],[4,8],[5,6],[5,7],[6,9],[6,10],[7,8],[8,11],[9,13],[10,11],[11,12],[11,13],[12,14]],"you":13,"home":8,"onis":[[10,1]],"min":4,"rate":0.4667,"tier":"入門"},
+  {"nodes":[[1,0],[3,0],[0,1],[1,1],[2,1],[3,1],[0,2],[2,2],[3,2],[0,3],[1,3],[2,3],[1,4],[2,4],[3,4],[1,5]],"edges":[[0,1],[0,2],[0,3],[3,4],[3,7],[4,5],[4,7],[4,8],[5,8],[6,9],[6,10],[7,11],[8,14],[9,10],[10,11],[11,12],[11,13],[12,15],[13,14],[14,15]],"you":13,"home":7,"onis":[[12,1]],"min":4,"rate":0.425,"tier":"入門"},
+  {"nodes":[[0,1],[1,1],[2,1],[3,1],[0,2],[1,2],[2,2],[0,3],[1,3],[2,3],[0,4],[1,4],[2,4],[3,4],[3,5]],"edges":[[0,4],[0,5],[1,2],[1,5],[1,6],[2,3],[3,6],[3,9],[4,7],[5,8],[5,9],[7,8],[7,10],[7,11],[9,13],[10,11],[11,12],[11,14],[12,14],[13,14]],"you":8,"home":1,"onis":[[9,1]],"min":6,"rate":0.3754,"tier":"入門"},
+  {"nodes":[[0,0],[1,0],[2,0],[0,1],[1,1],[3,1],[0,2],[2,2],[3,2],[0,3],[3,3],[0,4],[2,4],[3,4],[0,5],[3,5]],"edges":[[0,1],[0,3],[0,4],[2,5],[3,6],[5,7],[5,8],[6,7],[6,9],[7,8],[7,9],[8,10],[9,11],[10,12],[11,14],[12,14],[12,15],[13,15]],"you":10,"home":6,"onis":[[5,1]],"min":5,"rate":0.3636,"tier":"入門"},
+  {"nodes":[[0,0],[1,0],[3,0],[2,1],[0,2],[1,2],[1,3],[0,4],[1,4],[2,4],[2,5],[3,5]],"edges":[[0,4],[0,5],[1,2],[1,5],[2,3],[4,7],[5,6],[6,9],[7,8],[8,9],[8,10],[9,10],[9,11]],"you":6,"home":10,"onis":[[8,1]],"min":6,"rate":0.3636,"tier":"入門"},
+  {"nodes":[[1,0],[2,0],[3,0],[0,1],[1,1],[2,2],[3,2],[0,3],[1,3],[0,4],[1,4],[3,4],[0,5],[2,5]],"edges":[[0,1],[0,4],[1,4],[2,4],[2,6],[3,4],[3,8],[4,5],[5,10],[5,11],[6,11],[7,9],[8,10],[9,10],[9,12],[10,11],[11,13],[12,13]],"you":6,"home":3,"onis":[[4,1]],"min":5,"rate":0.3231,"tier":"入門"},
+  {"nodes":[[0,0],[1,0],[3,0],[2,1],[3,1],[1,2],[2,2],[1,3],[3,3],[0,4],[1,4],[2,4],[3,4],[0,5],[2,5],[3,5]],"edges":[[0,1],[1,2],[2,3],[2,4],[3,4],[3,5],[4,6],[5,7],[6,8],[7,9],[7,11],[8,12],[9,13],[10,11],[10,14],[11,12],[12,15]],"you":7,"home":12,"onis":[[10,1]],"min":6,"rate":0.25,"tier":"入門"},
+  {"nodes":[[0,0],[3,0],[3,1],[0,2],[1,2],[3,2],[0,3],[1,3],[2,3],[3,3],[1,4],[0,5],[3,5]],"edges":[[0,4],[1,2],[1,4],[2,4],[2,5],[3,4],[3,7],[4,5],[5,9],[6,7],[6,10],[6,11],[7,10],[8,9],[8,12],[10,11],[10,12]],"you":3,"home":10,"onis":[[6,1]],"min":6,"rate":0.25,"tier":"入門"},
+  {"nodes":[[1,0],[1,1],[3,1],[0,2],[1,2],[3,2],[0,3],[1,3],[3,4],[0,5],[2,5],[3,5]],"edges":[[0,2],[0,3],[1,2],[1,5],[2,5],[3,6],[4,5],[4,7],[5,8],[6,7],[7,10],[8,11],[9,10]],"you":6,"home":10,"onis":[[4,1]],"min":7,"rate":0.2467,"tier":"初級"},
+  {"nodes":[[1,0],[3,0],[0,1],[2,1],[3,1],[1,2],[2,2],[3,2],[0,3],[1,3],[3,3],[2,4],[3,4],[1,5],[3,5]],"edges":[[0,2],[0,3],[0,5],[1,3],[2,8],[3,4],[4,6],[4,7],[5,6],[5,9],[7,10],[8,9],[9,11],[9,13],[10,11],[10,12],[11,12],[11,13],[13,14]],"you":2,"home":1,"onis":[[3,1]],"min":7,"rate":0.2283,"tier":"初級"},
+  {"nodes":[[0,0],[1,0],[2,0],[0,1],[1,1],[2,1],[3,1],[0,3],[1,3],[2,3],[3,3],[0,4],[3,4],[0,5],[2,5],[3,5]],"edges":[[0,1],[0,3],[1,2],[1,3],[2,6],[3,7],[3,8],[4,5],[4,8],[5,6],[7,8],[8,14],[9,10],[9,12],[11,13],[11,14],[12,14],[12,15],[14,15]],"you":4,"home":12,"onis":[[14,1]],"min":8,"rate":0.2073,"tier":"初級"},
+  {"nodes":[[0,0],[1,0],[3,0],[1,1],[2,1],[1,2],[3,2],[0,3],[3,3],[0,4],[1,4],[3,4],[0,5],[1,5],[2,5],[3,5]],"edges":[[0,3],[1,3],[1,4],[2,4],[2,6],[3,7],[5,6],[5,10],[7,9],[7,10],[8,10],[8,11],[8,14],[9,12],[9,13],[10,13],[10,14],[11,15],[12,13]],"you":3,"home":9,"onis":[[10,1]],"min":8,"rate":0.2,"tier":"初級"},
+  {"nodes":[[0,0],[1,0],[3,0],[0,1],[2,1],[0,2],[1,2],[1,3],[2,3],[3,3],[0,4],[1,4],[2,4],[3,4],[1,5],[2,5],[3,5]],"edges":[[0,3],[1,2],[1,3],[3,4],[3,5],[4,9],[5,6],[6,7],[6,8],[7,10],[8,11],[9,13],[10,11],[11,12],[11,14],[12,13],[13,16],[15,16]],"you":14,"home":16,"onis":[[4,1]],"min":9,"rate":0.1662,"tier":"初級"},
+  {"nodes":[[1,0],[2,0],[3,0],[0,1],[2,1],[3,1],[0,2],[2,2],[3,2],[0,3],[1,3],[2,3],[1,4],[3,4],[1,5],[3,5]],"edges":[[0,1],[0,4],[1,2],[1,4],[1,5],[3,4],[3,7],[5,8],[6,7],[6,9],[6,10],[7,11],[8,11],[9,14],[12,13],[12,14],[13,15],[14,15]],"you":11,"home":9,"onis":[[3,1]],"min":8,"rate":0.1545,"tier":"初級"},
+  {"nodes":[[0,1],[1,1],[2,1],[3,1],[1,2],[3,2],[0,3],[3,3],[0,4],[1,4],[2,4],[3,4],[1,5],[3,5]],"edges":[[0,1],[0,6],[1,4],[2,4],[2,5],[3,5],[5,7],[6,9],[7,10],[8,9],[8,12],[9,12],[10,11],[10,12],[10,13],[12,13]],"you":5,"home":11,"onis":[[10,1]],"min":9,"rate":0.1429,"tier":"初級"},
+  {"nodes":[[1,0],[2,0],[3,0],[0,1],[1,1],[2,1],[1,2],[2,2],[3,2],[1,3],[2,3],[0,4],[1,4],[2,4],[3,4],[0,5],[3,5]],"edges":[[0,3],[1,2],[1,4],[1,5],[2,8],[3,4],[3,6],[5,6],[5,7],[7,8],[7,10],[8,14],[9,11],[9,12],[10,13],[11,12],[11,15],[12,13],[12,16],[13,14],[13,16]],"you":16,"home":15,"onis":[[9,1]],"min":9,"rate":0.1296,"tier":"初級"},
+  {"nodes":[[0,0],[1,0],[3,0],[1,1],[2,1],[3,1],[0,3],[1,3],[2,3],[3,3],[0,4],[1,4],[1,5],[2,5],[3,5]],"edges":[[0,1],[1,2],[1,4],[2,4],[2,5],[3,4],[3,7],[4,5],[4,7],[4,8],[5,9],[6,7],[6,10],[8,14],[10,11],[10,12],[11,12],[12,13],[13,14]],"you":8,"home":0,"onis":[[3,1]],"min":9,"rate":0.1282,"tier":"初級"},
+  {"nodes":[[1,0],[2,0],[0,1],[3,1],[0,2],[1,2],[2,3],[0,4],[1,4],[1,5],[2,5],[3,5]],"edges":[[0,1],[0,2],[0,3],[0,5],[1,3],[2,5],[3,6],[4,5],[4,6],[6,7],[6,10],[6,11],[7,9],[8,9],[8,10],[10,11]],"you":10,"home":2,"onis":[[3,1]],"min":8,"rate":0.1128,"tier":"初級"},
+  {"nodes":[[1,0],[2,0],[3,0],[0,1],[1,1],[2,1],[0,2],[1,2],[2,2],[2,3],[3,3],[0,4],[3,4],[1,5],[2,5],[3,5]],"edges":[[0,1],[0,3],[0,4],[1,4],[1,5],[2,8],[3,6],[4,5],[5,8],[6,11],[7,8],[7,9],[8,9],[9,10],[9,13],[9,14],[10,12],[12,15],[14,15]],"you":13,"home":5,"onis":[[4,1]],"min":9,"rate":0.0833,"tier":"中級"},
+  {"nodes":[[1,0],[2,0],[0,1],[1,1],[0,2],[1,2],[3,2],[0,3],[1,3],[2,3],[3,3],[0,4],[1,4],[3,4],[0,5],[1,5],[2,5]],"edges":[[0,1],[0,2],[2,3],[2,4],[3,5],[4,7],[5,6],[6,9],[6,10],[7,12],[8,9],[8,12],[9,10],[9,13],[11,12],[11,14],[12,16],[15,16]],"you":7,"home":15,"onis":[[11,1]],"min":10,"rate":0.0733,"tier":"中級"},
+  {"nodes":[[1,1],[3,1],[0,2],[1,2],[2,2],[0,3],[1,3],[2,3],[3,3],[3,4],[0,5],[1,5],[3,5]],"edges":[[0,3],[1,4],[2,5],[3,4],[3,5],[4,7],[4,8],[5,6],[5,10],[7,8],[7,11],[8,9],[9,12],[11,12]],"you":1,"home":10,"onis":[[0,1]],"min":10,"rate":0.0551,"tier":"中級"},
+  {"nodes":[[0,0],[1,0],[2,0],[3,0],[0,1],[2,1],[3,1],[0,2],[1,2],[3,2],[1,3],[0,4],[2,4],[0,5],[1,5]],"edges":[[0,1],[0,4],[1,5],[1,8],[2,3],[2,5],[2,6],[5,6],[5,9],[7,10],[7,11],[8,12],[10,12],[11,13],[12,13],[13,14]],"you":14,"home":3,"onis":[[6,1]],"min":13,"rate":0.0463,"tier":"中級"},
+  {"nodes":[[0,0],[1,0],[2,0],[0,1],[2,1],[0,2],[3,2],[0,3],[1,3],[2,3],[3,3],[2,4],[3,4],[0,5],[1,5],[2,5]],"edges":[[0,3],[1,2],[1,3],[2,6],[3,5],[4,9],[5,8],[6,9],[7,14],[8,9],[8,11],[8,14],[9,10],[10,12],[11,14],[11,15],[13,14]],"you":0,"home":13,"onis":[[12,1]],"min":9,"rate":0.0433,"tier":"中級"},
+  {"nodes":[[1,0],[2,0],[0,1],[1,1],[2,1],[0,2],[1,2],[2,2],[3,2],[0,3],[1,3],[0,4],[1,4],[2,4],[3,4],[3,5]],"edges":[[0,1],[0,2],[0,3],[1,4],[3,6],[4,6],[5,10],[6,7],[7,8],[7,10],[7,13],[8,14],[9,10],[9,12],[10,12],[10,13],[11,12],[14,15]],"you":2,"home":12,"onis":[[14,1]],"min":10,"rate":0.0432,"tier":"中級"},
+  {"nodes":[[0,0],[1,0],[0,1],[1,1],[2,1],[3,1],[0,2],[2,2],[3,2],[0,3],[1,3],[0,4],[1,4],[0,5],[1,5],[2,5],[3,5]],"edges":[[0,3],[1,3],[1,5],[2,3],[2,6],[3,4],[3,6],[3,10],[4,7],[5,7],[5,8],[9,10],[9,11],[10,11],[11,12],[11,14],[12,14],[12,16],[13,14],[14,15]],"you":8,"home":14,"onis":[[13,1]],"min":11,"rate":0.0375,"tier":"中級"},
+  {"nodes":[[0,0],[1,0],[2,0],[3,0],[0,1],[1,1],[3,1],[2,2],[3,2],[0,3],[2,3],[0,4],[1,4],[2,4],[0,5],[1,5],[2,5]],"edges":[[0,4],[0,5],[1,2],[1,5],[2,3],[2,5],[2,6],[3,6],[5,9],[6,8],[7,8],[9,10],[9,11],[9,12],[10,13],[12,14],[12,15],[12,16],[13,16]],"you":15,"home":3,"onis":[[4,1]],"min":10,"rate":0.0365,"tier":"中級"},
+  {"nodes":[[0,0],[2,0],[3,0],[2,1],[3,1],[0,2],[2,2],[3,2],[0,3],[1,3],[2,3],[3,3],[0,4],[1,4],[2,4],[2,5]],"edges":[[0,3],[1,2],[2,3],[3,6],[4,7],[5,6],[5,8],[6,7],[6,9],[7,11],[8,12],[9,12],[9,13],[10,11],[10,14],[11,14],[11,15],[12,13]],"you":3,"home":11,"onis":[[14,1]],"min":9,"rate":0.0361,"tier":"中級"},
+  {"nodes":[[0,0],[2,0],[1,1],[2,1],[3,1],[0,2],[1,2],[2,2],[3,2],[0,3],[1,3],[3,3],[0,4],[1,4],[2,4],[1,5],[3,5]],"edges":[[0,5],[1,2],[2,3],[3,7],[4,8],[5,6],[5,9],[6,7],[7,8],[7,11],[7,14],[10,12],[10,13],[11,16],[12,13],[13,14],[13,15],[14,15],[15,16]],"you":4,"home":5,"onis":[[0,1]],"min":9,"rate":0.0357,"tier":"中級"},
+  {"nodes":[[0,0],[2,0],[0,1],[3,1],[1,2],[2,2],[0,3],[1,3],[2,3],[3,3],[0,4],[2,4],[3,4],[0,5],[1,5],[2,5],[3,5]],"edges":[[0,1],[0,2],[0,4],[2,4],[3,9],[4,5],[4,7],[4,8],[5,8],[5,9],[6,10],[7,11],[7,14],[9,12],[10,14],[11,14],[11,16],[12,16],[13,14],[15,16]],"you":16,"home":10,"onis":[[2,1],[4,1]],"min":9,"rate":0.0071,"tier":"上級"},
+  {"nodes":[[0,0],[1,0],[2,0],[3,0],[2,1],[3,1],[1,2],[2,2],[0,3],[2,3],[3,3],[1,4],[0,5],[1,5],[2,5],[3,5]],"edges":[[0,1],[1,2],[1,4],[3,5],[4,6],[4,7],[5,7],[5,10],[6,7],[6,11],[8,11],[8,12],[9,11],[9,14],[9,15],[10,15],[11,13],[11,14]],"you":11,"home":2,"onis":[[1,1],[10,1]],"min":10,"rate":0.0067,"tier":"上級"},
+  {"nodes":[[0,0],[1,0],[3,0],[2,1],[3,1],[0,2],[1,2],[2,2],[3,2],[0,3],[1,3],[3,3],[1,4],[2,4],[3,4],[0,5],[3,5]],"edges":[[0,1],[0,3],[0,5],[0,6],[2,3],[2,4],[3,7],[4,8],[5,9],[6,10],[7,10],[9,12],[9,15],[10,13],[11,14],[12,13],[12,15],[12,16],[13,14]],"you":13,"home":2,"onis":[[9,1],[8,1]],"min":11,"rate":0.0067,"tier":"上級"},
+  {"nodes":[[0,0],[1,0],[0,1],[1,1],[2,1],[3,1],[0,2],[1,2],[0,3],[1,3],[3,3],[1,4],[3,4],[0,5],[2,5],[3,5]],"edges":[[0,2],[0,3],[1,4],[1,5],[3,4],[3,7],[5,10],[6,7],[6,9],[7,9],[8,11],[8,13],[9,10],[10,11],[11,13],[12,14],[12,15],[13,14],[14,15]],"you":7,"home":15,"onis":[[2,1],[12,1]],"min":14,"rate":0.006,"tier":"上級"},
+  {"nodes":[[0,0],[2,0],[3,0],[0,1],[1,1],[2,1],[0,2],[1,2],[3,2],[0,3],[1,3],[2,3],[0,4],[1,4],[2,4],[3,4]],"edges":[[0,1],[0,4],[2,5],[2,8],[3,4],[3,6],[4,6],[4,7],[5,7],[6,9],[7,11],[9,10],[9,12],[10,12],[10,14],[11,14],[11,15],[12,13],[14,15]],"you":0,"home":2,"onis":[[12,1],[8,1]],"min":11,"rate":0.0054,"tier":"上級"},
+  {"nodes":[[1,0],[2,0],[0,1],[1,1],[2,1],[3,1],[1,2],[0,3],[1,3],[2,3],[1,4],[2,4],[3,4],[0,5],[1,5],[2,5],[3,5]],"edges":[[0,3],[1,3],[1,5],[2,3],[2,7],[4,5],[5,9],[6,7],[6,8],[6,9],[7,13],[9,10],[9,11],[10,11],[10,14],[11,12],[11,15],[12,16]],"you":6,"home":12,"onis":[[14,1],[2,1]],"min":10,"rate":0.0053,"tier":"上級"},
+  {"nodes":[[0,0],[2,0],[3,0],[1,1],[2,1],[0,2],[1,2],[3,2],[0,3],[2,3],[3,3],[2,4],[3,4],[0,5],[3,5]],"edges":[[0,3],[0,5],[1,2],[2,7],[3,4],[3,5],[4,7],[5,6],[6,8],[7,9],[7,10],[8,9],[8,13],[10,12],[11,13],[12,14]],"you":5,"home":10,"onis":[[11,1],[14,1]],"min":10,"rate":0.0051,"tier":"上級"},
+  {"nodes":[[1,0],[2,0],[3,0],[0,1],[2,1],[0,2],[2,2],[3,2],[2,3],[3,3],[0,4],[1,4],[2,4],[3,4],[1,5]],"edges":[[0,3],[0,4],[0,5],[0,6],[1,4],[2,4],[5,11],[6,7],[7,8],[7,9],[9,12],[10,11],[10,14],[11,12],[11,14],[13,14]],"you":9,"home":2,"onis":[[1,1],[14,1]],"min":10,"rate":0.0049,"tier":"上級"},
+  {"nodes":[[1,0],[2,0],[3,0],[0,1],[1,1],[2,1],[3,1],[0,2],[1,2],[3,2],[1,3],[2,3],[0,4],[0,5],[1,5],[2,5]],"edges":[[0,4],[1,4],[1,5],[1,6],[2,6],[3,4],[3,7],[5,9],[7,12],[8,9],[8,10],[9,11],[10,12],[11,15],[12,13],[12,14],[13,14]],"you":4,"home":11,"onis":[[15,1],[13,1]],"min":11,"rate":0.0048,"tier":"上級"},
+  {"nodes":[[2,0],[0,1],[1,1],[2,1],[3,1],[0,2],[1,2],[2,2],[0,3],[1,3],[2,3],[0,4],[1,4],[2,4],[0,5],[1,5],[2,5]],"edges":[[0,1],[0,2],[0,3],[0,4],[1,2],[2,6],[4,7],[4,10],[5,6],[5,8],[5,9],[7,10],[9,10],[10,12],[11,12],[12,14],[12,16],[13,16],[14,15]],"you":5,"home":11,"onis":[[0,1],[12,1]],"min":9,"rate":0.0036,"tier":"上級"}
+];
+/* LEVELS-END */
+
+var Nigekomi = (function () {
+  /* 地図の読み込み。level = {nodes:[[列,行]...], edges:[[i,j]...], you, home, onis:[[点,歩数]...]} */
+  function load(level) {
+    var n = level.nodes.length, adj = [], i;
+    for (i = 0; i < n; i++) adj.push([]);
+    for (i = 0; i < level.edges.length; i++) {
+      var a = level.edges[i][0], b = level.edges[i][1];
+      adj[a].push(b); adj[b].push(a);
+    }
+    var D = [];
+    for (i = 0; i < n; i++) D.push(bfsFrom(adj, i));
+    var steps = [];
+    for (i = 0; i < level.onis.length; i++) steps.push(level.onis[i][1]);
+    return { nodes: level.nodes, adj: adj, D: D, home: level.home, steps: steps };
+  }
+
+  function bfsFrom(adj, s) {
+    var d = [], q = [s], h = 0, i;
+    for (i = 0; i < adj.length; i++) d.push(-1);
+    d[s] = 0;
+    while (h < q.length) {
+      var v = q[h++];
+      for (i = 0; i < adj[v].length; i++) {
+        var w = adj[v][i];
+        if (d[w] < 0) { d[w] = d[v] + 1; q.push(w); }
+      }
+    }
+    return d;
+  }
+
+  function start(level) {
+    var onis = [];
+    for (var i = 0; i < level.onis.length; i++) onis.push(level.onis[i][0]);
+    return { you: level.you, onis: onis };
+  }
+
+  function neighbors(map, v) { return map.adj[v].slice(); }
+
+  /* 合法手＝あなたの隣の点すべて（鬼のいる点へも動けるが、そこで負け） */
+  function legalMoves(map, state) { return neighbors(map, state.you); }
+
+  /* 12時（画面の真上）から時計回りの角度。画面座標は x 右・y 下 */
+  function angle(map, v, w) {
+    var dx = map.nodes[w][0] - map.nodes[v][0];
+    var dy = map.nodes[w][1] - map.nodes[v][1];
+    var a = Math.atan2(dx, -dy);
+    return a < 0 ? a + 2 * Math.PI : a;
+  }
+
+  /* 鬼 o の候補：あなた y までの道のりが1縮まる隣の点 */
+  function oniCands(map, o, y) {
+    var dy = map.D[y], out = [];
+    for (var i = 0; i < map.adj[o].length; i++) {
+      var w = map.adj[o][i];
+      if (dy[w] === dy[o] - 1) out.push(w);
+    }
+    return out;
+  }
+
+  /* 鬼の1歩。候補が複数なら12時から時計回りで最初（採用した地図では起きない） */
+  function oniStep(map, o, y) {
+    var c = oniCands(map, o, y), best = c[0];
+    for (var i = 1; i < c.length; i++) if (angle(map, o, c[i]) < angle(map, o, best)) best = c[i];
+    return best;
+  }
+
+  /* あなたが to へ動く1手。元の state は変えない。
+     戻り値 {ok, result:'win'|'lose'|null, state, trails:[[鬼ごとの通った点...]], caughtBy:鬼の番号|-1} */
+  function play(map, state, to) {
+    if (map.adj[state.you].indexOf(to) < 0) return { ok: false };
+    var onis = state.onis.slice(), i;
+    var trails = [];
+    for (i = 0; i < onis.length; i++) trails.push([onis[i]]);
+    if (to === map.home) return { ok: true, result: 'win', state: { you: to, onis: onis }, trails: trails, caughtBy: -1 };
+    for (i = 0; i < onis.length; i++) {
+      if (onis[i] === to) return { ok: true, result: 'lose', state: { you: to, onis: onis }, trails: trails, caughtBy: i };
+    }
+    var caught = -1;
+    for (i = 0; i < onis.length; i++) {
+      var o = onis[i];
+      for (var s = 0; s < map.steps[i]; s++) {
+        o = oniStep(map, o, to);
+        trails[i].push(o);
+        if (o === to) break;
+      }
+      onis[i] = o;
+      if (o === to && caught < 0) caught = i;
+    }
+    return { ok: true, result: caught >= 0 ? 'lose' : null, state: { you: to, onis: onis }, trails: trails, caughtBy: caught };
+  }
+
+  function key(s) { return s.you + ':' + s.onis.join(','); }
+
+  /* BFS で最短手数と手順（あなたの通る点の列）。勝てなければ {min:-1, path:null} */
+  function solve(level) {
+    var map = load(level), s0 = start(level);
+    var seen = Object.create(null), q = [s0], prev = [-1], mv = [-1], d = [0], h = 0;
+    seen[key(s0)] = 1;
+    while (h < q.length) {
+      var s = q[h], cur = h++;
+      var ms = legalMoves(map, s);
+      for (var i = 0; i < ms.length; i++) {
+        var r = play(map, s, ms[i]);
+        if (r.result === 'win') {
+          var path = [ms[i]], p = cur;
+          while (p > 0) { path.unshift(mv[p]); p = prev[p]; }
+          return { min: d[cur] + 1, path: path };
+        }
+        if (r.result === 'lose') continue;
+        var k = key(r.state);
+        if (!seen[k]) { seen[k] = 1; q.push(r.state); prev.push(cur); mv.push(ms[i]); d.push(d[cur] + 1); }
+      }
+    }
+    return { min: -1, path: null };
+  }
+
+  return {
+    LEVELS: LEVELS, load: load, start: start, neighbors: neighbors, legalMoves: legalMoves,
+    oniCands: oniCands, oniStep: oniStep, play: play, solve: solve
+  };
+})();
+
+if (typeof window !== 'undefined') window.Nigekomi = Nigekomi;
+if (typeof globalThis !== 'undefined') globalThis.Nigekomi = Nigekomi;
+
+/* =====================================================================
+   画面
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var KEY = 'nigekomi';
+  var NS = 'http://www.w3.org/2000/svg';
+  var STEP_MS = 200;   // 1歩の滑る時間（CSS の transition と揃える）
+
+  var elTitle = document.getElementById('title');
+  var elMoves = document.getElementById('moves');
+  var elBest  = document.getElementById('best');
+  var elMap   = document.getElementById('map');
+  var elMsg   = document.getElementById('msg');
+  var elClear = document.getElementById('clear');
+  var elClearSub = document.getElementById('clearSub');
+  var elNext  = document.getElementById('next');
+  var elUndo  = document.getElementById('undo');
+  var elReset = document.getElementById('reset');
+  var elLevels = document.getElementById('levels');
+
+  var LABELS = (function () {
+    var out = [], count = {};
+    for (var i = 0; i < LEVELS.length; i++) {
+      var t = LEVELS[i].tier;
+      count[t] = (count[t] || 0) + 1;
+      out.push({ tier: t, no: count[t], text: t + ' ' + count[t] });
+    }
+    return out;
+  })();
+
+  var save = { cleared: {}, last: 0 };
+  function loadSave() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (o && typeof o === 'object') {
+        if (o.cleared && typeof o.cleared === 'object') save.cleared = o.cleared;
+        if (Number.isInteger(o.last) && o.last >= 0 && o.last < LEVELS.length) save.last = o.last;
+      }
+    } catch (e) { /* 保存が使えなくても遊べる */ }
+  }
+  function storeSave() {
+    try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
+  }
+
+  var levelIndex = 0, map = null, state = null, moves = 0, history = [];
+  var over = null;      // null | 'win' | 'lose'
+  var busy = false, timers = [];
+  var dots = [], youEl = null, oniEls = [], boomEl = null;
+
+  function px(v) { return 50 + map.nodes[v][0] * 100; }
+  function py(v) { return 50 + map.nodes[v][1] * 100; }
+  function svg(tag, attrs, parent) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    (parent || elMap).appendChild(e);
+    return e;
+  }
+  function piece(emoji) {
+    var g = svg('g', { 'class': 'piece' });
+    var t = svg('text', {}, g);
+    t.textContent = emoji;
+    return g;
+  }
+  function moveTo(g, v, dx) {
+    g.style.transform = 'translate(' + (px(v) + (dx || 0)) + 'px,' + py(v) + 'px)';
+  }
+
+  function build() {
+    elMap.innerHTML = '';
+    var lv = LEVELS[levelIndex], i;
+    for (i = 0; i < lv.edges.length; i++) {
+      var a = lv.edges[i][0], b = lv.edges[i][1];
+      svg('line', { 'class': 'edge', x1: px(a), y1: py(a), x2: px(b), y2: py(b) });
+    }
+    dots = [];
+    for (i = 0; i < map.nodes.length; i++) {
+      dots.push(svg('circle', { 'class': 'dot', cx: px(i), cy: py(i), r: 15 }));
+    }
+    var hm = svg('text', { 'class': 'homeMark', x: px(map.home), y: py(map.home) });
+    hm.textContent = '🏠';
+    boomEl = svg('circle', { 'class': 'boom', r: 40, cx: -100, cy: -100 });
+    oniEls = [];
+    for (i = 0; i < state.onis.length; i++) oniEls.push(piece('👹'));
+    youEl = piece('🏃');
+    /* タップの当たり（半径44＝幅360pxの画面で直径約70px。隣の点どうしは100離れているので重ならない） */
+    for (i = 0; i < map.nodes.length; i++) {
+      var h = svg('circle', { 'class': 'hit', cx: px(i), cy: py(i), r: 44 });
+      h.dataset.v = String(i);
+      h.addEventListener('click', onTap);
+    }
+  }
+
+  /* 鬼が重なったら少しずらして2体とも見えるようにする */
+  function oniOffsets(onis) {
+    var out = [];
+    for (var i = 0; i < onis.length; i++) {
+      var dup = false;
+      for (var j = 0; j < i; j++) if (onis[j] === onis[i]) dup = true;
+      out.push(dup ? 16 : 0);
+    }
+    if (onis.length === 2 && onis[0] === onis[1]) out[0] = -16;
+    return out;
+  }
+
+  function render(noAnim) {
+    var i;
+    var pieces = [youEl].concat(oniEls);
+    if (noAnim) for (i = 0; i < pieces.length; i++) pieces[i].style.transition = 'none';
+    moveTo(youEl, state.you);
+    var off = oniOffsets(state.onis);
+    for (i = 0; i < oniEls.length; i++) moveTo(oniEls[i], state.onis[i], off[i]);
+    if (noAnim) {
+      void elMap.getBoundingClientRect();
+      for (i = 0; i < pieces.length; i++) pieces[i].style.transition = '';
+    }
+    markCan();
+    boomEl.setAttribute('cx', -100); boomEl.setAttribute('cy', -100);
+  }
+
+  function markCan() {
+    var can = (over || busy) ? [] : map.adj[state.you];
+    for (var i = 0; i < dots.length; i++) dots[i].setAttribute('class', 'dot' + (can.indexOf(i) >= 0 ? ' can' : ''));
+  }
+
+  function clearTimers() { for (var i = 0; i < timers.length; i++) clearTimeout(timers[i]); timers = []; busy = false; }
+
+  function loadLevel(i) {
+    clearTimers();
+    levelIndex = i;
+    map = Nigekomi.load(LEVELS[i]);
+    state = Nigekomi.start(LEVELS[i]);
+    moves = 0; history = []; over = null;
+    elClear.hidden = true;
+    elTitle.textContent = LABELS[i].text;
+    document.getElementById('rule2').hidden = LEVELS[i].onis.length < 2;
+    elBest.textContent = String(LEVELS[i].min);
+    setMsg('');
+    build();
+    render(true);
+    updateButtons();
+    renderLevelList();
+    save.last = i;
+    storeSave();
+  }
+
+  function setMsg(text, lose) {
+    elMsg.textContent = text;
+    elMsg.className = lose ? 'lose' : '';
+  }
+  function updateButtons() {
+    elMoves.textContent = String(moves);
+    elUndo.disabled = !history.length || over === 'win';
+  }
+
+  function onTap() {
+    if (busy || over) return;
+    var to = parseInt(this.dataset.v, 10);
+    if (map.adj[state.you].indexOf(to) < 0) return;
+    var r = Nigekomi.play(map, state, to);
+    if (!r.ok) return;
+    history.push(state);
+    moves++;
+    updateButtons();
+    busy = true;
+    markCan();
+    /* 1) あなたが滑る */
+    moveTo(youEl, to);
+    state = r.state;
+    if (r.result === 'win') {
+      over = 'win';
+      timers.push(setTimeout(function () { busy = false; showClear(); }, STEP_MS + 120));
+      return;
+    }
+    if (r.result === 'lose' && r.trails[r.caughtBy].length === 1) {
+      /* 鬼のいる点へ自分から入った */
+      timers.push(setTimeout(function () { caught(to, '👹のいる点に入った'); }, STEP_MS));
+      return;
+    }
+    /* 2) 鬼が1歩ずつ滑る（全員同時。2歩の鬼は2回） */
+    var maxLen = 1, i;
+    for (i = 0; i < r.trails.length; i++) maxLen = Math.max(maxLen, r.trails[i].length);
+    for (var s = 1; s < maxLen; s++) (function (s) {
+      timers.push(setTimeout(function () {
+        var pos = [];
+        for (var k = 0; k < r.trails.length; k++) pos.push(r.trails[k][Math.min(s, r.trails[k].length - 1)]);
+        var off = oniOffsets(pos);
+        for (k = 0; k < oniEls.length; k++) moveTo(oniEls[k], pos[k], off[k]);
+      }, STEP_MS * s + 60));
+    })(s);
+    timers.push(setTimeout(function () {
+      busy = false;
+      if (r.result === 'lose') caught(to, '👹が追いついた');
+      else markCan();
+    }, STEP_MS * maxLen + 80));
+  }
+
+  function caught(v, why) {
+    busy = false;
+    over = 'lose';
+    boomEl.setAttribute('cx', px(v)); boomEl.setAttribute('cy', py(v));
+    setMsg('つかまった！ ' + why, true);
+    markCan();
+    updateButtons();
+  }
+
+  function showClear() {
+    var min = LEVELS[levelIndex].min;
+    save.cleared[String(levelIndex)] = 1;
+    storeSave();
+    renderLevelList();
+    /* 手数と最短は見出しに出ているので、ここは箱の流儀どおり★だけ */
+    elClearSub.textContent = (moves <= min) ? '★ 最短' : '';
+    elNext.hidden = (levelIndex >= LEVELS.length - 1);
+    elClear.hidden = false;
+    updateButtons();
+  }
+
+  elUndo.addEventListener('click', function () {
+    if (!history.length || over === 'win') return;
+    clearTimers();
+    state = history.pop();
+    moves = Math.max(0, moves - 1);
+    over = null;
+    setMsg('');
+    render(true);
+    updateButtons();
+  });
+  elReset.addEventListener('click', function () { loadLevel(levelIndex); });
+  elNext.addEventListener('click', function () {
+    if (levelIndex < LEVELS.length - 1) { loadLevel(levelIndex + 1); window.scrollTo(0, 0); }
+  });
+
+  function renderLevelList() {
+    if (!elLevels.childNodes.length) {
+      var tiers = [], seen = {};
+      for (var i = 0; i < LABELS.length; i++) {
+        if (!seen[LABELS[i].tier]) { seen[LABELS[i].tier] = []; tiers.push(LABELS[i].tier); }
+        seen[LABELS[i].tier].push(i);
+      }
+      for (var t = 0; t < tiers.length; t++) {
+        var box = document.createElement('div');
+        box.className = 'tier';
+        var name = document.createElement('div');
+        name.className = 'tierName';
+        /* 段名だけ（箱の流儀）。鬼が2体なのは盤と「2体の👹は…」の1行で分かる */
+        name.textContent = tiers[t];
+        box.appendChild(name);
+        var row = document.createElement('div');
+        row.className = 'tierRow';
+        var idxs = seen[tiers[t]];
+        for (var k = 0; k < idxs.length; k++) {
+          var b = document.createElement('button');
+          b.className = 'lv';
+          b.dataset.idx = String(idxs[k]);
+          b.addEventListener('click', function () {
+            loadLevel(parseInt(this.dataset.idx, 10));
+            window.scrollTo(0, 0);
+          });
+          row.appendChild(b);
+        }
+        box.appendChild(row);
+        elLevels.appendChild(box);
+      }
+    }
+    var btns = elLevels.querySelectorAll('.lv');
+    for (var j = 0; j < btns.length; j++) {
+      var idx = parseInt(btns[j].dataset.idx, 10);
+      btns[j].textContent = LABELS[idx].no + (save.cleared[String(idx)] ? '✓' : '');
+      btns[j].className = 'lv' + (save.cleared[String(idx)] ? ' done' : '') + (idx === levelIndex ? ' cur' : '');
+    }
+  }
+
+  loadSave();
+  loadLevel(save.last);
+})();
+</script>
+</body>
+</html>
