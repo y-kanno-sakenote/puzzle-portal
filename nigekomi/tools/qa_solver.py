@@ -3,10 +3,20 @@
 実装者のコード（gen_levels.py / index.html のロジック）を読まずに docs/spec.md の規則だけから書いた。
 
 使い方: python3 qa_solver.py [levels.json] [index.html] [--json out.json]
-検証項目:
+検証項目（spec 2026-10-02「全部の線に役目がある」版に合わせる）:
   1 解ける・最短手数一致   2 鬼の候補が全到達局面で一意   3 素直な最短路は全部負け
-  4 段の分布・地図の類似(Jaccard 左右反転込み)・難易度指標・上級の鬼の重なり
-  5 線の交差・点の上を通る線・線の長さ・点と線の近さ
+  4 段: 最短手数の条件・勝率(40手以内・即死回避ランダム)の帯と rate 一致・段の中は勝率降順・段どうしの逆転0
+    地図の類似(Jaccard 左右反転込み ≤0.5)・最初の鬼は道のり2以上
+  5 上級: (a) どちらの鬼を外しても最短が縮む (b) 最短解のすべての筋で2体が重ならない
+  6 線の交差・点の上を通る線・線の長さ・連結
+  7 いらない線0本（spec 2026-10-02 改訂）: いらない線＝消しても (1)最短手数 (2)素直な道は全部負け (3)同点0
+    (4)上級(a)(b)＋連結＋判定順を逆にしても最短が同じ、が保たれ、かつ最短の筋の上の罠の手の数が減らない線
+    （旧定義＝(1)〜(4)だけ、の本数も参考に出す）
+  8 罠と読みどころ: 罠の手＝すぐ捕まらないのに勝てない局面へ落ちる手。罠の手の数＝最短の筋に乗る全局面の罠の合計。
+    読みどころ＝筋の上で罠のある手番の数（筋が複数なら最小）。下限 入門1/初級2/中級3/上級4、初級以上は初手2通り以上
+    罠の型（参考）: 枝＝行き止まりの枝へ入る／家側＝家のある側へ橋を渡る(早まる)／戻り＝家と反対側へ橋を戻る／輪＝輪の上の線
+  9 同じ問題の描き直し: 駒・家の位置込みでグラフ同型な問題の組（鬼の動きは道のりだけで決まり同点も無いので、
+    同型なら遊びとして同じ問題。座標の Jaccard では見つからない）
   埋め込み一致: index.html の LEVELS と levels.json が同一か
 規則の解釈（spec §規則）:
   あなた: 隣へ必ず1歩 → 🏠なら勝ち（🏠に鬼がいても勝ち＝spec 2026-10-02 訂正。逆順でも解いて最短が変わらないか比べる）
@@ -203,6 +213,109 @@ def edge_set(lv, f=lambda x, y: (x, y)):
 
 def jacc(A, B): return len(A & B) / len(A | B)
 
+TIERS = {  # spec §段: (鬼, 最短の下限, 最短の上限, 勝率の下限, 下限を含む, 勝率の上限, 上限を含む)
+    '入門': (1, 4, 6, 0.35, True, 0.75, True),
+    '初級': (1, 6, 9, 0.15, True, 0.35, False),
+    '中級': (1, 8, 99, 0.06, True, 0.15, False),
+    '上級': (2, 8, 99, 0.0, True, 0.06, False),
+}
+
+def problem_ok(lv, ref_min):
+    """spec「問題が変わらない」の (1)〜(4)＋連結。崩れた理由の一覧を返す（空なら問題は変わらない）"""
+    m = Map(lv); why = []
+    if any(d is None for d in m.dist[0]): return ['非連結']
+    ex = explore(lv)
+    if ex['best'] != ref_min: why.append(f"(1)最短{ex['best']}")
+    if ex['best'] is None: return why
+    if explore(lv, home_win=False)['best'] != ex['best']: why.append('判定順で最短が変わる')
+    for p in straight_paths(m, lv['you'], lv['home']):
+        if play_path(m, ex['s0'], p)[0] != 'lose': why.append('(2)素直な道で勝てる'); break
+    if ex['ties']: why.append('(3)同点')
+    if len(lv['onis']) == 2:
+        solo = [explore(dict(lv, onis=[o]))['best'] for o in lv['onis']]
+        if not all(x is not None and x < ex['best'] for x in solo): why.append(f'(4a)solo{solo}')
+        if any(any(on and on[0] == on[1] for _, on in ln) for ln in optimal_lines(ex)): why.append('(4b)重なる')
+    return why
+
+def remove_edge(lv, k):
+    """線 k を消し、孤立した点は点ごと消す。駒・家の点が孤立したら None"""
+    E = [e for j, e in enumerate(lv['edges']) if j != k]
+    deg = [0] * len(lv['nodes'])
+    for a, b in E: deg[a] += 1; deg[b] += 1
+    keep = [i for i in range(len(lv['nodes'])) if deg[i] > 0]
+    special = {lv['you'], lv['home']} | {o[0] for o in lv['onis']}
+    if any(deg[i] == 0 for i in special): return None
+    idx = {old: new for new, old in enumerate(keep)}
+    return dict(lv, nodes=[lv['nodes'][i] for i in keep], edges=[[idx[a], idx[b]] for a, b in E],
+                you=idx[lv['you']], home=idx[lv['home']], onis=[[idx[o[0]], o[1]] for o in lv['onis']])
+
+def bridges_side(m, home):
+    """各有向辺 (u,v) について: 橋でなければ 'ring'。橋なら v 側に家があれば 'home'、無ければ枝(v側が木)か 'back'"""
+    n = len(m.adj); kind = {}
+    for u in range(n):
+        for v in m.adj[u]:
+            seen = {v}; st = [v]
+            while st:
+                x = st.pop()
+                for y in m.adj[x]:
+                    if (x, y) in ((v, u), (u, v)) or y in seen: continue
+                    seen.add(y); st.append(y)
+            if u in seen: kind[(u, v)] = 'ring'; continue
+            if home in seen: kind[(u, v)] = 'home'; continue
+            nv = len(seen); ne = sum(len(m.adj[x]) for x in seen) // 2
+            kind[(u, v)] = 'branch' if ne == nv - 1 else 'back'   # v側が木＝行き止まりの枝
+    return kind
+
+def trap_info(ex):
+    """spec §罠の手と読みどころ。戻り値 (罠の手の数, 読みどころ, [(局面, 行き先)...])"""
+    best = ex['best']
+    if best is None: return 0, 0, []
+    on = [s for s in ex['seen'] if s in ex['dtw'] and ex['seen'][s] + ex['dtw'][s] == best]
+    traps = [(s, v) for s in on for v, ns in ex['edges'][s] if ns not in ex['dtw']]
+    has = {s: any(ns not in ex['dtw'] for _, ns in ex['edges'][s]) for s in on}
+    memo = {}
+    def f(s):
+        if s in memo: return memo[s]
+        d = ex['dtw'][s]
+        r = int(has[s]) + (0 if d == 1 else min(f(ns) for _, ns in ex['edges'][s] if ex['dtw'].get(ns) == d - 1))
+        memo[s] = r; return r
+    return len(traps), f(ex['s0']), traps
+
+def removable_edges(lv, new_def=True):
+    """いらない線の一覧。new_def=False は旧定義（(1)〜(4) だけ）"""
+    out = []; base = trap_info(explore(lv))[0]
+    for k in range(len(lv['edges'])):
+        nl = remove_edge(lv, k)
+        if nl is None or problem_ok(nl, lv['min']): continue
+        if new_def and trap_info(explore(nl))[0] < base: continue
+        out.append(lv['edges'][k])
+    return out
+
+def _labels(lv):
+    lab = ['.'] * len(lv['nodes']); lab[lv['you']] = 'Y'; lab[lv['home']] = 'H'
+    for o in lv['onis']: lab[o[0]] += 'O'
+    return lab
+
+def isomorphic(a, b):
+    """駒・家の役割つきのグラフ同型（バックトラック）"""
+    if len(a['nodes']) != len(b['nodes']) or len(a['edges']) != len(b['edges']): return False
+    ma, mb = Map(a), Map(b); la, lb = _labels(a), _labels(b); n = len(a['nodes'])
+    sa = [(la[v], len(ma.adj[v]), tuple(sorted(ma.dist[v]))) for v in range(n)]
+    sb = [(lb[v], len(mb.adj[v]), tuple(sorted(mb.dist[v]))) for v in range(n)]
+    if sorted(sa) != sorted(sb): return False
+    order = sorted(range(n), key=lambda v: -len(ma.adj[v])); mp = {}; used = set()
+    def rec(k):
+        if k == n: return True
+        v = order[k]
+        for w in range(n):
+            if w in used or sa[v] != sb[w]: continue
+            if all((mp[u] in mb.adj[w]) == (u in ma.adj[v]) for u in mp):
+                mp[v] = w; used.add(w)
+                if rec(k + 1): return True
+                del mp[v]; used.discard(w)
+        return False
+    return rec(0)
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     lvp = args[0] if args else 'tools/levels.json'
@@ -210,60 +323,89 @@ def main():
     L = load_levels(lvp); E = embedded_levels(htp)
     res = {'embed_equal': E == L, 'n': len(L)}
     print(f'levels={len(L)} embed_equal={E == L}')
-    fails = []
-    rows = []
+    fails = []; rows = []
+    if E != L: fails.append('埋め込み不一致')
     for i, lv in enumerate(L):
-        if any(o[1] != 1 for o in lv['onis']): fails.append(f'#{i} 鬼の速さ!=1 {lv["onis"]}')
-        ex = explore(lv); exB = explore(lv, home_win=False)
-        m = ex['m']
+        if any(o[1] != 1 for o in lv['onis']): fails.append(f'#{i} 鬼の歩数!=1 {lv["onis"]}')
+        ex = explore(lv); exB = explore(lv, home_win=False); m = ex['m']
         if ex['best'] != lv['min']: fails.append(f'#{i} 最短 自前{ex["best"]} != データ{lv["min"]}')
-        if exB['best'] != ex['best']: fails.append(f'#{i} 🏠に鬼の解釈で最短が変わる A={ex["best"]} B={exB["best"]}')
-        if ex['ties']: fails.append(f'#{i} 同点 {len(ex["ties"])}件 例 you{ex["ties"][0][0]} onis{ex["ties"][0][1]} 行先{ex["ties"][0][2]} 鬼{ex["ties"][0][3]} 候補{ex["ties"][0][4]}')
+        if exB['best'] != ex['best']: fails.append(f'#{i} 判定順を逆にすると最短が変わる 家先={ex["best"]} 鬼先={exB["best"]}')
+        if ex['ties']: fails.append(f'#{i} 同点 {len(ex["ties"])}件 例 {ex["ties"][0]}')
         sp = straight_paths(m, lv['you'], lv['home'])
         sres = [play_path(m, ex['s0'], p) for p in sp]
-        if any(r != 'lose' for r, _ in sres): fails.append(f'#{i} 素直な道で負けない {[(p, r) for p, (r, _) in zip(sp, sres) if r != "lose"]}')
-        lines = optimal_lines(ex)
-        merge = None
+        if any(r != 'lose' for r, _ in sres): fails.append(f'#{i} 素直な道で負けない')
+        lines = optimal_lines(ex); merge = solo = None
         if len(lv['onis']) == 2:
-            ms = []
-            for ln in lines:
-                st = next((k + 1 for k, (v, on) in enumerate(ln) if on and on[0] == on[1]), None)
-                ms.append(st)
-            merge = dict(n_lines=len(lines), n_merge=sum(x is not None for x in ms),
-                         earliest=min([x for x in ms if x], default=None),
-                         latest=max([x for x in ms if x], default=None))
-        if merge is not None:
             solo = [explore(dict(lv, onis=[o]))['best'] for o in lv['onis']]
-            if not all(x is None or x < ex['best'] for x in solo): fails.append(f'#{i} (a)鬼を外しても縮まない solo={solo} min={ex["best"]}')
-            if merge['n_merge']: fails.append(f'#{i} (b)最短解で重なる {merge}')
-        first_win = sum(1 for v, ns in ex['edges'][ex['s0']] if ns in ex['dtw']) + len(ex['win_moves'][ex['s0']])
+            if not all(x is not None and x < ex['best'] for x in solo): fails.append(f'#{i} (a) 鬼を外しても縮まない solo={solo}')
+            merge = sum(1 for ln in lines if any(on and on[0] == on[1] for _, on in ln))
+            if merge: fails.append(f'#{i} (b) 最短解 {merge}/{len(lines)} 筋で重なる')
+        rate = win_rate_horizon(ex)
+        if lv.get('rate') is None or abs(rate - lv['rate']) > 5e-5: fails.append(f'#{i} 勝率 自前{rate:.4f} != データ{lv.get("rate")}')
+        t = TIERS.get(lv['tier'])
+        if t is None: fails.append(f'#{i} 段名 {lv["tier"]}')
+        else:
+            no, lo, hi, rlo, rloi, rhi, rhii = t
+            if len(lv['onis']) != no: fails.append(f'#{i} 鬼の数')
+            if not (lo <= ex['best'] <= hi): fails.append(f'#{i} 最短{ex["best"]}が段の条件外')
+            if not ((rate >= rlo if rloi else rate > rlo) and (rate <= rhi if rhii else rate < rhi)): fails.append(f'#{i} 勝率{rate:.4f}が帯の外')
+        oni0 = min(m.dist[o[0]][lv['you']] for o in lv['onis'])
+        if oni0 < 2: fails.append(f'#{i} 最初の鬼が近い {oni0}')
         bad, mind, minang = geometry(lv)
         if bad: fails.append(f'#{i} 幾何 {bad}')
-        row = dict(i=i, tier=lv['tier'], onis=len(lv['onis']), min=ex['best'], dist=m.dist[lv['you']][lv['home']],
-                   detour=ex['best'] - m.dist[lv['you']][lv['home']], states=len(ex['seen']),
-                   oni_moves=ex['oni_moves'], ties=len(ex['ties']), straight=len(sp),
-                   straight_caught_at=[k for _, k in sres], first_win=f'{first_win}/{len(m.adj[lv["you"]])}',
-                   n_opt=len(lines), p_safe=round(win_prob_safe_random(ex), 3), rate40=round(win_rate_horizon(ex), 4),
-                   rate_data=lv.get('rate'), solo=[explore(dict(lv, onis=[o]))['best'] for o in lv['onis']] if len(lv['onis']) == 2 else None,
-                   oni0_dist=min(m.dist[o[0]][lv['you']] for o in lv['onis']),
-                   min_pt_edge=round(mind, 3), min_angle=round(minang, 1), merge=merge)
-        rows.append(row)
-    # 類似
+        rem = removable_edges(lv); rem_old = removable_edges(lv, new_def=False)
+        if rem: fails.append(f'#{i} いらない線 {len(rem)}本 {rem}')
+        first = len(m.adj[lv['you']]); first_win = sum(1 for v, ns in ex['edges'][ex['s0']] if ns in ex['dtw']) + len(ex['win_moves'][ex['s0']])
+        ntrap, rp, traps = trap_info(ex)
+        kind = bridges_side(m, lv['home']); tk = {}
+        for st_, v in traps: tk[kind[(st_[0], v)]] = tk.get(kind[(st_[0], v)], 0) + 1
+        lower = {'入門': 1, '初級': 2, '中級': 3, '上級': 4}.get(lv['tier'], 0)
+        if rp < lower: fails.append(f'#{i} 読みどころ{rp} < 下限{lower}')
+        if lv['tier'] != '入門' and first < 2: fails.append(f'#{i} 初手が{first}通り')
+        rows.append(dict(i=i, tier=lv['tier'], onis=len(lv['onis']), nodes=len(lv['nodes']), edges=len(lv['edges']),
+                         min=ex['best'], dist=m.dist[lv['you']][lv['home']], detour=ex['best'] - m.dist[lv['you']][lv['home']],
+                         rate=round(rate, 4), first=f'{first_win}/{first}', reading=rp, traps=ntrap, trap_kind=tk, removable_old=len(rem_old), n_opt=len(lines),
+                         states=len(ex['seen']), straight_caught_at=[k for _, k in sres], oni0=oni0, solo=solo,
+                         min_pt_edge=round(mind, 3), min_angle=round(minang, 1), removable=len(rem)))
+    # 段の中は勝率降順・段どうしの逆転
+    order = ['入門', '初級', '中級', '上級']; prev_min = None
+    for tn in order:
+        rs = [r['rate'] for r in rows if r['tier'] == tn]
+        if rs != sorted(rs, reverse=True): fails.append(f'{tn} 段の中が勝率降順でない')
+        if rs and prev_min is not None and max(rs) >= prev_min: fails.append(f'{tn} の最高勝率 {max(rs)} >= 前の段の最低 {prev_min}')
+        if rs: prev_min = min(rs)
     sims = []
     for i, j in itertools.combinations(range(len(L)), 2):
         A = edge_set(L[i]); B = edge_set(L[j]); Bm = edge_set(L[j], lambda x, y: (3 - x, y))
         Bv = edge_set(L[j], lambda x, y: (x, 5 - y)); Br = edge_set(L[j], lambda x, y: (3 - x, 5 - y))
         sims.append((round(max(jacc(A, B), jacc(A, Bm)), 3), round(max(jacc(A, Bv), jacc(A, Br)), 3), i, j))
     sims.sort(reverse=True)
-    res.update(rows=rows, fails=fails, top_sim_lr=sims[:5],
-               top_sim_ud=sorted(sims, key=lambda t: -t[1])[:5])
+    if sims and sims[0][0] > 0.5: fails.append(f'似すぎた地図 {sims[0]}')
+    groups = []
+    for i in range(len(L)):
+        for g in groups:
+            if isomorphic(L[g[0]], L[i]): g.append(i); break
+        else: groups.append([i])
+    dup = [g for g in groups if len(g) > 1]
+    print(f'異なる問題 {len(groups)}/{len(L)}（同型の組 {dup}）')
+    if dup: fails.append(f'同じ問題の描き直し（同型） {dup}')
+    res.update(rows=rows, fails=fails, top_sim_lr=sims[:5], top_sim_ud=sorted(sims, key=lambda t: -t[1])[:5])
     for r in rows: print(r)
-    print('top Jaccard (同一/左右反転):', sims[:5])
-    print('top Jaccard (上下反転/180度):', res['top_sim_ud'])
+    for tn in order:
+        rs = [r for r in rows if r['tier'] == tn]
+        if rs: print(tn, '線 平均', round(sum(r['edges'] for r in rs) / len(rs), 1), '点 平均', round(sum(r['nodes'] for r in rs) / len(rs), 1),
+                     '最短', min(r['min'] for r in rs), '〜', max(r['min'] for r in rs), '回り道', min(r['detour'] for r in rs), '〜', max(r['detour'] for r in rs),
+                     '勝率', min(r['rate'] for r in rs), '〜', max(r['rate'] for r in rs),
+                     '読みどころ', min(r['reading'] for r in rs), '〜', max(r['reading'] for r in rs),
+                     '初手1通り', sum(1 for r in rs if r['first'].endswith('/1')), '旧定義の消せる線', sum(r['removable_old'] for r in rs),
+                     '罠の型', {k: sum(r['trap_kind'].get(k, 0) for r in rs) for k in ('branch', 'home', 'back', 'ring')})
+    print('top Jaccard (同一/左右反転):', sims[:3])
+    print('top Jaccard (上下反転/180度):', res['top_sim_ud'][:3])
     print('FAILS:', len(fails)); [print(' ', f) for f in fails]
     if '--json' in sys.argv:
         json.dump(res, open(sys.argv[sys.argv.index('--json') + 1], 'w'), ensure_ascii=False, indent=1)
-    print('OVERALL', 'PASS' if not fails and res['embed_equal'] else 'FAIL')
+    print('OVERALL', 'PASS' if not fails else 'FAIL')
+    return 0 if not fails else 1
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
