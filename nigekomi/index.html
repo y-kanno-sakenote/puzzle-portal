@@ -339,7 +339,7 @@ if (typeof document !== 'undefined') (function () {
   var levelIndex = 0, map = null, state = null, moves = 0, history = [];
   var over = null;      // null | 'win' | 'lose'
   var busy = false, timers = [];
-  var dots = [], youEl = null, youDot = null, oniEls = [], boomEl = null, keyEl = null, carryEl = null;
+  var dots = [], youEl = null, youDot = null, oniEls = [], boomEl = null, keyEl = null, homeEl = null, carryEl = null;
 
   function px(v) { return 50 + map.nodes[v][0] * 100; }
   function py(v) { return 50 + map.nodes[v][1] * 100; }
@@ -372,8 +372,8 @@ if (typeof document !== 'undefined') (function () {
     }
     /* 🏃の足もとの墨の円。点の縁ごと覆う大きさ。🏠・🔑・👹より下に敷く */
     youDot = svg('circle', { 'class': 'youDot', r: 18 });
-    var hm = svg('text', { 'class': 'homeMark', x: px(map.home), y: py(map.home) });
-    hm.textContent = '🏠';
+    homeEl = svg('text', { 'class': 'homeMark', x: px(map.home), y: py(map.home) });
+    homeEl.textContent = '🏠';
     keyEl = null;
     if (map.key >= 0) {
       keyEl = svg('text', { 'class': 'keyMark', x: px(map.key), y: py(map.key) });
@@ -394,21 +394,31 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
-  /* 鬼が重なったら少しずらして2体とも見えるようにする。
-     🔑の点に鬼が乗ったときも右へずらす（🔑が隠れると「鬼が拾った」に見えるため） */
+  /* 1つの点に乗るもの（🏠か拾う前の🔑＋鬼）を32ずつ横に並べ、点を中心にそろえる。
+     印（🏠・🔑）がいちばん左。鬼1体なら印-16・鬼+16、鬼2体なら-16/+16、印＋鬼2体なら-32/0/+32。
+     🏠・🔑が鬼に隠れると「家がどこか分からない」「鬼が拾った」に見えるため */
+  function markAt(v) {
+    return v === map.home || (map.key >= 0 && !state.hasKey && v === map.key);
+  }
+  function rowOffset(v, k, onis) {
+    var n = 0;
+    for (var i = 0; i < onis.length; i++) if (onis[i] === v) n++;
+    var m = n + (markAt(v) ? 1 : 0);
+    return (k - (m - 1) / 2) * 32;
+  }
   function oniOffsets(onis) {
-    var out = [], keyOn = map.key >= 0 && !state.hasKey;
+    var out = [];
     for (var i = 0; i < onis.length; i++) {
-      var dup = false;
-      for (var j = 0; j < i; j++) if (onis[j] === onis[i]) dup = true;
-      out.push(dup || (keyOn && onis[i] === map.key) ? 16 : 0);
+      var k = markAt(onis[i]) ? 1 : 0; // 印の右から順に
+      for (var j = 0; j < i; j++) if (onis[j] === onis[i]) k++;
+      out.push(rowOffset(onis[i], k, onis));
     }
-    if (onis.length === 2 && onis[0] === onis[1]) out[0] = -16;
     return out;
   }
-  /* 鬼が🔑の点にいる間は🔑を左へずらして、鬼の脇からのぞかせる */
-  function placeKey(onis) {
-    if (keyEl) keyEl.setAttribute('x', px(map.key) - (onis.indexOf(map.key) >= 0 ? 16 : 0));
+  /* 鬼のいる間だけ🏠・🔑を左へずらして、鬼の脇からのぞかせる */
+  function placeMarks(onis) {
+    homeEl.setAttribute('x', px(map.home) + rowOffset(map.home, 0, onis));
+    if (keyEl) keyEl.setAttribute('x', px(map.key) + rowOffset(map.key, 0, onis));
   }
 
   function render(noAnim) {
@@ -419,7 +429,7 @@ if (typeof document !== 'undefined') (function () {
     moveTo(youDot, state.you);
     var off = oniOffsets(state.onis);
     for (i = 0; i < oniEls.length; i++) moveTo(oniEls[i], state.onis[i], off[i]);
-    placeKey(state.onis);
+    placeMarks(state.onis);
     if (noAnim) {
       void elMap.getBoundingClientRect();
       for (i = 0; i < pieces.length; i++) pieces[i].style.transition = '';
@@ -509,7 +519,7 @@ if (typeof document !== 'undefined') (function () {
         for (var k = 0; k < r.trails.length; k++) pos.push(r.trails[k][Math.min(s, r.trails[k].length - 1)]);
         var off = oniOffsets(pos);
         for (k = 0; k < oniEls.length; k++) moveTo(oniEls[k], pos[k], off[k]);
-        placeKey(pos);
+        placeMarks(pos);
       }, STEP_MS * s + 60));
     })(s);
     timers.push(setTimeout(function () {
