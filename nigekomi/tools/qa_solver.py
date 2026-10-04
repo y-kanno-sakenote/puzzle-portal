@@ -21,6 +21,14 @@
   10 鍵（spec 2026-10-02 §鍵）: 入門は鍵なし・初級〜上級は鍵あり。置き場所＝家と同じ点・家の隣は不可／あなたから道のり2以上／
     最初の鬼と同じ点は不可／行き止まりの先っぽ（次数1）の鍵は1段5問まで。素直な道＝鍵への最短→家への最短（すべて）で負け。
     同型は鍵の位置込み。罠の型 branch 以外が鍵ありの問題ごとに半分以上。鍵を考えた呼び名（鍵へ急ぐ/家へ急ぐ/輪の向き/枝/その他）も出す
+  11 輪と分かれ道（spec §輪と分かれ道）: 輪＝線−点+1 が各段2以上、分かれ道（線3本以上の点）入門2以上・初級以上3以上。
+    鍵が効いている（鍵を外すと最短が縮む）。参考: 道の数（目標まで線を共有しない道の本数）
+  12 使われる輪・飾りの輪・点の広がり・骨組み（spec §輪と分かれ道・§生成）: 使われる線＝最短の筋（最短解のどれか＝全筋の和）の上で
+    あなた・鬼が歩く線＋罠の手の線。使われる輪＝使われる線だけで閉じる独立な輪の数（下限 入門1・初級以上2）。
+    飾りの輪＝使われない線だけで閉じる輪の数（0）。点の広がり＝列3以上・行4以上。
+    役割の無い行き止まりの枝を刈り続けた骨組みが役割込みで同型な組0
+    🏃の輪＝鬼の歩みを入れず、あなたの歩み＋罠の手の線だけで閉じる輪。全段1以上（spec 2026-10-02 本体判断）
+  13 形（spec §地図の形）: 段の中で隣どうしが同じ shape でない・1段に3種類以上・同じ形は4問まで
   上級: 鬼2体を5問以上・残りは1体。(a)(b) は鬼2体の問題だけに当てる（spec §鬼が2体）
 規則の解釈（spec §規則）:
   あなた: 隣へ必ず1歩 → 🏠なら勝ち（🏠に鬼がいても勝ち＝spec 2026-10-02 訂正。逆順でも解いて最短が変わらないか比べる）
@@ -314,6 +322,49 @@ def key_kind(m, lv, kind, far, s, v):
     if kind[(u, v)] == 'branch' and key not in far[(u, v)]: return '枝'
     return 'その他'
 
+def cyclomatic(nodes, edges):
+    """線−点+成分数（点は edges に現れるものだけ数える）"""
+    vs = {x for e in edges for x in e}; par = {v: v for v in vs}
+    def f(x):
+        while par[x] != x: par[x] = par[par[x]]; x = par[x]
+        return x
+    for a, b in edges: par[f(a)] = f(b)
+    return len(edges) - len(vs) + len({f(v) for v in vs})
+
+def edge_disjoint_paths(m, a, b):
+    """a から b まで線を共有しない道の最大本数（単位容量の最大流）"""
+    cap = {}
+    for u in range(len(m.adj)):
+        for v in m.adj[u]: cap[(u, v)] = 1
+    flow = 0
+    while True:
+        par = {a: None}; q = deque([a])
+        while q and b not in par:
+            u = q.popleft()
+            for v in m.adj[u]:
+                if v not in par and cap[(u, v)] > 0: par[v] = u; q.append(v)
+        if b not in par: return flow
+        v = b
+        while par[v] is not None: u = par[v]; cap[(u, v)] -= 1; cap[(v, u)] += 1; v = u
+        flow += 1
+
+def used_edges(ex, traps, oni=True):
+    """最短の筋であなた・鬼が通る線と、罠の手の線（oni=False は鬼の歩みを数えない）"""
+    best = ex['best']; U = set()
+    on = [s for s in ex['seen'] if s in ex['dtw'] and ex['seen'][s] + ex['dtw'][s] == best]
+    for s in on:
+        d = ex['dtw'][s]
+        for v, ns in ex['edges'][s]:
+            if ex['dtw'].get(ns) == d - 1:
+                U.add(frozenset((s[0], v)))
+                if oni:
+                    for o, o2 in zip(s[1], ns[1]):
+                        if o != o2: U.add(frozenset((o, o2)))
+        if d == 1:
+            for v in ex['win_moves'][s]: U.add(frozenset((s[0], v)))
+    for s, v in traps: U.add(frozenset((s[0], v)))
+    return U
+
 def _labels(lv):
     lab = ['.'] * len(lv['nodes']); lab[lv['you']] = 'Y'; lab[lv['home']] = 'H'
     if lv.get('key') is not None: lab[lv['key']] += 'K'
@@ -395,9 +446,28 @@ def main():
         lower = {'入門': 1, '初級': 2, '中級': 3, '上級': 4}.get(lv['tier'], 0)
         if rp < lower: fails.append(f'#{i} 読みどころ{rp} < 下限{lower}')
         if lv['tier'] != '入門' and first < 2: fails.append(f'#{i} 初手が{first}通り')
+        loops = len(lv['edges']) - len(lv['nodes']) + 1
+        forks = sum(1 for a in m.adj if len(a) >= 3)
+        if loops < 2: fails.append(f'#{i} 輪{loops} < 2')
+        if forks < (2 if lv['tier'] == '入門' else 3): fails.append(f'#{i} 分かれ道{forks}が下限未満')
+        if key is not None:
+            nk = explore(dict(lv, key=None))['best']
+            if not (nk is not None and nk < ex['best']): fails.append(f'#{i} 鍵が効いていない（鍵なし最短{nk}）')
+        paths = edge_disjoint_paths(m, lv['you'], key if key is not None else lv['home'])
+        U = used_edges(ex, traps)
+        unused = [tuple(e) for e in lv['edges'] if frozenset(e) not in U]
+        deco = cyclomatic(None, unused) if unused else 0
+        used_loops = cyclomatic(None, [tuple(e) for e in lv['edges'] if frozenset(e) in U])
+        U2 = used_edges(ex, traps, oni=False)
+        used_loops_you = cyclomatic(None, [tuple(e) for e in lv['edges'] if frozenset(e) in U2])
+        if used_loops < (1 if lv['tier'] == '入門' else 2): fails.append(f'#{i} 使われる輪{used_loops}が下限未満')
+        if deco: fails.append(f'#{i} 飾りの輪{deco}')
+        if used_loops_you < 1: fails.append(f'#{i} 🏃の輪0')
+        cols = len({p_[0] for p_ in lv['nodes']}); rows_ = len({p_[1] for p_ in lv['nodes']})
+        if cols < 3 or rows_ < 4: fails.append(f'#{i} 点の広がり 列{cols} 行{rows_}')
         rows.append(dict(i=i, tier=lv['tier'], onis=len(lv['onis']), nodes=len(lv['nodes']), edges=len(lv['edges']),
                          min=ex['best'], dist=m.dist[lv['you']][lv['home']], detour=ex['best'] - m.dist[lv['you']][lv['home']],
-                         rate=round(rate, 4), first=f'{first_win}/{first}', reading=rp, traps=ntrap, trap_kind=tk, key_kind=kk, key=key, key_deg=None if key is None else len(m.adj[key]), removable_old=len(rem_old), n_opt=len(lines),
+                         rate=round(rate, 4), first=f'{first_win}/{first}', reading=rp, traps=ntrap, loops=loops, forks=forks, paths=paths, deco_loops=deco, used_loops=used_loops, used_loops_you=used_loops_you, cols=cols, rows=rows_, unused_edges=len(unused), trap_kind=tk, key_kind=kk, key=key, key_deg=None if key is None else len(m.adj[key]), removable_old=len(rem_old), n_opt=len(lines),
                          states=len(ex['seen']), straight_caught_at=[k for _, k in sres], oni0=oni0, solo=solo,
                          min_pt_edge=round(mind, 3), min_angle=round(minang, 1), removable=len(rem)))
     # 段の中は勝率降順・段どうしの逆転・鍵が先っぽの問題は段に5問まで・上級の鬼2体は5問以上
@@ -405,6 +475,10 @@ def main():
     for tn in order:
         nd = sum(1 for r in rows if r['tier'] == tn and r['key_deg'] == 1)
         if nd > 5: fails.append(f'{tn} 鍵が行き止まりの先っぽの問題 {nd} > 5')
+    for tn in order:
+        sh = [L[r['i']].get('shape') for r in rows if r['tier'] == tn]
+        if any(sh) and any(a_ == b_ for a_, b_ in zip(sh, sh[1:])): fails.append(f'{tn} 隣どうしが同じ形 {sh}')
+        if any(sh) and (len(set(sh)) < 3 or max(sh.count(x) for x in set(sh)) > 4): fails.append(f'{tn} 形の種類・数 {sh}')
     n2 = sum(1 for r in rows if r['tier'] == '上級' and r['onis'] == 2)
     if n2 < 5: fails.append(f'上級の鬼2体 {n2} < 5')
     for tn in order:
@@ -427,6 +501,27 @@ def main():
     dup = [g for g in groups if len(g) > 1]
     print(f'異なる問題 {len(groups)}/{len(L)}（同型の組 {dup}）')
     if dup: fails.append(f'同じ問題の描き直し（同型） {dup}')
+    # 参考: 役割の無い行き止まりの枝を刈った「芯」が役割込みで同型の組（枝1本の付け替えだけの近い問題。合否に入れない）
+    def _core(l):
+        sp = {l['you'], l['home']} | {o[0] for o in l['onis']} | ({l['key']} if l.get('key') is not None else set())
+        Es = [tuple(e) for e in l['edges']]
+        while True:
+            deg = {}
+            for a_, b_ in Es: deg[a_] = deg.get(a_, 0) + 1; deg[b_] = deg.get(b_, 0) + 1
+            lv_ = {v for v, d in deg.items() if d == 1 and v not in sp}
+            if not lv_: break
+            Es = [e for e in Es if not (set(e) & lv_)]
+        vs = sorted({x for e in Es for x in e}); ix = {v: k for k, v in enumerate(vs)}
+        return dict(nodes=[l['nodes'][v] for v in vs], edges=[[ix[a_], ix[b_]] for a_, b_ in Es], you=ix[l['you']], home=ix[l['home']],
+                    key=None if l.get('key') is None else ix[l['key']], onis=[[ix[o[0]], 1] for o in l['onis']])
+    C = [_core(l) for l in L]; cg = []
+    for i in range(len(L)):
+        for g in cg:
+            if isomorphic(C[g[0]], C[i]): g.append(i); break
+        else: cg.append([i])
+    cdup = [g for g in cg if len(g) > 1]
+    print('骨組み（枝を刈った芯）が同型の組', cdup)
+    if cdup: fails.append(f'骨組みが同じ問題 {cdup}')
     res.update(rows=rows, fails=fails, top_sim_lr=sims[:5], top_sim_ud=sorted(sims, key=lambda t: -t[1])[:5])
     for r in rows: print(r)
     for tn in order:
@@ -439,6 +534,12 @@ def main():
                      '罠の型', {k: sum(r['trap_kind'].get(k, 0) for r in rs) for k in ('branch', 'home', 'back', 'ring')},
                      'branch以外', f"{1 - sum(r['trap_kind'].get('branch', 0) for r in rs) / max(1, sum(r['traps'] for r in rs)):.0%}",
                      '呼び名', {k: sum(r['key_kind'].get(k, 0) for r in rs) for k in ('鍵へ急ぐ', '家へ急ぐ', '輪の向き', '枝', 'その他')},
+                     '輪', f"{sum(r['loops'] for r in rs)/len(rs):.1f}({min(r['loops'] for r in rs)}〜{max(r['loops'] for r in rs)})",
+                     '分かれ道', f"{sum(r['forks'] for r in rs)/len(rs):.1f}({min(r['forks'] for r in rs)}〜{max(r['forks'] for r in rs)})",
+                     '道2本以上', sum(1 for r in rs if r['paths'] >= 2), '飾りの輪がある問題', [r['i'] for r in rs if r['deco_loops']],
+                     '使われる輪', f"{sum(r['used_loops'] for r in rs)/len(rs):.1f}({min(r['used_loops'] for r in rs)}〜{max(r['used_loops'] for r in rs)})",
+                     '🏃の輪', f"{min(r['used_loops_you'] for r in rs)}〜{max(r['used_loops_you'] for r in rs)}",
+                     '列/行', f"{sum(r['cols'] for r in rs)/len(rs):.1f}/{sum(r['rows'] for r in rs)/len(rs):.1f}",
                      '鍵が先っぽ', sum(1 for r in rs if r['key_deg'] == 1), '鬼2体', sum(1 for r in rs if r['onis'] == 2))
     print('top Jaccard (同一/左右反転):', sims[:3])
     print('top Jaccard (上下反転/180度):', res['top_sim_ud'][:3])
