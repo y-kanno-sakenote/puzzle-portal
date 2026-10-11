@@ -297,6 +297,13 @@ if (typeof document !== 'undefined') (function () {
   var KEY = 'nigekomi';
   var NS = 'http://www.w3.org/2000/svg';
   var STEP_MS = 200;   // 1歩の滑る時間（CSS の transition と揃える）
+  /* クエスト用モード：?quest=<LEVELSの添字(0始まり)> のときだけ有効。
+     その1問だけ・一覧/つぎへ/‹ パズル箱を隠す・保存しない・もどす/はじめからでも手数を減らさない（quest/docs/spec.md §4）。
+     1手＝🏃が1歩。捕まっても何も送らない（もどすで続ける） */
+  var Q = (function () {
+    var m = /[?&]quest=(\d+)/.exec(location.search), n = m ? parseInt(m[1], 10) : -1;
+    return (n >= 0 && n < LEVELS.length) ? n : -1;
+  })();
 
   var elTitle = document.getElementById('title');
   var elMoves = document.getElementById('moves');
@@ -309,6 +316,7 @@ if (typeof document !== 'undefined') (function () {
   var elUndo  = document.getElementById('undo');
   var elReset = document.getElementById('reset');
   var elLevels = document.getElementById('levels');
+  var elHome  = document.getElementById('home');
 
   var LABELS = (function () {
     var out = [], count = {};
@@ -333,6 +341,7 @@ if (typeof document !== 'undefined') (function () {
     } catch (e) { /* 保存が使えなくても遊べる */ }
   }
   function storeSave() {
+    if (Q >= 0) return;
     try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
   }
 
@@ -457,8 +466,10 @@ if (typeof document !== 'undefined') (function () {
     clearTimers();
     levelIndex = i;
     map = Nigekomi.load(LEVELS[i]);
+    var keep = Q >= 0 && state;   // クエストの「はじめから」は手数を残す
     state = Nigekomi.start(LEVELS[i]);
-    moves = 0; history = []; over = null;
+    if (!keep) moves = 0;
+    history = []; over = null;
     elClear.hidden = true;
     elTitle.textContent = LABELS[i].text;
     document.getElementById('rule2').hidden = LEVELS[i].onis.length < 2;
@@ -491,6 +502,7 @@ if (typeof document !== 'undefined') (function () {
     history.push(state);
     moves++;
     updateButtons();
+    if (Q >= 0) parent.postMessage({ type: 'quest-moves', game: 'nigekomi', level: Q, moves: moves, min: LEVELS[levelIndex].min }, '*');
     busy = true;
     markCan();
     /* 1) あなたが滑る */
@@ -540,6 +552,14 @@ if (typeof document !== 'undefined') (function () {
 
   function showClear() {
     var min = LEVELS[levelIndex].min;
+    if (Q >= 0) {
+      elClearSub.textContent = (moves <= min) ? '★ 最短' : '';
+      elNext.hidden = true;
+      elClear.hidden = false;
+      updateButtons();
+      parent.postMessage({ type: 'quest-solved', game: 'nigekomi', level: Q, moves: moves, min: min }, '*');
+      return;
+    }
     save.cleared[String(levelIndex)] = 1;
     storeSave();
     renderLevelList();
@@ -554,7 +574,7 @@ if (typeof document !== 'undefined') (function () {
     if (!history.length || over === 'win') return;
     clearTimers();
     state = history.pop();
-    moves = Math.max(0, moves - 1);
+    if (Q < 0) moves = Math.max(0, moves - 1);
     over = null;
     setMsg('');
     render(true);
@@ -605,6 +625,8 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
+  /* クエストは iframe の中で開かれるので「‹ パズル箱」も隠す（押すと iframe の中だけが入口に飛んで入れ子が壊れる） */
+  if (Q >= 0) { elLevels.hidden = true; elHome.hidden = true; loadLevel(Q); return; }
   loadSave();
   loadLevel(save.last);
 })();
