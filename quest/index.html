@@ -110,13 +110,13 @@ var SYSTEMS = [
   { id: 'move', emoji: '🚗', label: '動かす', parts: ['歯車族', 'せっかちな', '走り屋'],
     games: ['car-escape', 'hakoiri-musume', 'slide-robots', 'nigekomi'] },
   { id: 'fill', emoji: '🧩', label: '埋める', parts: ['石板族', '几帳面な', '職人'],
-    games: ['sudoku', 'hoshi-oki', 'pixel'] },
+    games: ['nanpure', 'hoshi-oki', 'pixel'] },
   { id: 'link', emoji: '🔗', label: 'つなぐ', parts: ['糸族', '人懐っこい', '案内人'],
     games: ['michi-tsunagi', 'kurukuru', 'mado-wake'] }
 ];
 var NAMES = {
   'car-escape': '車をだせ！', 'hakoiri-musume': '箱入り娘', 'slide-robots': 'すべりロボ', 'nigekomi': 'にげこみ',
-  'sudoku': 'ナンプレ', 'hoshi-oki': '星おき', 'pixel': 'ピクセル',
+  'nanpure': 'ナンプレ', 'hoshi-oki': '星おき', 'pixel': 'ピクセル',
   'michi-tsunagi': 'みちつなぎ', 'kurukuru': 'くるくる', 'mado-wake': '窓わけ'
 };
 /* クエスト対応済みのゲーム（?quest=<添字> と quest-solved 通知を実装済み）。ここに1行足せば出るようになる（足す側のゲームでは ?quest のとき「‹ パズル箱」も隠す）。
@@ -129,7 +129,7 @@ var QUEST = {
   'hakoiri-musume': { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
   'slide-robots':   { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
   'nigekomi':       { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
-  'sudoku':         { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
+  'nanpure':        { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
   'hoshi-oki':      { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
   'pixel':          { easy: [0, 19], mid: [20, 39], hard: [40, 59] },
   'michi-tsunagi':  { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },

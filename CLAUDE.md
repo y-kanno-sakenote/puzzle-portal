@@ -7,7 +7,7 @@
 - `car-escape/` 車をだせ！（ラッシュアワー型・6×6）— 正典は `car-escape/CLAUDE.md`
 - `hakoiri-musume/` 箱入り娘（4×5・娘2×2を下の出口へ）— 正典は `hakoiri-musume/CLAUDE.md`
 - `slide-robots/` すべりロボ（ハイパーロボット型・12×12・宣言してから滑らせる）— 正典は `slide-robots/CLAUDE.md`
-- `sudoku/` ナンプレ（9×9・別スキーム＝一意解と推論の強さを検証）— 正典は `sudoku/CLAUDE.md`
+- `nanpure/` ナンプレ（9×9・別スキーム＝一意解と推論の強さを検証）— 正典は `nanpure/CLAUDE.md`
 - `mado-wake/` 窓わけ（領域分割・ルール組み合わせ・別スキーム）— 正典は `mado-wake/CLAUDE.md`
 - `hoshi-oki/` 星おき（Queens 型・色/行/列に★1つ・隣接禁止・一意解）— 正典は `hoshi-oki/CLAUDE.md`
 - `michi-tsunagi/` みちつなぎ（同じ数字を線でつなぐ・全マスを通る・一意解）— 正典は `michi-tsunagi/CLAUDE.md`

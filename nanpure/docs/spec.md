@@ -30,7 +30,7 @@
 - 出力 JSON: `[{"puzzle":"81文字","solution":"81文字","tier":"入門","givens":36}...]`
 
 ## 保存
-- localStorage キー `sudoku`: `{cleared:{idx:1}, last:idx, grid:{idx:"81文字（入力中）"}, notes:{idx:"..."}}`。try/catch。壊れていれば初期化
+- localStorage キー `nanpure`（2026-10-12 に `sudoku` から改名）: `{cleared:{idx:1}, last:idx, grid:{idx:"81文字（入力中）"}, notes:{idx:"..."}}`。try/catch。壊れていれば初期化
 
 ## 足さないもの（v0.1）
 - タイマー／ミス数／間違いの赤表示／ヒント機能（次の一手）／自動解答／効果音／16×16や変則盤／広告

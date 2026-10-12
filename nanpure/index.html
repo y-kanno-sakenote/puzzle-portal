@@ -474,7 +474,7 @@ if (typeof globalThis !== 'undefined') globalThis.Sudoku = Sudoku;
    画面
    ===================================================================== */
 if (typeof document !== 'undefined') (function () {
-  var CELLS = 81, KEY = 'sudoku';
+  var CELLS = 81, KEY = 'nanpure';
   var ROW = Sudoku.ROW, COL = Sudoku.COL, BOX = Sudoku.BOX;
 
   /* クエスト用モード：?quest=<PUZZLESの添字(0始まり)> のときだけ有効。
@@ -492,7 +492,7 @@ if (typeof document !== 'undefined') (function () {
     return c;
   })();
   function qSend(type) {
-    parent.postMessage({ type: type, game: 'sudoku', level: Q, moves: qMoves, min: qMin }, '*');
+    parent.postMessage({ type: type, game: 'nanpure', level: Q, moves: qMoves, min: qMin }, '*');
   }
 
   var elTitle = document.getElementById('title');

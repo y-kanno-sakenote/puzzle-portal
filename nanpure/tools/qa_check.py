@@ -256,7 +256,7 @@ def tier_of(name):
 # ---------------------------------------------------------------- 実行
 
 def main():
-    base = "/Users/ymacmini/Documents/claudecode@macmini/dev/puzzle-portal/sudoku"
+    base = "/Users/ymacmini/Documents/claudecode@macmini/dev/puzzle-portal/nanpure"
     puzzles = json.load(open(base + "/tools/puzzles.json", encoding="utf-8"))
 
     results = {
