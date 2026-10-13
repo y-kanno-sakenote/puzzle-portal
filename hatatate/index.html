@@ -33,6 +33,8 @@
     width:max-content;margin:0 auto;gap:0;
     background:var(--panel);border:2px solid var(--sub);border-radius:6px;overflow:hidden;
     touch-action:manipulation;user-select:none;-webkit-user-select:none;
+    /* 長押しで🚩にするので、iOS の長押しメニュー・拡大鏡を出さない（ui係） */
+    -webkit-touch-callout:none;
   }
   .c{
     display:flex;align-items:center;justify-content:center;
@@ -51,12 +53,8 @@
   .c.boom{background:var(--red)}
   .c .e{font-size:calc(var(--cs) * .6);font-weight:400}
 
-  #mode{display:grid;grid-template-columns:1fr 1fr;gap:0;padding:12px 0 0}
-  #mode button{border-radius:0}
-  #mode button:first-child{border-radius:9px 0 0 9px}
-  #mode button:last-child{border-radius:0 9px 9px 0;border-left:0}
-  #mode button.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
-  #buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 0 0}
+  /* 「ひらく／🚩 はた」の切り替えは廃止（ui係）：タップ＝ひらく・長押し＝🚩 */
+  #buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px 0 0}
   button{
     font:inherit;font-size:15px;padding:11px 6px;border:1px solid var(--frame);
     border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;
@@ -105,10 +103,6 @@
     </div>
   </div>
 
-  <div id="mode">
-    <button id="modeOpen" class="on">ひらく</button>
-    <button id="modeFlag">🚩 はた</button>
-  </div>
   <div id="buttons">
     <button id="undo">もどす</button>
     <button id="reset">はじめから</button>
@@ -120,7 +114,7 @@
     <div>数字は、まわり8マスにある🕳️の数</div>
     <div>🕳️のないマスを全部ひらく</div>
     <div>当てずっぽうは要らない</div>
-    <div>🚩は印だけ</div>
+    <div>長押しで🚩（印だけ）</div>
   </div>
 
   <section id="levels"></section>
@@ -528,8 +522,6 @@ if (typeof document !== 'undefined') (function () {
   var elReset = document.getElementById('reset');
   var elMsg = document.getElementById('msg');
   var elLevels = document.getElementById('levels');
-  var elModeOpen = document.getElementById('modeOpen');
-  var elModeFlag = document.getElementById('modeFlag');
 
   var LABELS = (function () {
     var out = [], count = {};
@@ -557,7 +549,7 @@ if (typeof document !== 'undefined') (function () {
     try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
   }
 
-  var index = 0, board = null, state = null, history = [], flagMode = false, done = false;
+  var index = 0, board = null, state = null, history = [], done = false;
   var cells = [];
 
   function setMsg(text, lose) {
@@ -594,8 +586,6 @@ if (typeof document !== 'undefined') (function () {
     }
     elLeft.textContent = String(Hatatate.minesLeft(board, state));
     elUndo.disabled = done || !history.length;
-    elModeOpen.className = flagMode ? '' : 'on';
-    elModeFlag.className = flagMode ? 'on' : '';
   }
 
   function loadLevel(i) {
@@ -604,7 +594,6 @@ if (typeof document !== 'undefined') (function () {
     state = Hatatate.startState(board);
     history = [];
     done = false;
-    flagMode = false;
     elClear.hidden = true;
     elTitle.textContent = LABELS[i].text;
     setMsg('');
@@ -615,17 +604,60 @@ if (typeof document !== 'undefined') (function () {
     renderLevelList();
   }
 
+  /* 🚩を立てる／外す（長押し・右クリック共通）。もどすで1操作ずつ戻れる */
+  function toggleAt(i) {
+    if (done || state.boom >= 0) return;
+    var t = Hatatate.toggleFlag(board, state, i);
+    if (t === state) return;
+    history.push(state);
+    state = t;
+    render();
+  }
+
+  /* 長押しで🚩（ui係 2026-10-13）。切り替えボタンをやめ、タップ＝ひらく・長押し＝🚩を立てる／外す。
+     誤爆よけ：HOLD_MS 押し続けたときだけ🚩・指が SLOP px 動いたら取り消し（スクロールのつもりを拾わない）・
+     長押しの直後の click は捨てる。押している間の合図は出さない（指の下に隠れて見えないため） */
+  var HOLD_MS = 400, SLOP = 10;
+  var hold = null;          /* {id, x, y, t} 押している指1本だけを見る */
+  var skipClick = false;    /* 長押しで🚩にした直後の click を捨てる。次の押し始めで必ず戻す */
+  var lastPointer = '';
+  function cancelHold() { if (hold) { clearTimeout(hold.t); hold = null; } }
+  elBoard.addEventListener('pointerdown', function (e) {
+    lastPointer = e.pointerType;
+    skipClick = false;
+    cancelHold();
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    var el = e.target.closest ? e.target.closest('.c') : null;
+    if (!el || done || state.boom >= 0) return;
+    var i = parseInt(el.dataset.i, 10);
+    if (state.opened[i]) return;
+    var h = hold = { id: e.pointerId, x: e.clientX, y: e.clientY, t: 0 };
+    h.t = setTimeout(function () {
+      if (hold !== h) return;
+      hold = null;
+      skipClick = true;
+      toggleAt(i);
+    }, HOLD_MS);
+  });
+  elBoard.addEventListener('pointermove', function (e) {
+    /* 指がずれたら「何もしない」：長押しを取り消し、ブラウザが約16pxまでタップ扱いで送る click も捨てる（qa係の差し戻し） */
+    if (hold && e.pointerId === hold.id &&
+        Math.abs(e.clientX - hold.x) + Math.abs(e.clientY - hold.y) > SLOP) { cancelHold(); skipClick = true; }
+  });
+  elBoard.addEventListener('pointerup', function (e) { if (hold && e.pointerId === hold.id) cancelHold(); });
+  elBoard.addEventListener('pointercancel', function (e) { if (hold && e.pointerId === hold.id) cancelHold(); });
+  /* メニューは常に出さない。右クリックはマウスのときだけ🚩（Android は指の長押しでも contextmenu が来るので、そちらは上のタイマーに任せる） */
+  elBoard.addEventListener('contextmenu', function (e) {
+    e.preventDefault();
+    if (lastPointer !== 'mouse') return;
+    var el = e.target.closest ? e.target.closest('.c') : null;
+    if (el) toggleAt(parseInt(el.dataset.i, 10));
+  });
+
   function onCell() {
+    if (skipClick) { skipClick = false; return; }
     if (done || state.boom >= 0) return;
     var i = parseInt(this.dataset.i, 10);
-    if (flagMode) {
-      var t = Hatatate.toggleFlag(board, state, i);
-      if (t === state) return;
-      history.push(state);
-      state = t;
-      render();
-      return;
-    }
     var r = Hatatate.open(board, state, i);
     if (r.result === 'none') return;
     history.push(state);
@@ -647,8 +679,6 @@ if (typeof document !== 'undefined') (function () {
     render();
   }
 
-  elModeOpen.addEventListener('click', function () { flagMode = false; render(); });
-  elModeFlag.addEventListener('click', function () { flagMode = true; render(); });
   elUndo.addEventListener('click', function () {
     if (done || !history.length) return;
     state = history.pop();
