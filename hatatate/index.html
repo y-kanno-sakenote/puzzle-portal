@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>はたたて</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --red:#d94436; --blue:#3f6fb0;
+    /* --green と --closed は削除（ui係）：閉じたマスは --frame、数字は 青・墨・赤 の3段で足りる */
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  #app{max-width:440px;margin:0 auto;padding:10px 10px 40px}
+  header{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:2px 2px 8px}
+  #titleWrap{display:flex;align-items:baseline;gap:8px;min-width:0}
+  #title{font-size:20px;font-weight:700;letter-spacing:.02em}
+  #home{font-size:13px;color:var(--sub);text-decoration:none;white-space:nowrap;padding:12px 6px;margin:-12px -6px}
+  #left{font-size:14px;color:var(--sub);white-space:nowrap}
+  #left b{color:var(--ink);font-weight:700}
+
+  #stage{position:relative}
+  /* マスの大きさ＝盤の幅÷列数（最大48px）。幅360pxの画面で 9列でも36px以上（spec.md） */
+  #board{
+    --cs:min(calc((min(100vw, 440px) - 20px) / var(--w)), 48px);
+    display:grid;grid-template-columns:repeat(var(--w), var(--cs));grid-auto-rows:var(--cs);
+    width:max-content;margin:0 auto;gap:0;
+    background:var(--panel);border:2px solid var(--sub);border-radius:6px;overflow:hidden;
+    touch-action:manipulation;user-select:none;-webkit-user-select:none;
+  }
+  .c{
+    display:flex;align-items:center;justify-content:center;
+    border-right:1px solid var(--line);border-bottom:1px solid var(--line);
+    font-size:calc(var(--cs) * .56);font-weight:700;line-height:1;
+    /* 閉じたマスは一段濃く：白い開いた範囲（始まりの入口）が一目で浮き、閉じたマスどうしの線（--line）も見える */
+    background:var(--frame);cursor:pointer;-webkit-tap-highlight-color:transparent;
+  }
+  .c.re{border-right:0}
+  .c.be{border-bottom:0}
+  .c.o{background:var(--panel);cursor:default}
+  /* 数字の色は 1＝青・2＝墨・3以上＝赤（多いほど赤）。色が見分けにくくても数字そのもので読める */
+  .c.n1{color:var(--blue)}
+  .c.n2{color:var(--ink)}
+  .c.n3,.c.n4,.c.n5,.c.n6,.c.n7,.c.n8{color:var(--red)}
+  .c.boom{background:var(--red)}
+  .c .e{font-size:calc(var(--cs) * .6);font-weight:400}
+
+  #mode{display:grid;grid-template-columns:1fr 1fr;gap:0;padding:12px 0 0}
+  #mode button{border-radius:0}
+  #mode button:first-child{border-radius:9px 0 0 9px}
+  #mode button:last-child{border-radius:0 9px 9px 0;border-left:0}
+  #mode button.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+  #buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 0 0}
+  button{
+    font:inherit;font-size:15px;padding:11px 6px;border:1px solid var(--frame);
+    border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button:active{background:#eeece7}
+  button:disabled{opacity:.4;cursor:default}
+
+  #msg{min-height:1.5em;padding:8px 2px 0;font-size:15px;text-align:center}
+  #msg.lose{color:var(--red);font-weight:700}
+
+  #clear{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:10px;
+    background:rgba(245,244,241,.9);border-radius:6px;z-index:20;
+  }
+  #clear[hidden]{display:none}
+  #clearTitle{font-size:26px;font-weight:700}
+  #next{font-size:17px;padding:12px 28px}
+
+  #rules{font-size:13px;color:var(--sub);padding:8px 2px 0;line-height:1.7}
+
+  #levels{padding-top:16px}
+  .tier{margin-bottom:10px}
+  .tierName{font-size:13px;color:var(--sub);padding:2px 2px 4px}
+  .tierRow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .lv{padding:0;height:40px;font-size:14px;border-radius:7px;
+      display:flex;align-items:center;justify-content:center}
+  .lv.cur{border-color:var(--ink);font-weight:700}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 戻り先は一覧（../#puzzle）。../ だけだとタイトル画面（パズル／クエストの2択）に着いてしまう -->
+  <header>
+    <div id="titleWrap"><a id="home" href="../#puzzle">‹ パズル箱</a><div id="title">入門 1</div></div>
+    <!-- 踏んではいけないもの＝落とし穴🕳️（ui係。🌰は栗拾いで「集めるもの」に見えるため替えた） -->
+    <div id="left">🕳️ のこり <b id="leftN">0</b></div>
+  </header>
+
+  <div id="stage">
+    <div id="board"></div>
+    <div id="clear" hidden>
+      <div id="clearTitle">クリア！</div>
+      <button id="next">つぎへ</button>
+    </div>
+  </div>
+
+  <div id="mode">
+    <button id="modeOpen" class="on">ひらく</button>
+    <button id="modeFlag">🚩 はた</button>
+  </div>
+  <div id="buttons">
+    <button id="undo">もどす</button>
+    <button id="reset">はじめから</button>
+  </div>
+  <div id="msg"></div>
+
+  <!-- 箱の流儀：1行1か条・句点なし（ui係） -->
+  <div id="rules">
+    <div>数字は、まわり8マスにある🕳️の数</div>
+    <div>🕳️のないマスを全部ひらく</div>
+    <div>当てずっぽうは要らない</div>
+    <div>🚩は印だけ</div>
+  </div>
+
+  <section id="levels"></section>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.Hatatate として公開する）
+   ===================================================================== */
+
+/* LEVELS-BEGIN  tools/gen_levels.py の出力をそのまま貼る。手で書き換えない */
+var LEVELS = [
+  {"tier":"入門","w":6,"h":8,"mines":"000100000100100000010000010000011000001000000000","start":0,"hardest":1,"uses":[5,0,0,0],"open":6},
+  {"tier":"入門","w":6,"h":8,"mines":"000001110001000000000000001001110000000000000000","start":18,"hardest":1,"uses":[5,0,0,0],"open":6},
+  {"tier":"入門","w":6,"h":8,"mines":"000100000100000000000001001000000011000100000100","start":5,"hardest":1,"uses":[7,0,0,0],"open":6},
+  {"tier":"入門","w":6,"h":8,"mines":"100100000000000000001000000000110000001000001100","start":42,"hardest":1,"uses":[7,0,0,0],"open":4},
+  {"tier":"入門","w":6,"h":8,"mines":"000100000100111000000000000000000101000000000100","start":0,"hardest":1,"uses":[8,0,0,0],"open":6},
+  {"tier":"入門","w":6,"h":8,"mines":"000000000011000000010000110100000001000000001000","start":23,"hardest":1,"uses":[9,0,0,0],"open":6},
+  {"tier":"入門","w":6,"h":8,"mines":"100000010000000000100000001010000010000000110000","start":30,"hardest":1,"uses":[9,0,0,0],"open":6},
+  {"tier":"入門","w":6,"h":8,"mines":"010000000000000010010011000000100000000100000010","start":35,"hardest":1,"uses":[10,0,0,0],"open":6},
+  {"tier":"入門","w":6,"h":8,"mines":"010001010000000010100000000000100000001000000100","start":3,"hardest":1,"uses":[11,0,0,0],"open":6},
+  {"tier":"入門","w":6,"h":8,"mines":"010001000001001000010001000000000001001000000000","start":3,"hardest":1,"uses":[15,0,0,0],"open":6},
+  {"tier":"初級","w":8,"h":10,"mines":"00100011000000000000010001000000000010000101000001011000000000100000000001010000","start":0,"hardest":2,"uses":[16,5,0,0],"open":6},
+  {"tier":"初級","w":8,"h":10,"mines":"00000000000000111000010000010010001010000000010010100000000000000000010010000001","start":66,"hardest":2,"uses":[12,6,0,0],"open":12},
+  {"tier":"初級","w":8,"h":10,"mines":"00010000001001001000100000000010000010000000000000000011001001101000000100000000","start":74,"hardest":2,"uses":[15,6,0,0],"open":12},
+  {"tier":"初級","w":8,"h":10,"mines":"00000001010000000000010000000000011000000000101100011100000000000000010100100000","start":23,"hardest":2,"uses":[15,6,0,0],"open":8},
+  {"tier":"初級","w":8,"h":10,"mines":"00000000000001010100010000000010000000000010100000000010011000000100101001000000","start":32,"hardest":2,"uses":[12,6,0,0],"open":8},
+  {"tier":"初級","w":8,"h":10,"mines":"10000010000000000000010100010000001000011000100000000001000000011000100010000000","start":50,"hardest":2,"uses":[13,7,0,0],"open":15},
+  {"tier":"初級","w":8,"h":10,"mines":"00001000000100000000000011010000111010000001001000000000000100000110000000000000","start":0,"hardest":2,"uses":[14,7,0,0],"open":9},
+  {"tier":"初級","w":8,"h":10,"mines":"10011010000000000000100000000000001110100000000010001000000000100101000000000000","start":22,"hardest":2,"uses":[9,7,0,0],"open":9},
+  {"tier":"初級","w":8,"h":10,"mines":"00010010000000000000100100000110000000000100100000000000100010110001100000000000","start":46,"hardest":2,"uses":[18,7,0,0],"open":9},
+  {"tier":"初級","w":8,"h":10,"mines":"00100000000000100100000010100101010000010001000000000100000010000100001000000000","start":75,"hardest":2,"uses":[17,9,0,0],"open":8},
+  {"tier":"中級","w":8,"h":12,"mines":"000000000000100001000101000000000000010110110000000100001000001010000000010001000010000000110100","start":27,"hardest":3,"uses":[11,1,2,0],"open":9},
+  {"tier":"中級","w":8,"h":12,"mines":"010000000000010100100001000100100000000001100000100110000100000000000000000101010000000100001100","start":46,"hardest":3,"uses":[14,2,2,0],"open":15},
+  {"tier":"中級","w":8,"h":12,"mines":"000001010000000001100000000010000001100010000000111000000010011001000000000000100010000000000110","start":76,"hardest":3,"uses":[15,2,2,0],"open":9},
+  {"tier":"中級","w":8,"h":12,"mines":"100000000011000010000000000011011000000110000000000100000101010000101010000010001000000000000000","start":45,"hardest":3,"uses":[13,4,2,0],"open":9},
+  {"tier":"中級","w":8,"h":12,"mines":"000101000000000010000000011001000000000101110000000100001001000000000000110010000011010000000000","start":7,"hardest":3,"uses":[12,4,2,0],"open":8},
+  {"tier":"中級","w":8,"h":12,"mines":"000001010010000000010001000100001000010000111010000000000010001000101000100000000000000001000010","start":78,"hardest":3,"uses":[21,5,2,0],"open":9},
+  {"tier":"中級","w":8,"h":12,"mines":"001000000100100000001000010100000011001000000000000010000000001000111000000000101000000001001100","start":40,"hardest":3,"uses":[16,6,2,0],"open":18},
+  {"tier":"中級","w":8,"h":12,"mines":"010000010100010100000000000010010000010100111000000000010000110000000000000000000010010011000000","start":3,"hardest":3,"uses":[15,6,2,0],"open":9},
+  {"tier":"中級","w":8,"h":12,"mines":"110000110001000000000000110000001000000000001100000000001000101110010000000000010010010000000000","start":42,"hardest":3,"uses":[9,3,3,0],"open":12},
+  {"tier":"中級","w":8,"h":12,"mines":"010110000000010001100101000000000000000000110000000100100000000100000101011000000000000000010001","start":37,"hardest":3,"uses":[22,4,3,0],"open":12},
+  {"tier":"上級","w":9,"h":14,"mines":"010110000000001010000000000001000100000001111000000000000000001100101001000001101010100000010000000001000000010000010000000010","start":18,"hardest":4,"uses":[14,4,2,1],"open":21},
+  {"tier":"上級","w":9,"h":14,"mines":"100110011000000000011000000000000001010000000100100101011000000011100010000000100100000001001000000100000000010010000000000000","start":22,"hardest":4,"uses":[20,4,2,1],"open":20},
+  {"tier":"上級","w":9,"h":14,"mines":"001000010000000000110100000000000000010100010101010100000000100000000001001000000000000100001010000001001101000000101000101000","start":67,"hardest":4,"uses":[19,4,2,1],"open":12},
+  {"tier":"上級","w":9,"h":14,"mines":"000000011000001000000000000010000011000010011001000000000101010000010000110101000010100001100100101000000000000000000000000010","start":108,"hardest":4,"uses":[20,5,2,1],"open":21},
+  {"tier":"上級","w":9,"h":14,"mines":"000100000010100000001000001001100000000010000100010000100001000000000000100101000000010110010101000110000100000000000001000010","start":47,"hardest":4,"uses":[17,5,2,1],"open":12},
+  {"tier":"上級","w":9,"h":14,"mines":"010100010000010000100000000000000000110100101000101000000011010100000000010001000000000001000011000000100010000000001010100000","start":75,"hardest":4,"uses":[27,5,2,1],"open":9},
+  {"tier":"上級","w":9,"h":14,"mines":"000000000000100001001100101000010000001000000100010100100000000000101110000000001000110010010010000000000100000000010010100000","start":44,"hardest":4,"uses":[25,5,2,1],"open":8},
+  {"tier":"上級","w":9,"h":14,"mines":"000010000000010000101011010000100101001000000000000000000001000100001000000010100101000100100010010000000000011010000000100000","start":36,"hardest":4,"uses":[21,7,2,1],"open":8},
+  {"tier":"上級","w":9,"h":14,"mines":"000000000110000000100000000000000000100000010010100010110110000011001000000000010010110000001000000000010001000000101001000100","start":99,"hardest":4,"uses":[20,3,3,1],"open":8},
+  {"tier":"上級","w":9,"h":14,"mines":"000000100001000000001010010010000000010010010110000100100000000000010001000000100110000101000000010010000000000000001001101000","start":65,"hardest":4,"uses":[21,9,5,1],"open":9}
+];
+/* LEVELS-END */
+
+var Hatatate = (function () {
+  var ENUM_CAP = 200000;   // 段3・4 の全解列挙の上限（生成器と同じ）
+
+  function neighbors(w, h) {
+    var nb = [];
+    for (var i = 0; i < w * h; i++) {
+      var r = Math.floor(i / w), c = i % w, lst = [];
+      for (var dr = -1; dr <= 1; dr++) for (var dc = -1; dc <= 1; dc++) {
+        if (!dr && !dc) continue;
+        var rr = r + dr, cc = c + dc;
+        if (rr >= 0 && rr < h && cc >= 0 && cc < w) lst.push(rr * w + cc);
+      }
+      nb.push(lst);
+    }
+    return nb;
+  }
+
+  /* 盤を読み込む。{w, h, N, mines:[bool], nums:[int], nb, total, start} */
+  function load(level) {
+    var w = level.w, h = level.h, N = w * h, nb = neighbors(w, h), mines = [], nums = [], total = 0, i, j;
+    for (i = 0; i < N; i++) { mines.push(level.mines.charAt(i) === '1'); if (mines[i]) total++; }
+    for (i = 0; i < N; i++) {
+      var n = 0;
+      for (j = 0; j < nb[i].length; j++) if (mines[nb[i][j]]) n++;
+      nums.push(n);
+    }
+    return { w: w, h: h, N: N, mines: mines, nums: nums, nb: nb, total: total, start: level.start };
+  }
+
+  /* i を開ける（0なら周りへ連鎖）。opened を書き換え、新しく開いたマスを返す */
+  function cascade(b, opened, start) {
+    var out = [];
+    if (opened[start] || b.mines[start]) return out;
+    var stack = [start];
+    opened[start] = true;
+    while (stack.length) {
+      var i = stack.pop();
+      out.push(i);
+      if (b.nums[i] === 0) {
+        for (var k = 0; k < b.nb[i].length; k++) {
+          var j = b.nb[i][k];
+          if (!opened[j] && !b.mines[j]) { opened[j] = true; stack.push(j); }
+        }
+      }
+    }
+    return out;
+  }
+
+  /* 始まりの局面：start の0マスから連鎖で開いた状態。state = {opened:[bool], flags:[bool], boom:-1} */
+  function startState(b) {
+    var opened = [], flags = [];
+    for (var i = 0; i < b.N; i++) { opened.push(false); flags.push(false); }
+    cascade(b, opened, b.start);
+    return { opened: opened, flags: flags, boom: -1 };
+  }
+
+  function copy(s) { return { opened: s.opened.slice(), flags: s.flags.slice(), boom: s.boom }; }
+
+  /* マスを開ける。戻り値 {result:'boom'|'open'|'none', state, opened:[新しく開いたマス]}（state は複製。元は変えない）
+     旗のあるマス・開いたマス・おちた後は 'none' */
+  function open(b, s, i) {
+    if (s.boom >= 0 || s.opened[i] || s.flags[i]) return { result: 'none', state: s, opened: [] };
+    var t = copy(s);
+    if (b.mines[i]) { t.boom = i; return { result: 'boom', state: t, opened: [] }; }
+    var got = cascade(b, t.opened, i);
+    for (var k = 0; k < got.length; k++) t.flags[got[k]] = false;
+    return { result: 'open', state: t, opened: got };
+  }
+
+  /* 旗を立てる／外す（閉じたマスだけ）。旗は答えに関わらない */
+  function toggleFlag(b, s, i) {
+    if (s.boom >= 0 || s.opened[i]) return s;
+    var t = copy(s);
+    t.flags[i] = !t.flags[i];
+    return t;
+  }
+
+  function isClear(b, s) {
+    if (s.boom >= 0) return false;
+    for (var i = 0; i < b.N; i++) if (!b.mines[i] && !s.opened[i]) return false;
+    return true;
+  }
+
+  /* 表示用の「のこり」＝地雷の数 − 立てた旗の数（負にもなる） */
+  function minesLeft(b, s) {
+    var f = 0;
+    for (var i = 0; i < b.N; i++) if (s.flags[i]) f++;
+    return b.total - f;
+  }
+
+  /* ---------------- 段階ソルバー（tools/gen_levels.py と同じ定義） ----------------
+     st: 0=閉じ（未確定） 1=開いた 2=地雷と確定 */
+  function constraints(b, st) {
+    var cons = [];
+    for (var i = 0; i < b.N; i++) {
+      if (st[i] !== 1) continue;
+      var unk = [], m = 0;
+      for (var k = 0; k < b.nb[i].length; k++) {
+        var j = b.nb[i][k];
+        if (st[j] === 0) unk.push(j); else if (st[j] === 2) m++;
+      }
+      if (unk.length) cons.push({ cells: unk, need: b.nums[i] - m });
+    }
+    return cons;
+  }
+
+  function level1(cons) {
+    var safe = {}, mine = {};
+    for (var k = 0; k < cons.length; k++) {
+      var c = cons[k];
+      if (c.need === 0) for (var a = 0; a < c.cells.length; a++) safe[c.cells[a]] = 1;
+      else if (c.need === c.cells.length) for (var b2 = 0; b2 < c.cells.length; b2++) mine[c.cells[b2]] = 1;
+    }
+    return { safe: safe, mine: mine };
+  }
+
+  function level2(cons) {
+    var safe = {}, mine = {}, byCell = {}, k, a, b2, x;
+    for (k = 0; k < cons.length; k++) for (a = 0; a < cons[k].cells.length; a++) {
+      x = cons[k].cells[a];
+      (byCell[x] = byCell[x] || []).push(k);
+    }
+    var pairs = {};
+    for (x in byCell) {
+      var ks = byCell[x];
+      for (a = 0; a < ks.length; a++) for (b2 = a + 1; b2 < ks.length; b2++) pairs[ks[a] + ',' + ks[b2]] = [ks[a], ks[b2]];
+    }
+    for (var key in pairs) {
+      var A = cons[pairs[key][0]], B = cons[pairs[key][1]];
+      var inB = {}, inA = {}, I = [], Ao = [], Bo = [];
+      for (a = 0; a < B.cells.length; a++) inB[B.cells[a]] = 1;
+      for (a = 0; a < A.cells.length; a++) { inA[A.cells[a]] = 1; (inB[A.cells[a]] ? I : Ao).push(A.cells[a]); }
+      for (a = 0; a < B.cells.length; a++) if (!inA[B.cells[a]]) Bo.push(B.cells[a]);
+      var xs = [];
+      for (var t = 0; t <= I.length; t++) {
+        if (A.need - t >= 0 && A.need - t <= Ao.length && B.need - t >= 0 && B.need - t <= Bo.length) xs.push(t);
+      }
+      if (!xs.length) continue;
+      var regions = [[I, xs.map(function (v) { return v; })],
+                     [Ao, xs.map(function (v) { return A.need - v; })],
+                     [Bo, xs.map(function (v) { return B.need - v; })]];
+      for (var r = 0; r < 3; r++) {
+        var reg = regions[r][0], vals = regions[r][1];
+        if (!reg.length) continue;
+        var all0 = vals.every(function (v) { return v === 0; });
+        var allF = vals.every(function (v) { return v === reg.length; });
+        for (a = 0; a < reg.length; a++) { if (all0) safe[reg[a]] = 1; else if (allF) mine[reg[a]] = 1; }
+      }
+    }
+    return { safe: safe, mine: mine };
+  }
+
+  /* 数字でつながったかたまり（変数は昇順、制約は元の順） */
+  function components(cons) {
+    var parent = {};
+    function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+    var k, a;
+    for (k = 0; k < cons.length; k++) {
+      var cells = cons[k].cells;
+      for (a = 0; a < cells.length; a++) if (!(cells[a] in parent)) parent[cells[a]] = cells[a];
+      for (a = 1; a < cells.length; a++) {
+        var ra = find(cells[0]), rb = find(cells[a]);
+        if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
+      }
+    }
+    var keys = Object.keys(parent).map(Number).sort(function (p, q) { return p - q; });
+    var groups = {}, roots = [];
+    for (a = 0; a < keys.length; a++) {
+      var r = find(keys[a]);
+      if (!groups[r]) { groups[r] = []; roots.push(r); }
+      groups[r].push(keys[a]);
+    }
+    roots.sort(function (p, q) { return p - q; });
+    var out = [];
+    for (a = 0; a < roots.length; a++) {
+      var vars = groups[roots[a]], vs = {};
+      for (k = 0; k < vars.length; k++) vs[vars[k]] = 1;
+      var cs = [];
+      for (k = 0; k < cons.length; k++) if (vs[cons[k].cells[0]]) cs.push(cons[k]);
+      out.push({ vars: vars, cs: cs });
+    }
+    return out;
+  }
+
+  /* 地雷数の集合は 0/1 の配列（添字＝地雷数）で持つ */
+  function zeros(n) { var a = []; for (var i = 0; i < n; i++) a.push(0); return a; }
+  function sumset(a, b) {
+    var out = zeros(a.length + b.length);
+    for (var i = 0; i < a.length; i++) if (a[i]) for (var j = 0; j < b.length; j++) if (b[j]) out[i + j] = 1;
+    return out;
+  }
+  function any(a) { for (var i = 0; i < a.length; i++) if (a[i]) return true; return false; }
+
+  /* かたまりの全解を列挙し、feas[k]・mineK[v][k]・safeK[v][k]（k=地雷数）を返す */
+  function enumerateComp(vars, cs) {
+    var n = vars.length, pos = {}, k, v;
+    for (k = 0; k < n; k++) pos[vars[k]] = k;
+    var cidx = cs.map(function (c) { return c.cells.map(function (x) { return pos[x]; }); });
+    var need = cs.map(function (c) { return c.need; });
+    var varCons = [];
+    for (v = 0; v < n; v++) varCons.push([]);
+    for (k = 0; k < cidx.length; k++) for (var a = 0; a < cidx[k].length; a++) varCons[cidx[k][a]].push(k);
+    var order = [], seen = zeros(n);
+    for (var s = 0; s < n; s++) {
+      if (seen[s]) continue;
+      var queue = [s], qi = 0;
+      seen[s] = 1;
+      while (qi < queue.length) {
+        v = queue[qi++];
+        order.push(v);
+        for (a = 0; a < varCons[v].length; a++) {
+          var lst = cidx[varCons[v][a]];
+          for (var b2 = 0; b2 < lst.length; b2++) if (!seen[lst[b2]]) { seen[lst[b2]] = 1; queue.push(lst[b2]); }
+        }
+      }
+    }
+    var assigned = zeros(cs.length), remaining = cidx.map(function (l) { return l.length; });
+    var val = zeros(n), feas = zeros(n + 1), mineK = [], safeK = [], nodes = 0;
+    for (v = 0; v < n; v++) { mineK.push(zeros(n + 1)); safeK.push(zeros(n + 1)); }
+    function rec(d, m) {
+      nodes++;
+      if (nodes > ENUM_CAP) throw new Error('too heavy');
+      if (d === n) {
+        feas[m] = 1;
+        for (var u = 0; u < n; u++) { if (val[u]) mineK[u][m] = 1; else safeK[u][m] = 1; }
+        return;
+      }
+      var vv = order[d];
+      for (var x = 0; x <= 1; x++) {
+        var ok = true, q;
+        for (q = 0; q < varCons[vv].length; q++) {
+          var c = varCons[vv][q], as = assigned[c] + x, rm = remaining[c] - 1;
+          if (as > need[c] || as + rm < need[c]) { ok = false; break; }
+        }
+        if (!ok) continue;
+        for (q = 0; q < varCons[vv].length; q++) { assigned[varCons[vv][q]] += x; remaining[varCons[vv][q]]--; }
+        val[vv] = x;
+        rec(d + 1, m + x);
+        for (q = 0; q < varCons[vv].length; q++) { assigned[varCons[vv][q]] -= x; remaining[varCons[vv][q]]++; }
+      }
+      val[vv] = 0;
+    }
+    rec(0, 0);
+    return { feas: feas, mineK: mineK, safeK: safeK };
+  }
+
+  function level34(b, cons, st, useCount) {
+    var safe = {}, mine = {}, comps = components(cons), infos = [], j, k;
+    for (j = 0; j < comps.length; j++) infos.push(enumerateComp(comps[j].vars, comps[j].cs));
+    if (!useCount) {
+      for (j = 0; j < comps.length; j++) for (k = 0; k < comps[j].vars.length; k++) {
+        if (!any(infos[j].mineK[k])) safe[comps[j].vars[k]] = 1;
+        else if (!any(infos[j].safeK[k])) mine[comps[j].vars[k]] = 1;
+      }
+      return { safe: safe, mine: mine };
+    }
+    var frontier = {};
+    for (j = 0; j < comps.length; j++) for (k = 0; k < comps[j].vars.length; k++) frontier[comps[j].vars[k]] = 1;
+    var interior = [], known = 0;
+    for (k = 0; k < b.N; k++) { if (st[k] === 0 && !frontier[k]) interior.push(k); if (st[k] === 2) known++; }
+    var R = b.total - known, I = interior.length, lo = R - I, hi = R;
+    function inWin(arr) { for (var t = Math.max(lo, 0); t <= hi && t < arr.length; t++) if (arr[t]) return true; return false; }
+    var nC = infos.length, pre = [[1]], suf = [];
+    for (j = 0; j < nC; j++) pre.push(sumset(pre[j], infos[j].feas));
+    suf[nC] = [1];
+    for (j = nC - 1; j >= 0; j--) suf[j] = sumset(suf[j + 1], infos[j].feas);
+    for (j = 0; j < nC; j++) {
+      var others = sumset(pre[j], suf[j + 1]);
+      for (k = 0; k < comps[j].vars.length; k++) {
+        var canMine = inWin(sumset(infos[j].mineK[k], others));
+        var canSafe = inWin(sumset(infos[j].safeK[k], others));
+        if (!canMine) safe[comps[j].vars[k]] = 1;
+        else if (!canSafe) mine[comps[j].vars[k]] = 1;
+      }
+    }
+    if (I) {
+      var tot = pre[nC], ts = [];
+      for (k = Math.max(lo, 0); k <= hi && k < tot.length; k++) if (tot[k]) ts.push(k);
+      if (ts.length === 1 && ts[0] === R) for (k = 0; k < I; k++) safe[interior[k]] = 1;
+      else if (ts.length === 1 && lo >= 0 && ts[0] === lo) for (k = 0; k < I; k++) mine[interior[k]] = 1;
+    }
+    return { safe: safe, mine: mine };
+  }
+
+  /* 段階ソルバー。戻り値 {solved, hardest, uses:[段1..4の回数], opened0}
+     各回、弱い段から試し、何か決まった段の発見を全部まとめて適用して段1に戻る */
+  function solve(level) {
+    var b = load(level), N = b.N, opened = [], i, k;
+    for (i = 0; i < N; i++) opened.push(false);
+    cascade(b, opened, b.start);
+    var st = [], opened0 = 0;
+    for (i = 0; i < N; i++) { st.push(opened[i] ? 1 : 0); if (opened[i]) opened0++; }
+    var uses = [0, 0, 0, 0], safeTotal = N - b.total;
+    function openCount() { var c = 0; for (var x = 0; x < N; x++) if (st[x] === 1) c++; return c; }
+    while (openCount() < safeTotal) {
+      var cons = constraints(b, st), found = null;
+      for (var lv = 1; lv <= 4 && !found; lv++) {
+        var r;
+        if (lv === 1) {
+          r = level1(cons);
+          var unk = [], known = 0;
+          for (k = 0; k < N; k++) { if (st[k] === 0) unk.push(k); else if (st[k] === 2) known++; }
+          var R = b.total - known;
+          if (R === 0) for (k = 0; k < unk.length; k++) r.safe[unk[k]] = 1;
+          else if (R === unk.length) for (k = 0; k < unk.length; k++) r.mine[unk[k]] = 1;
+        } else if (lv === 2) r = level2(cons);
+        else r = level34(b, cons, st, lv === 4);
+        if (Object.keys(r.safe).length || Object.keys(r.mine).length) found = { lv: lv, r: r };
+      }
+      if (!found) break;
+      uses[found.lv - 1]++;
+      var ms = Object.keys(found.r.mine).map(Number), ss = Object.keys(found.r.safe).map(Number);
+      for (k = 0; k < ms.length; k++) { if (!b.mines[ms[k]]) throw new Error('安全マスを地雷と判定'); st[ms[k]] = 2; }
+      ss.sort(function (p, q) { return p - q; });
+      for (k = 0; k < ss.length; k++) {
+        if (b.mines[ss[k]]) throw new Error('地雷を安全と判定');
+        if (st[ss[k]] === 0) {
+          var got = cascade(b, opened, ss[k]);
+          for (var g = 0; g < got.length; g++) st[got[g]] = 1;
+        }
+      }
+    }
+    var hardest = 0;
+    for (k = 0; k < 4; k++) if (uses[k]) hardest = k + 1;
+    return { solved: openCount() === safeTotal, hardest: hardest, uses: uses, opened0: opened0 };
+  }
+
+  return {
+    LEVELS: LEVELS, load: load, neighbors: neighbors, startState: startState, open: open,
+    toggleFlag: toggleFlag, isClear: isClear, minesLeft: minesLeft, solve: solve
+  };
+})();
+
+if (typeof window !== 'undefined') window.Hatatate = Hatatate;
+if (typeof globalThis !== 'undefined') globalThis.Hatatate = Hatatate;
+
+/* =====================================================================
+   画面
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var KEY = 'hatatate';
+  var MINE = '🕳️', FLAG = '🚩';   /* 穴は異体字セレクタ付き（絵文字で出す） */
+  var elBoard = document.getElementById('board');
+  var elTitle = document.getElementById('title');
+  var elLeft = document.getElementById('leftN');
+  var elClear = document.getElementById('clear');
+  var elNext = document.getElementById('next');
+  var elUndo = document.getElementById('undo');
+  var elReset = document.getElementById('reset');
+  var elMsg = document.getElementById('msg');
+  var elLevels = document.getElementById('levels');
+  var elModeOpen = document.getElementById('modeOpen');
+  var elModeFlag = document.getElementById('modeFlag');
+
+  var LABELS = (function () {
+    var out = [], count = {};
+    for (var i = 0; i < LEVELS.length; i++) {
+      var t = LEVELS[i].tier;
+      count[t] = (count[t] || 0) + 1;
+      out.push({ tier: t, no: count[t], text: t + ' ' + count[t] });
+    }
+    return out;
+  })();
+
+  var save = { cleared: {}, last: 0 };
+  function loadSave() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (o && typeof o === 'object') {
+        if (o.cleared && typeof o.cleared === 'object') save.cleared = o.cleared;
+        if (Number.isInteger(o.last) && o.last >= 0 && o.last < LEVELS.length) save.last = o.last;
+      }
+    } catch (e) { /* 保存が使えなくても遊べる */ }
+  }
+  function storeSave() {
+    try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
+  }
+
+  var index = 0, board = null, state = null, history = [], flagMode = false, done = false;
+  var cells = [];
+
+  function setMsg(text, lose) {
+    elMsg.textContent = text;
+    elMsg.className = lose ? 'lose' : '';
+  }
+
+  function build() {
+    elBoard.innerHTML = '';
+    elBoard.style.setProperty('--w', String(board.w));
+    cells = [];
+    for (var i = 0; i < board.N; i++) {
+      var d = document.createElement('div');
+      d.dataset.i = String(i);
+      d.addEventListener('click', onCell);
+      elBoard.appendChild(d);
+      cells.push(d);
+    }
+  }
+
+  function render() {
+    for (var i = 0; i < board.N; i++) {
+      var cn = 'c', txt = '', emoji = false;
+      if (i % board.w === board.w - 1) cn += ' re';
+      if (Math.floor(i / board.w) === board.h - 1) cn += ' be';
+      if (state.boom === i) { cn += ' o boom'; txt = MINE; emoji = true; }
+      else if (state.opened[i]) {
+        cn += ' o';
+        if (board.nums[i]) { txt = String(board.nums[i]); cn += ' n' + board.nums[i]; }
+      } else if (state.flags[i]) { txt = FLAG; emoji = true; }
+      cells[i].className = cn;
+      if (emoji) cells[i].innerHTML = '<span class="e">' + txt + '</span>';
+      else cells[i].textContent = txt;
+    }
+    elLeft.textContent = String(Hatatate.minesLeft(board, state));
+    elUndo.disabled = done || !history.length;
+    elModeOpen.className = flagMode ? '' : 'on';
+    elModeFlag.className = flagMode ? 'on' : '';
+  }
+
+  function loadLevel(i) {
+    index = i;
+    board = Hatatate.load(LEVELS[i]);
+    state = Hatatate.startState(board);
+    history = [];
+    done = false;
+    flagMode = false;
+    elClear.hidden = true;
+    elTitle.textContent = LABELS[i].text;
+    setMsg('');
+    build();
+    render();
+    save.last = i;
+    storeSave();
+    renderLevelList();
+  }
+
+  function onCell() {
+    if (done || state.boom >= 0) return;
+    var i = parseInt(this.dataset.i, 10);
+    if (flagMode) {
+      var t = Hatatate.toggleFlag(board, state, i);
+      if (t === state) return;
+      history.push(state);
+      state = t;
+      render();
+      return;
+    }
+    var r = Hatatate.open(board, state, i);
+    if (r.result === 'none') return;
+    history.push(state);
+    state = r.state;
+    if (r.result === 'boom') {
+      setMsg('おちた！ もどすで続けられる', true);   /* 穴なので「おちた」（にげこみの「つかまった！」と同じ形） */
+      render();
+      return;
+    }
+    setMsg('');
+    if (Hatatate.isClear(board, state)) {
+      done = true;
+      save.cleared[String(index)] = 1;
+      storeSave();
+      renderLevelList();
+      elNext.hidden = (index >= LEVELS.length - 1);
+      elClear.hidden = false;
+    }
+    render();
+  }
+
+  elModeOpen.addEventListener('click', function () { flagMode = false; render(); });
+  elModeFlag.addEventListener('click', function () { flagMode = true; render(); });
+  elUndo.addEventListener('click', function () {
+    if (done || !history.length) return;
+    state = history.pop();
+    setMsg('');
+    render();
+  });
+  elReset.addEventListener('click', function () {
+    state = Hatatate.startState(board);
+    history = [];
+    done = false;
+    elClear.hidden = true;
+    setMsg('');
+    render();
+  });
+  elNext.addEventListener('click', function () {
+    if (index < LEVELS.length - 1) { loadLevel(index + 1); window.scrollTo(0, 0); }
+  });
+
+  function renderLevelList() {
+    if (!elLevels.childNodes.length) {
+      var tiers = [], seen = {}, i;
+      for (i = 0; i < LABELS.length; i++) {
+        if (!seen[LABELS[i].tier]) { seen[LABELS[i].tier] = []; tiers.push(LABELS[i].tier); }
+        seen[LABELS[i].tier].push(i);
+      }
+      for (var t = 0; t < tiers.length; t++) {
+        var box = document.createElement('div');
+        box.className = 'tier';
+        var name = document.createElement('div');
+        name.className = 'tierName';
+        name.textContent = tiers[t];
+        box.appendChild(name);
+        var row = document.createElement('div');
+        row.className = 'tierRow';
+        var idxs = seen[tiers[t]];
+        for (var k = 0; k < idxs.length; k++) {
+          var b = document.createElement('button');
+          b.className = 'lv';
+          b.dataset.idx = String(idxs[k]);
+          b.addEventListener('click', function () {
+            loadLevel(parseInt(this.dataset.idx, 10));
+            window.scrollTo(0, 0);
+          });
+          row.appendChild(b);
+        }
+        box.appendChild(row);
+        elLevels.appendChild(box);
+      }
+    }
+    var btns = elLevels.querySelectorAll('.lv');
+    for (var j = 0; j < btns.length; j++) {
+      var idx = parseInt(btns[j].dataset.idx, 10);
+      btns[j].textContent = LABELS[idx].no + (save.cleared[String(idx)] ? '✓' : '');
+      btns[j].className = 'lv' + (idx === index ? ' cur' : '');
+    }
+  }
+
+  loadSave();
+  loadLevel(save.last);
+})();
+</script>
+</body>
+</html>
