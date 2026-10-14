@@ -362,7 +362,7 @@ function title() {
 /* ---- みんなの記録（spec §12 2026-10-14）----
    合言葉（#board=… で開くと覚える）を知る仲間だけが載せる・見る。合言葉が無ければ何も出さず、どこにも送らない。
    点は置き場所（Worker）が手数・最短・早撃ち・ボスから計算し直して照らす。外から来た文字は textContent でだけ入れる */
-var BOARD_URL = 'https://puzzle-quest-board.jusetsu-tokushima.workers.dev';   /* デプロイ後に Worker の URL（https://puzzle-quest-board.<…>.workers.dev）へ差し替える */
+var BOARD_URL = 'https://puzzle-quest-board.sakenote.workers.dev';   /* デプロイ後に Worker の URL（https://puzzle-quest-board.<…>.workers.dev）へ差し替える */
 var BOARD_KEY_STORE = 'quest-board-key', BOARD_NAME_STORE = 'quest-board-name';
 var boardKeyMem = '';   /* localStorage が使えない端末でも、開いている間は合言葉を持つ */
 var boardPending = null;
