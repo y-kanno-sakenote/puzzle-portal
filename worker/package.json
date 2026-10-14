@@ -1,0 +1,14 @@
+{
+  "name": "puzzle-quest-board",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/board.test.js",
+    "mins": "node tools/build_mins.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.148.0"
+  }
+}

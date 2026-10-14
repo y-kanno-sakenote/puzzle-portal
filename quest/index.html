@@ -45,6 +45,23 @@
   #recordList li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--frame);font-size:20px}
   #recordList b{font-variant-numeric:tabular-nums;white-space:nowrap}
   #recordList small{font-size:13px;font-weight:400;color:var(--sub);margin-left:2px}
+  /* みんなの記録（合言葉のある人だけ）：自分の記録と同じ1件1行に名前を足す */
+  .recHead{font-size:13px;color:var(--sub);margin:0 0 4px;text-align:left}
+  .recHead[hidden],#boardList[hidden],#boardSend[hidden],#boardForm[hidden]{display:none}
+  #boardList{list-style:none;margin:0 0 24px;padding:0;text-align:left}
+  #boardList li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--frame);font-size:17px}
+  #boardList li span{min-width:0;overflow-wrap:anywhere}
+  #boardList li small{font-size:13px;color:var(--sub);margin-left:6px}
+  #boardList b{font-size:20px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  #boardList b small{margin-left:2px}
+  /* 載せる欄は「もう一度」の下＝点とキャラが主役のまま、くり返しの主ボタンも押し下げない（ui係） */
+  #boardSend{margin:0 0 10px}
+  #boardForm{display:flex;gap:8px}
+  #boardName{flex:1;min-width:0;font:inherit;font-size:16px;padding:12px;border:1px solid var(--frame);border-radius:10px;background:var(--panel);color:inherit}
+  #boardGo{font:inherit;font-size:15px;font-weight:700;padding:0 14px;border:1px solid var(--frame);border-radius:10px;background:var(--panel);color:inherit;cursor:pointer}
+  #boardGo:disabled{color:var(--sub);cursor:default}
+  /* 空の一行は隙間を作らない（画面が flex なので余白が畳まれない）。合言葉の無い人の「きろく」を前と同じ詰め方に（ui係） */
+  #boardMsg:empty,#boardState:empty{display:none}
 </style>
 </head>
 <body>
@@ -57,7 +74,11 @@
 </section>
 
 <section class="screen" id="records" hidden>
+  <div class="recHead" id="recordHead" hidden>じぶん</div>
   <ol id="recordList"></ol>
+  <div class="recHead" id="boardHead" hidden>みんな</div>
+  <div class="line" id="boardState"></div>
+  <ol id="boardList" hidden></ol>
   <button type="button" class="back" id="recordsBack">‹ タイトルへ</button>
 </section>
 
@@ -103,6 +124,16 @@
   <button type="button" class="big" id="outAgain">もう一度</button>
   <button type="button" class="back" id="outTitle">‹ タイトルへ</button>
 </section>
+
+<!-- みんなの記録に載せる（合言葉のある人だけ）。終わりの画面（完走・アウト）の「もう一度」の下（タイトルへの上）に差し込む -->
+<div id="boardSend" hidden>
+  <div id="boardForm">
+    <input id="boardName" type="text" autocomplete="nickname" enterkeyhint="send" placeholder="なまえ" aria-label="なまえ">
+    <!-- ボタンは短く＝360幅でも名前欄が狭くならない。「みんな」は「きろく」の見出しと同じ言葉（ui係） -->
+    <button type="button" id="boardGo">みんなに載せる</button>
+  </div>
+  <div class="line" id="boardMsg"></div>
+</div>
 
 <script>
 /* 系統とゲーム（spec §2）。キャラ名の部品は spec §5（1st=種族・2nd=気質・3rd=称号） */
@@ -179,7 +210,8 @@ function digits(n) { return String(n).length; }
 function mmss(ms) { var s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); }
 
 function start() {
-  run = { stage: 0, total: 1, used: {}, systems: [], exact: false, time: 0, bouts: 0, bout: null, boss: 0 };
+  run = { stage: 0, total: 1, used: {}, systems: [], exact: false, time: 0, bouts: 0, bout: null, boss: 0,
+          log: [], duels: [], bossWin: false, bossMoves: 0 };   /* log・duels・boss* はみんなの記録で置き場所が点を計算し直すため */
   choose();
 }
 
@@ -243,6 +275,7 @@ function out(gaveUp) {
   $('outHead').textContent = gaveUp ? 'ギブアップ' : 'アウト';
   recordRun(gaveUp ? 'giveup' : 'out');
   var cleared = run.stage > 0;
+  offerBoard(cleared ? boardEntry(gaveUp ? 'giveup' : 'out') : null, 'outTitle');   /* 「もう一度」の下へ（ui係） */
   $('outScore').innerHTML = (cleared ? fmt(run.total) : '0') + '<small>点</small>';
   $('outDigits').textContent = cleared ? digits(run.total) + '桁' + best() : '';
   $('outTime').textContent = cleared ? 'タイム ' + mmss(run.time) : '';
@@ -312,11 +345,135 @@ function records() {
     li.appendChild(sc);
     box.appendChild(li);
   });
+  /* 合言葉のある人だけ、自分の記録の下にみんなの記録。見出しは2つ並ぶときだけ */
+  var key = boardKey();
+  /* 自分の記録が0件なら「みんな」の見出しも出さない（名前が並ぶので一つだけなら見分けがつく・ui係） */
+  $('boardHead').hidden = $('recordHead').hidden = !key || !box.children.length;
+  $('boardList').hidden = true;
+  $('boardState').textContent = '';
+  if (key) loadBoard();
   show('records');
 }
 function title() {
-  $('toRecords').hidden = !loadRecords().length;
+  $('toRecords').hidden = !loadRecords().length && !boardKey();
   show('title');
+}
+
+/* ---- みんなの記録（spec §12 2026-10-14）----
+   合言葉（#board=… で開くと覚える）を知る仲間だけが載せる・見る。合言葉が無ければ何も出さず、どこにも送らない。
+   点は置き場所（Worker）が手数・最短・早撃ち・ボスから計算し直して照らす。外から来た文字は textContent でだけ入れる */
+var BOARD_URL = 'http://localhost:8790';   /* デプロイ後に Worker の URL（https://puzzle-quest-board.<…>.workers.dev）へ差し替える */
+var BOARD_KEY_STORE = 'quest-board-key', BOARD_NAME_STORE = 'quest-board-name';
+var boardKeyMem = '';   /* localStorage が使えない端末でも、開いている間は合言葉を持つ */
+var boardPending = null;
+function boardKey() {
+  try { return localStorage.getItem(BOARD_KEY_STORE) || boardKeyMem; } catch (e) { return boardKeyMem; }
+}
+function readBoardHash() {
+  var m = /^#board=(.+)$/.exec(location.hash);
+  if (!m) return;
+  try { boardKeyMem = decodeURIComponent(m[1]); } catch (e) { boardKeyMem = m[1]; }
+  try { localStorage.setItem(BOARD_KEY_STORE, boardKeyMem); } catch (e) {}
+  /* 合言葉をアドレス欄に残さない（画面の共有で漏れない） */
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  if (!$('title').hidden) title();   /* 開いたままのタイトルにも「きろく」を出す */
+}
+readBoardHash();
+window.addEventListener('hashchange', readBoardHash);
+
+/* 置き場所への1往復。{status, body}。つながらなければ status=0。10秒で諦める */
+function boardFetch(method, path, body) {
+  var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  var timer = ctl ? setTimeout(function () { ctl.abort(); }, 10000) : 0;
+  return fetch(BOARD_URL + path, {
+    method: method, signal: ctl ? ctl.signal : undefined,
+    headers: { 'X-Board-Key': encodeURIComponent(boardKey()), 'content-type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  }).then(function (r) {
+    return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, body: j }; });
+  }).catch(function () { return { status: 0, body: {} }; })
+    .then(function (x) { clearTimeout(timer); return x; });
+}
+
+/* 1プレイの中身（置き場所が点を計算し直すのに要るもの）。名前は送る時に入れる */
+function boardEntry(end, name, rare) {
+  return {
+    end: end, stages: run.log.slice(), duels: run.duels.slice(),
+    boss: end === 'clear' ? { win: run.bossWin, moves: run.bossMoves } : null,
+    total: run.total, time: Math.round(run.time), char: name || '', rare: !!rare
+  };
+}
+/* 終わりの画面に「載せる」を出す（合言葉があって、1ステージ以上クリアしたときだけ）。beforeId のボタンの上に差し込む */
+function offerBoard(entry, beforeId) {
+  var box = $('boardSend');
+  boardPending = boardKey() && entry ? entry : null;
+  box.hidden = !boardPending;
+  if (!boardPending) return;
+  var before = $(beforeId);
+  before.parentNode.insertBefore(box, before);
+  $('boardForm').hidden = false;
+  $('boardGo').disabled = false;
+  $('boardMsg').textContent = '';
+  try { $('boardName').value = localStorage.getItem(BOARD_NAME_STORE) || ''; } catch (e) {}
+}
+function sendBoard() {
+  if (!boardPending || $('boardGo').disabled) return;   /* 送っている間の Enter 連打で二重に載せない（ui係） */
+  var name = $('boardName').value.trim();
+  if (!name) { $('boardName').focus(); return; }   /* 空なら欄に戻すだけ（「なまえ」は欄に書いてある・ui係） */
+  try { localStorage.setItem(BOARD_NAME_STORE, name); } catch (e) {}
+  var entry = boardPending;
+  entry.name = name;
+  $('boardGo').disabled = true;
+  $('boardName').blur();   /* キーボードを閉じて結果の一行を見せる（ui係） */
+  $('boardMsg').textContent = '送っています…';
+  boardFetch('POST', '/entries', entry).then(function (r) {
+    if (entry !== boardPending) return;   /* 送っている間に次のプレイへ進んだ */
+    if (r.status === 200 && r.body.ok) {
+      boardPending = null;
+      $('boardForm').hidden = true;
+      /* 順位は1行だけ。言葉は「きろく」の見出し「みんな」に揃える（ui係） */
+      $('boardMsg').textContent = r.body.rank > 0 ? 'みんなで' + r.body.rank + '位' : '100位に届きませんでした';
+      return;
+    }
+    $('boardGo').disabled = false;
+    /* 「もう一度押して」は真上の「もう一度」ボタン（次のプレイ）と取り違えるので言わない。ボタンは押せるまま（ui係） */
+    $('boardMsg').textContent = r.status === 0 ? 'つながりませんでした'
+      : '載せられませんでした：' + (typeof r.body.message === 'string' ? r.body.message : r.status);
+  });
+}
+
+/* 一覧：自分の記録と同じ1件1行に名前を足す（順位の数字は出さない） */
+function loadBoard() {
+  $('boardState').textContent = 'よみこみ中…';
+  boardFetch('GET', '/board').then(function (r) {
+    if ($('records').hidden) return;
+    if (r.status !== 200 || !Array.isArray(r.body.entries)) {
+      $('boardState').textContent = r.status === 0 ? 'つながりませんでした'
+        : (typeof r.body.message === 'string' ? r.body.message : '読めませんでした');
+      return;
+    }
+    var box = $('boardList');
+    box.textContent = '';
+    r.body.entries.forEach(function (x) {
+      if (!x || typeof x.name !== 'string' || !Number.isInteger(x.score)) return;
+      var li = document.createElement('li');
+      var face = document.createElement('span');
+      face.textContent = x.name;
+      var em = document.createElement('small');
+      em.textContent = String(x.emoji || '') + (x.rare ? '✨' : '');
+      face.appendChild(em);
+      var sc = document.createElement('b');
+      sc.textContent = fmt(x.score);
+      var unit = document.createElement('small');
+      unit.textContent = '点';
+      sc.appendChild(unit);
+      li.appendChild(face);
+      li.appendChild(sc);
+      box.appendChild(li);
+    });
+    $('boardState').textContent = box.children.length ? '' : 'まだだれも載せていません';
+    box.hidden = !box.children.length;
+  });
 }
 
 function isKiriban(n) { return n % 1000 === 777 || KIRIBAN.indexOf(n) >= 0; }
@@ -330,6 +487,7 @@ function solved(d) {
   var before = run.stage === 0 ? 0 : digits(run.total);
   run.total *= s;
   run.systems.push(current.sys);
+  run.log.push({ game: current.game, level: current.level, moves: d.moves, min: d.min });
   if (d.moves === d.min) run.exact = true;
   current = null;
   var after = digits(run.total);
@@ -371,7 +529,10 @@ function boutEnd(d) {
   run.bout = null;
   run.bouts++;
   run.total *= rate;
-  if (b.type === 'quest-boss') run.boss = win ? rate : 0;
+  if (b.type === 'quest-boss') {
+    run.boss = win ? rate : 0;
+    run.bossWin = win; run.bossMoves = Number.isInteger(d.moves) ? d.moves : 0;
+  } else run.duels.push(win);
   var after = digits(run.total);
   $('endStage').textContent = b.name;
   $('endScore').textContent = win ? '勝ち ×' + rate : '負け';
@@ -395,6 +556,7 @@ function onward() {
   var name = sy[1].parts[1] + sy[0].parts[0] + 'の' + sy[2].parts[2];
   $('charName').textContent = name;
   recordRun('clear', name, rare);
+  offerBoard(boardEntry('clear', name, rare), 'toTitle');   /* 「もう一度」の下へ（ui係） */
   var why = [];
   if (run.exact) why.push('最短で解いた');
   if (isKiriban(run.total)) why.push('キリ番');
@@ -448,7 +610,10 @@ $('outAgain').addEventListener('click', start);
 $('outTitle').addEventListener('click', title);
 $('toRecords').addEventListener('click', records);
 $('recordsBack').addEventListener('click', title);
-$('toRecords').hidden = !loadRecords().length;
+$('boardGo').addEventListener('click', sendBoard);
+/* 漢字変換を確かめる Enter では送らない。Safari は変換確定の Enter で isComposing が false になるので keyCode 229 も見る（ui係） */
+$('boardName').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) sendBoard(); });
+$('toRecords').hidden = !loadRecords().length && !boardKey();
 </script>
 </body>
 </html>
