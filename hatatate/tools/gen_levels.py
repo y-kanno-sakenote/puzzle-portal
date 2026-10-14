@@ -7,7 +7,7 @@
 使い方:
   python3 tools/gen_levels.py                                   # 生成して tools/levels.json へ
   python3 tools/gen_levels.py --embed index.html                # 生成して index.html にも埋め込む
-  python3 tools/gen_levels.py --keep tools/levels.json --embed index.html   # 埋め込みだけ
+  python3 tools/gen_levels.py --keep tools/levels.json --embed index.html   # 埋め込みだけ（min は計算し直して JSON にも書き戻す）
   python3 tools/gen_levels.py --check tools/levels.json         # 解き直して段を表示するだけ
 
 推論の段（spec.md と index.html の window.Hatatate.solve と同じ定義）:
@@ -17,6 +17,9 @@
   段3: 3つ以上の数字の連立（数字でつながったひとかたまりの全解で、どの解でも同じになるマスを確定）
   段4: 盤全体の残り地雷数を数字と組み合わせて使う（かたまりどうし＋数字に接しないマスを、残り地雷数で連立）
 各回、弱い段から試し、何か決まった段の発見を「全部まとめて」適用して段1に戻る（適用順に依存しない）。
+
+min（クエストの最小手数・quest/docs/spec.md §4）: 始まりの状態から全安全マスを開くのに要る最少のタップ数（3BV の考え方）。
+  まだ開いていない「0のマスのつながり」の数 ＋ どの0のつながりの連鎖でも開かない数字マスの数。盤からの機械計算で、手で書かない。
 """
 import argparse
 import json
@@ -88,6 +91,22 @@ def cascade(start, nums, mines, nb, opened):
                     opened[j] = True
                     stack.append(j)
     return out
+
+
+def min_clicks(w, h, mines, start):
+    """クエストの最小手数（3BV）。始まり（start の連鎖）で開いている分は除く。
+    まだ閉じている0のマスを1つずつ連鎖で開け（1つにつき1手）、残った数字マスを1手ずつ数える"""
+    nb = neighbors(w, h)
+    nums = numbers(w, h, mines, nb)
+    opened = [False] * (w * h)
+    cascade(start, nums, mines, nb, opened)
+    n = 0
+    for i in range(w * h):
+        if not opened[i] and not mines[i] and nums[i] == 0:
+            cascade(i, nums, mines, nb, opened)
+            n += 1
+    n += sum(1 for i in range(w * h) if not opened[i] and not mines[i])
+    return n
 
 
 # ---------------------------------------------------------------- ソルバー
@@ -515,7 +534,8 @@ def to_level(name, need_lv, w, h, f):
     return {"tier": name, "w": w, "h": h,
             "mines": "".join("1" if i in ms else "0" for i in range(N)),
             "start": start, "hardest": r["hardest"], "uses": r["uses"],
-            "open": r["opened0"]}
+            "open": r["opened0"],
+            "min": min_clicks(w, h, [i in ms for i in range(N)], start)}
 
 
 def check(levels, log):
@@ -523,11 +543,13 @@ def check(levels, log):
     for i, L in enumerate(levels):
         mines = [ch == "1" for ch in L["mines"]]
         r = solve(L["w"], L["h"], mines, L["start"])
-        bad = (not r["solved"]) or r["hardest"] != L["hardest"] or r["uses"] != L["uses"] or r["opened0"] != L["open"]
+        mn = min_clicks(L["w"], L["h"], mines, L["start"])
+        bad = ((not r["solved"]) or r["hardest"] != L["hardest"] or r["uses"] != L["uses"] or r["opened0"] != L["open"]
+               or L.get("min") != mn or not mn > 0)
         ok = ok and not bad
-        log("%2d %s %dx%d 地雷%d 開始%d/%d(%.0f%%) 段%d 回数%s %s" % (
+        log("%2d %s %dx%d 地雷%d 開始%d/%d(%.0f%%) 段%d 回数%s 最小%d手 %s" % (
             i, L["tier"], L["w"], L["h"], sum(mines), r["opened0"], len(mines) - sum(mines),
-            100 * r["opened0"] / (len(mines) - sum(mines)), r["hardest"], r["uses"], "NG" if bad else "ok"))
+            100 * r["opened0"] / (len(mines) - sum(mines)), r["hardest"], r["uses"], mn, "NG" if bad else "ok"))
     return ok
 
 
@@ -546,6 +568,11 @@ def main():
     if args.keep:
         with open(args.keep, encoding="utf-8") as f:
             levels = json.load(f)
+        # 盤・地雷・始まりは変えず、min だけ計算し直して書き戻す（min は盤から決まる派生値）
+        for L in levels:
+            L["min"] = min_clicks(L["w"], L["h"], [ch == "1" for ch in L["mines"]], L["start"])
+        with open(args.keep, "w", encoding="utf-8") as f:
+            f.write("[\n" + ",\n".join("  " + json.dumps(l, ensure_ascii=False, separators=(",", ":")) for l in levels) + "\n]\n")
     else:
         rng = random.Random(args.seed)
         levels = []

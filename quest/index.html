@@ -110,20 +110,20 @@ var SYSTEMS = [
   { id: 'move', emoji: '🚗', label: '動かす', parts: ['歯車族', 'せっかちな', '走り屋'],
     games: ['car-escape', 'hakoiri-musume', 'slide-robots', 'nigekomi'] },
   { id: 'fill', emoji: '🧩', label: '埋める', parts: ['石板族', '几帳面な', '職人'],
-    games: ['nanpure', 'hoshi-oki', 'pixel'] },
+    games: ['nanpure', 'hoshi-oki', 'pixel', 'hatatate'] },
   { id: 'link', emoji: '🔗', label: 'つなぐ', parts: ['糸族', '人懐っこい', '案内人'],
     games: ['michi-tsunagi', 'kurukuru', 'mado-wake'] }
 ];
 var NAMES = {
   'car-escape': '車をだせ！', 'hakoiri-musume': '箱入り娘', 'slide-robots': 'すべりロボ', 'nigekomi': 'にげこみ',
-  'nanpure': 'ナンプレ', 'hoshi-oki': '星おき', 'pixel': 'ピクセル',
+  'nanpure': 'ナンプレ', 'hoshi-oki': '星おき', 'pixel': 'ピクセル', 'hatatate': 'はたたて',
   'michi-tsunagi': 'みちつなぎ', 'kurukuru': 'くるくる', 'mado-wake': '窓わけ'
 };
 /* クエスト対応済みのゲーム（?quest=<添字> と quest-solved 通知を実装済み）。ここに1行足せば出るようになる（足す側のゲームでは ?quest のとき「‹ パズル箱」も隠す）。
    値は各段の問題番号（LEVELSの添字）の範囲 [最初, 最後]（両端含む）。spec §7
    車をだせ！: 入門0-9・初級10-19・中級20-29・上級30-39・達人40-49 → 易=入門+初級／中=中級／難=上級+達人
    ピクセル: 入門0-9・初級10-19・中級20-29・上級30-39・特級40-44・達人45-49・名画50-59 → 易=入門+初級／中=中級+上級／難=特級+達人+名画
-   他8本（にげこみ含む）: 入門0-9・初級10-19・中級20-29・上級30-39 → 易=入門／中=初級+中級／難=上級 */
+   他9本（にげこみ・はたたて含む）: 入門0-9・初級10-19・中級20-29・上級30-39 → 易=入門／中=初級+中級／難=上級 */
 var QUEST = {
   'car-escape':     { easy: [0, 19], mid: [20, 29], hard: [30, 49] },
   'hakoiri-musume': { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
@@ -132,6 +132,7 @@ var QUEST = {
   'nanpure':        { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
   'hoshi-oki':      { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
   'pixel':          { easy: [0, 19], mid: [20, 39], hard: [40, 59] },
+  'hatatate':       { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
   'michi-tsunagi':  { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
   'kurukuru':       { easy: [0, 9],  mid: [10, 29], hard: [30, 39] },
   'mado-wake':      { easy: [0, 9],  mid: [10, 29], hard: [30, 39] }
