@@ -1,0 +1,1152 @@
+{
+ "seed": 20261014,
+ "seconds": 649.7,
+ "report": [
+  "入門: 条件を満たした10本/144試行（6.9%）から10本 最短3〜4 0.1s",
+  "初級: 条件を満たした30本/1920試行（1.6%）から10本 最短3〜4 366.5s",
+  "中級: 条件を満たした30本/816試行（3.7%）から10本 最短3〜3 7.2s",
+  "上級: 条件を満たした20本/1920試行（1.0%）から10本 最短4〜4 275.8s"
+ ],
+ "levels": [
+  {
+   "firsts": 4,
+   "nsol": 10,
+   "needrot": 0,
+   "n": 5,
+   "cells": "5dc7b67ceb639ee7d5dc6a6ea",
+   "hand": "e",
+   "piece": 15,
+   "goal": 4,
+   "rot": 0,
+   "min": 3,
+   "sol": [
+    [
+     1,
+     14
+    ],
+    [
+     2,
+     6
+    ],
+    [
+     5,
+     12
+    ]
+   ],
+   "tier": "入門"
+  },
+  {
+   "firsts": 4,
+   "nsol": 8,
+   "needrot": 0,
+   "n": 5,
+   "cells": "eab7c6acd53c55caa359db5d3",
+   "hand": "a",
+   "piece": 9,
+   "goal": 24,
+   "rot": 0,
+   "min": 3,
+   "sol": [
+    [
+     1,
+     10
+    ],
+    [
+     2,
+     6
+    ],
+    [
+     7,
+     9
+    ]
+   ],
+   "tier": "入門"
+  },
+  {
+   "firsts": 3,
+   "nsol": 3,
+   "needrot": 0,
+   "n": 5,
+   "cells": "cbcee5666ad6e7a57a55a5997",
+   "hand": "a",
+   "piece": 13,
+   "goal": 20,
+   "rot": 0,
+   "min": 3,
+   "sol": [
+    [
+     5,
+     10
+    ],
+    [
+     6,
+     11
+    ],
+    [
+     3,
+     9
+    ]
+   ],
+   "tier": "入門"
+  },
+  {
+   "firsts": 1,
+   "nsol": 6,
+   "needrot": 0,
+   "n": 5,
+   "cells": "6a5eb3933ca5cbbcc9c79b556",
+   "hand": "e",
+   "piece": 6,
+   "goal": 14,
+   "rot": 0,
+   "min": 3,
+   "sol": [
+    [
+     1,
+     14
+    ],
+    [
+     2,
+     3
+    ],
+    [
+     1,
+     7
+    ]
+   ],
+   "tier": "入門"
+  },
+  {
+   "firsts": 1,
+   "nsol": 4,
+   "needrot": 0,
+   "n": 5,
+   "cells": "d375adca5c9b59ecb539bc997",
+   "hand": "b",
+   "piece": 18,
+   "goal": 20,
+   "rot": 0,
+   "min": 3,
+   "sol": [
+    [
+     2,
+     11
+    ],
+    [
+     0,
+     9
+    ],
+    [
+     2,
+     12
+    ]
+   ],
+   "tier": "入門"
+  },
+  {
+   "firsts": 1,
+   "nsol": 1,
+   "needrot": 0,
+   "n": 5,
+   "cells": "cb55cc9ac7a6777cea35ce3a6",
+   "hand": "6",
+   "piece": 15,
+   "goal": 2,
+   "rot": 0,
+   "min": 3,
+   "sol": [
+    [
+     4,
+     6
+    ],
+    [
+     0,
+     14
+    ],
+    [
+     3,
+     7
+    ]
+   ],
+   "tier": "入門"
+  },
+  {
+   "firsts": 3,
+   "nsol": 7,
+   "needrot": 0,
+   "n": 5,
+   "cells": "56beea95a7a99aa379c96edcd",
+   "hand": "c",
+   "piece": 11,
+   "goal": 24,
+   "rot": 0,
+   "min": 4,
+   "sol": [
+    [
+     2,
+     12
+    ],
+    [
+     4,
+     9
+    ],
+    [
+     3,
+     14
+    ],
+    [
+     3,
+     12
+    ]
+   ],
+   "tier": "入門"
+  },
+  {
+   "firsts": 3,
+   "nsol": 7,
+   "needrot": 0,
+   "n": 5,
+   "cells": "c5dd53973eaaa6eb9ca5aeb9b",
+   "hand": "3",
+   "piece": 13,
+   "goal": 0,
+   "rot": 0,
+   "min": 4,
+   "sol": [
+    [
+     0,
+     3
+    ],
+    [
+     7,
+     14
+    ],
+    [
+     0,
+     13
+    ],
+    [
+     0,
+     3
+    ]
+   ],
+   "tier": "入門"
+  },
+  {
+   "firsts": 2,
+   "nsol": 2,
+   "needrot": 0,
+   "n": 5,
+   "cells": "ce57399a55d5ea9cecca633be",
+   "hand": "5",
+   "piece": 3,
+   "goal": 20,
+   "rot": 0,
+   "min": 4,
+   "sol": [
+    [
+     4,
+     5
+    ],
+    [
+     4,
+     3
+    ],
+    [
+     7,
+     14
+    ],
+    [
+     4,
+     7
+    ]
+   ],
+   "tier": "入門"
+  },
+  {
+   "firsts": 2,
+   "nsol": 2,
+   "needrot": 0,
+   "n": 5,
+   "cells": "55a655556aa75aabdccac55a5",
+   "hand": "7",
+   "piece": 18,
+   "goal": 4,
+   "rot": 0,
+   "min": 4,
+   "sol": [
+    [
+     3,
+     7
+    ],
+    [
+     1,
+     11
+    ],
+    [
+     4,
+     5
+    ],
+    [
+     2,
+     5
+    ]
+   ],
+   "tier": "入門"
+  },
+  {
+   "firsts": 1,
+   "nsol": 8,
+   "needrot": 1,
+   "n": 5,
+   "cells": "76bac56a66a3b5da65ba5ccc5",
+   "hand": "9",
+   "piece": 13,
+   "goal": 22,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     5,
+     3
+    ],
+    [
+     7,
+     3
+    ],
+    [
+     3,
+     5
+    ]
+   ],
+   "tier": "初級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 4,
+   "needrot": 1,
+   "n": 5,
+   "cells": "57d7b6736c5a93a5abbdaae9e",
+   "hand": "5",
+   "piece": 16,
+   "goal": 4,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     6,
+     5
+    ],
+    [
+     6,
+     6
+    ],
+    [
+     2,
+     7
+    ]
+   ],
+   "tier": "初級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 4,
+   "needrot": 1,
+   "n": 5,
+   "cells": "cd567756a39ad335cb3ec63a3",
+   "hand": "5",
+   "piece": 19,
+   "goal": 4,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     1,
+     5
+    ],
+    [
+     1,
+     13
+    ],
+    [
+     6,
+     5
+    ]
+   ],
+   "tier": "初級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 4,
+   "needrot": 1,
+   "n": 5,
+   "cells": "653c559caa96b763c5a535c7a",
+   "hand": "c",
+   "piece": 5,
+   "goal": 14,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     3,
+     9
+    ],
+    [
+     1,
+     12
+    ],
+    [
+     7,
+     5
+    ]
+   ],
+   "tier": "初級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 4,
+   "needrot": 1,
+   "n": 5,
+   "cells": "775acdda69db6c359e65eaac9",
+   "hand": "3",
+   "piece": 15,
+   "goal": 14,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     6,
+     6
+    ],
+    [
+     4,
+     3
+    ],
+    [
+     1,
+     5
+    ]
+   ],
+   "tier": "初級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 4,
+   "needrot": 1,
+   "n": 5,
+   "cells": "e655753d3d65399e555676ddc",
+   "hand": "6",
+   "piece": 16,
+   "goal": 4,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     3,
+     3
+    ],
+    [
+     7,
+     7
+    ],
+    [
+     3,
+     10
+    ]
+   ],
+   "tier": "初級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 2,
+   "needrot": 1,
+   "n": 5,
+   "cells": "a9957aae5d7a3eee999a6abe6",
+   "hand": "6",
+   "piece": 19,
+   "goal": 0,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     0,
+     6
+    ],
+    [
+     4,
+     14
+    ],
+    [
+     2,
+     5
+    ]
+   ],
+   "tier": "初級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 2,
+   "needrot": 1,
+   "n": 5,
+   "cells": "ea599c57a5566a6b357ae9ce3",
+   "hand": "5",
+   "piece": 5,
+   "goal": 14,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     3,
+     10
+    ],
+    [
+     3,
+     14
+    ],
+    [
+     3,
+     9
+    ]
+   ],
+   "tier": "初級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 1,
+   "needrot": 1,
+   "n": 5,
+   "cells": "c6dbec575b5dda7e973aacc59",
+   "hand": "5",
+   "piece": 23,
+   "goal": 0,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     6,
+     10
+    ],
+    [
+     1,
+     10
+    ],
+    [
+     1,
+     9
+    ]
+   ],
+   "tier": "初級"
+  },
+  {
+   "firsts": 4,
+   "nsol": 8,
+   "needrot": 1,
+   "n": 5,
+   "cells": "ba5ed3567596cea93657533c7",
+   "hand": "3",
+   "piece": 19,
+   "goal": 10,
+   "rot": 1,
+   "min": 4,
+   "sol": [
+    [
+     4,
+     3
+    ],
+    [
+     0,
+     12
+    ],
+    [
+     2,
+     10
+    ],
+    [
+     0,
+     7
+    ]
+   ],
+   "tier": "初級"
+  },
+  {
+   "firsts": 2,
+   "nsol": 16,
+   "needrot": 1,
+   "n": 7,
+   "cells": "5ab3966c5ee53d3ae9ace3c5e9a6a7ddea5339ea359ca9b95",
+   "hand": "7",
+   "piece": 17,
+   "goal": 34,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     3,
+     7
+    ],
+    [
+     3,
+     12
+    ],
+    [
+     8,
+     3
+    ]
+   ],
+   "tier": "中級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 8,
+   "needrot": 1,
+   "n": 7,
+   "cells": "5553e3dc63b9b5ce6dc75db5a9aea9337ab5b5aa73dae93c5",
+   "hand": "c",
+   "piece": 9,
+   "goal": 28,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     2,
+     6
+    ],
+    [
+     2,
+     7
+    ],
+    [
+     9,
+     5
+    ]
+   ],
+   "tier": "中級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 8,
+   "needrot": 1,
+   "n": 7,
+   "cells": "5a6333975956ccaca5ea7aaecd53bd75565e9bace5acb3a35",
+   "hand": "c",
+   "piece": 13,
+   "goal": 28,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     2,
+     6
+    ],
+    [
+     2,
+     3
+    ],
+    [
+     10,
+     5
+    ]
+   ],
+   "tier": "中級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 8,
+   "needrot": 1,
+   "n": 7,
+   "cells": "999d66acd95cc95eaab3b5c535edaa637639e337656dd77c7",
+   "hand": "3",
+   "piece": 38,
+   "goal": 4,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     8,
+     3
+    ],
+    [
+     0,
+     7
+    ],
+    [
+     8,
+     6
+    ]
+   ],
+   "tier": "中級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 8,
+   "needrot": 1,
+   "n": 7,
+   "cells": "9a36aa6b353adc59bc3c3acaaad3b575e5a35adc66a5e5baa",
+   "hand": "6",
+   "piece": 3,
+   "goal": 34,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     5,
+     3
+    ],
+    [
+     5,
+     3
+    ],
+    [
+     11,
+     5
+    ]
+   ],
+   "tier": "中級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 4,
+   "needrot": 1,
+   "n": 7,
+   "cells": "a3ecd3b3579a637d36e53acec7b33353ada9b7bba6a3ae577",
+   "hand": "3",
+   "piece": 39,
+   "goal": 0,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     0,
+     12
+    ],
+    [
+     0,
+     6
+    ],
+    [
+     7,
+     3
+    ]
+   ],
+   "tier": "中級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 4,
+   "needrot": 1,
+   "n": 7,
+   "cells": "e5daace557937bcaaabcb65bc653dc96da5d6bb566c3d359d",
+   "hand": "9",
+   "piece": 38,
+   "goal": 0,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     8,
+     9
+    ],
+    [
+     8,
+     6
+    ],
+    [
+     6,
+     14
+    ]
+   ],
+   "tier": "中級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 2,
+   "needrot": 1,
+   "n": 7,
+   "cells": "ca9eb5ab3a397c5ac9ba5a6a395ad369a3c63e96ad5667d55",
+   "hand": "9",
+   "piece": 7,
+   "goal": 34,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     3,
+     6
+    ],
+    [
+     1,
+     5
+    ],
+    [
+     3,
+     13
+    ]
+   ],
+   "tier": "中級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 2,
+   "needrot": 1,
+   "n": 7,
+   "cells": "b5c9bea9db9cb63959ce5633a7a5e36c97c3c5a66565aa657",
+   "hand": "6",
+   "piece": 12,
+   "goal": 28,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     6,
+     6
+    ],
+    [
+     6,
+     5
+    ],
+    [
+     8,
+     6
+    ]
+   ],
+   "tier": "中級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 1,
+   "needrot": 1,
+   "n": 7,
+   "cells": "a5d9b3a6ab59aa55375aacb39cdb73cc67636ce97ae9b3356",
+   "hand": "c",
+   "piece": 1,
+   "goal": 32,
+   "rot": 1,
+   "min": 3,
+   "sol": [
+    [
+     9,
+     6
+    ],
+    [
+     9,
+     9
+    ],
+    [
+     7,
+     10
+    ]
+   ],
+   "tier": "中級"
+  },
+  {
+   "firsts": 3,
+   "nsol": 36,
+   "needrot": 1,
+   "n": 7,
+   "cells": "966a66a3e535a753333736a5b95acc3d35daaa3cac55a3b35",
+   "hand": "a",
+   "piece": 9,
+   "goal": 34,
+   "rot": 1,
+   "min": 4,
+   "sol": [
+    [
+     0,
+     5
+    ],
+    [
+     3,
+     14
+    ],
+    [
+     3,
+     12
+    ],
+    [
+     8,
+     5
+    ]
+   ],
+   "tier": "上級"
+  },
+  {
+   "firsts": 3,
+   "nsol": 32,
+   "needrot": 1,
+   "n": 7,
+   "cells": "a66c55da6b693aa67957ecca5567c5d933e553aba736a37ae",
+   "hand": "d",
+   "piece": 9,
+   "goal": 46,
+   "rot": 1,
+   "min": 4,
+   "sol": [
+    [
+     11,
+     14
+    ],
+    [
+     0,
+     5
+    ],
+    [
+     3,
+     5
+    ],
+    [
+     11,
+     9
+    ]
+   ],
+   "tier": "上級"
+  },
+  {
+   "firsts": 2,
+   "nsol": 64,
+   "needrot": 1,
+   "n": 7,
+   "cells": "63a6da5c99a36c957755d5d7693366eaa36a6ea36c37dcd93",
+   "hand": "6",
+   "piece": 21,
+   "goal": 46,
+   "rot": 1,
+   "min": 4,
+   "sol": [
+    [
+     7,
+     3
+    ],
+    [
+     7,
+     3
+    ],
+    [
+     2,
+     3
+    ],
+    [
+     9,
+     3
+    ]
+   ],
+   "tier": "上級"
+  },
+  {
+   "firsts": 2,
+   "nsol": 16,
+   "needrot": 1,
+   "n": 7,
+   "cells": "acb9eaad3663363b6e5c35695ad3ba5cc63cc9d656da5699c",
+   "hand": "d",
+   "piece": 8,
+   "goal": 32,
+   "rot": 1,
+   "min": 4,
+   "sol": [
+    [
+     7,
+     14
+    ],
+    [
+     4,
+     6
+    ],
+    [
+     7,
+     3
+    ],
+    [
+     4,
+     3
+    ]
+   ],
+   "tier": "上級"
+  },
+  {
+   "firsts": 2,
+   "nsol": 16,
+   "needrot": 1,
+   "n": 7,
+   "cells": "aeb96dabbda75537aaca6939ccd5d67dad56ca5d559eac9e5",
+   "hand": "b",
+   "piece": 7,
+   "goal": 48,
+   "rot": 1,
+   "min": 4,
+   "sol": [
+    [
+     3,
+     7
+    ],
+    [
+     6,
+     3
+    ],
+    [
+     3,
+     14
+    ],
+    [
+     3,
+     12
+    ]
+   ],
+   "tier": "上級"
+  },
+  {
+   "firsts": 2,
+   "nsol": 12,
+   "needrot": 1,
+   "n": 7,
+   "cells": "da9695a7cdd99c5cb573d6dd5b336ab93a59d76a67ed39375",
+   "hand": "5",
+   "piece": 19,
+   "goal": 42,
+   "rot": 1,
+   "min": 4,
+   "sol": [
+    [
+     10,
+     5
+    ],
+    [
+     2,
+     14
+    ],
+    [
+     7,
+     9
+    ],
+    [
+     2,
+     10
+    ]
+   ],
+   "tier": "上級"
+  },
+  {
+   "firsts": 2,
+   "nsol": 5,
+   "needrot": 1,
+   "n": 7,
+   "cells": "abdc39cc5bd6a5e59aac39a6d63b555c76ac569b5a556ce6a",
+   "hand": "9",
+   "piece": 21,
+   "goal": 48,
+   "rot": 1,
+   "min": 4,
+   "sol": [
+    [
+     9,
+     6
+    ],
+    [
+     9,
+     3
+    ],
+    [
+     11,
+     14
+    ],
+    [
+     3,
+     12
+    ]
+   ],
+   "tier": "上級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 6,
+   "needrot": 1,
+   "n": 7,
+   "cells": "79533999bb6ddc5bbb66bba5ce56a35cc6ac7d5d9c9a35659",
+   "hand": "5",
+   "piece": 27,
+   "goal": 42,
+   "rot": 1,
+   "min": 4,
+   "sol": [
+    [
+     4,
+     10
+    ],
+    [
+     2,
+     3
+    ],
+    [
+     4,
+     6
+    ],
+    [
+     9,
+     9
+    ]
+   ],
+   "tier": "上級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 4,
+   "needrot": 1,
+   "n": 7,
+   "cells": "d3b6a9a5ac3e59d76de7c5a5ea3aa779a6c6e9dca9caa5a53",
+   "hand": "c",
+   "piece": 41,
+   "goal": 0,
+   "rot": 1,
+   "min": 4,
+   "sol": [
+    [
+     2,
+     12
+    ],
+    [
+     4,
+     5
+    ],
+    [
+     2,
+     3
+    ],
+    [
+     4,
+     3
+    ]
+   ],
+   "tier": "上級"
+  },
+  {
+   "firsts": 1,
+   "nsol": 4,
+   "needrot": 1,
+   "n": 7,
+   "cells": "39a6c595abca79b6a63757b65ebe9aebaeeb755c7d65ca353",
+   "hand": "9",
+   "piece": 40,
+   "goal": 0,
+   "rot": 1,
+   "min": 4,
+   "sol": [
+    [
+     0,
+     12
+    ],
+    [
+     0,
+     6
+    ],
+    [
+     6,
+     14
+    ],
+    [
+     2,
+     5
+    ]
+   ],
+   "tier": "上級"
+  }
+ ]
+}

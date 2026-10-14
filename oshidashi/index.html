@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>おしだし</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --thick:#5d5952; --red:#d94436;
+    --on:#2f6e9e; --off:#c6d2da; --fixed:#ebe9e3; --glow:#e09a2b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  #app{max-width:440px;margin:0 auto;padding:10px 6px 40px}
+  header{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:2px 4px 6px}
+  #titleWrap{display:flex;align-items:baseline;gap:8px;min-width:0}
+  #title{font-size:20px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
+  /* 押せる範囲だけ上下に広げる（padding と同じだけ負の margin で打ち消し、見出しの高さ・盤の位置は変えない） */
+  #home{font-size:13px;color:var(--sub);text-decoration:none;white-space:nowrap;padding:12px 6px;margin:-12px -6px}
+  #counts{font-size:14px;color:var(--sub);white-space:nowrap}
+  #counts b{color:var(--ink);font-weight:700}
+
+  #rules{padding:0 4px 6px;font-size:13px;line-height:1.7;color:var(--sub)}
+  #rules div{white-space:nowrap}  /* 1か条＝1行（くるくる等と同じ） */
+
+  #stage{position:relative}
+  #svg{display:block;width:100%;height:auto;touch-action:manipulation;
+       -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  .slide{transition:transform .16s ease-out}
+  .arrow{cursor:pointer}
+  .arrow.ban{cursor:default}
+
+  #bottom{display:flex;align-items:center;gap:8px;padding:8px 4px 0}
+  #handBox{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px}
+  #hand{width:64px;height:64px;display:block;background:var(--panel);border:2px solid var(--thick);border-radius:8px;
+        -webkit-tap-highlight-color:transparent}
+  #hand.can{cursor:pointer}
+  #handLabel{font-size:12px;color:var(--sub);white-space:nowrap}
+  #handTile{transition:transform .12s ease-out}
+  #buttons{flex:1;display:flex;gap:8px}
+  button{
+    font:inherit;font-size:15px;padding:11px 0;border:1px solid var(--frame);
+    border-radius:9px;background:var(--panel);color:var(--ink);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button:active{background:#eeece7}
+  button:disabled{opacity:.4;cursor:default}
+  #buttons button{flex:1}
+
+  #clear{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:10px;
+    background:rgba(245,244,241,.9);border-radius:10px;z-index:20;
+  }
+  #clear[hidden]{display:none}
+  #clearTitle{font-size:26px;font-weight:700}
+  #clearSub{font-size:15px;color:var(--sub)}
+  #next{font-size:17px;padding:12px 28px}
+
+  #levels{padding:18px 4px 0}
+  .tier{margin-bottom:10px}
+  .tierName{font-size:13px;color:var(--sub);padding:2px 2px 4px}
+  .tierRow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .lv{padding:0;height:40px;font-size:14px;border-radius:7px;
+      display:flex;align-items:center;justify-content:center}
+  .lv.cur{border-color:var(--ink);font-weight:700}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <!-- 戻り先は一覧（../#puzzle）。../ だけだとタイトル画面（パズル／クエストの2択）に着いてしまう -->
+    <div id="titleWrap"><a id="home" href="../#puzzle">‹ パズル箱</a><div id="title">入門 1</div></div>
+    <div id="counts">手数 <b id="moves">0</b> ／ 最短 <b id="best">3</b></div>
+  </header>
+
+  <!-- 箱の流儀：1行1か条・句点なし・目的を先頭。各行21字以内（幅360pxで折り返さない） -->
+  <div id="rules">
+    <div>●から◎まで道をつなぐ</div>
+    <div>矢印を押すと手持ちが入り、列が1マスずれる</div>
+    <div>押し出された1枚が次の手持ち</div>
+    <div>1枚が出た側の矢印は、次の1手だけ休み</div>
+    <div>●は列ごと動き、端から出たら反対の端へ</div>
+  </div>
+
+  <div id="stage">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div id="clear" hidden>
+      <div id="clearTitle">クリア！</div>
+      <div id="clearSub"></div>
+      <button id="next">つぎへ</button>
+    </div>
+  </div>
+
+  <div id="bottom">
+    <div id="handBox">
+      <svg id="hand" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="handLabel">手持ち</div>
+    </div>
+    <div id="buttons">
+      <button id="undo">もどす</button>
+      <button id="reset">はじめから</button>
+    </div>
+  </div>
+
+  <section id="levels"></section>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.Oshidashi として公開する）
+
+   腕のビット N=1 E=2 S=4 W=8（16進1桁）。時計回り90°は1ビット左巡回
+   マス番号 i = r*n + c。押せる列＝奇数番目（0始まりで 1,3,5…）の行・列
+   押し込み口の番号: 押せる行ごとに [左から, 右から]、続いて押せる列ごとに [上から, 下から]
+   ===================================================================== */
+
+/* LEVELS-BEGIN  tools/gen_levels.py の出力をそのまま貼る。手で書き換えない */
+var LEVELS = [
+  {"firsts":4,"nsol":10,"needrot":0,"n":5,"cells":"5dc7b67ceb639ee7d5dc6a6ea","hand":"e","piece":15,"goal":4,"rot":0,"min":3,"sol":[[1,14],[2,6],[5,12]],"tier":"入門"},
+  {"firsts":4,"nsol":8,"needrot":0,"n":5,"cells":"eab7c6acd53c55caa359db5d3","hand":"a","piece":9,"goal":24,"rot":0,"min":3,"sol":[[1,10],[2,6],[7,9]],"tier":"入門"},
+  {"firsts":3,"nsol":3,"needrot":0,"n":5,"cells":"cbcee5666ad6e7a57a55a5997","hand":"a","piece":13,"goal":20,"rot":0,"min":3,"sol":[[5,10],[6,11],[3,9]],"tier":"入門"},
+  {"firsts":1,"nsol":6,"needrot":0,"n":5,"cells":"6a5eb3933ca5cbbcc9c79b556","hand":"e","piece":6,"goal":14,"rot":0,"min":3,"sol":[[1,14],[2,3],[1,7]],"tier":"入門"},
+  {"firsts":1,"nsol":4,"needrot":0,"n":5,"cells":"d375adca5c9b59ecb539bc997","hand":"b","piece":18,"goal":20,"rot":0,"min":3,"sol":[[2,11],[0,9],[2,12]],"tier":"入門"},
+  {"firsts":1,"nsol":1,"needrot":0,"n":5,"cells":"cb55cc9ac7a6777cea35ce3a6","hand":"6","piece":15,"goal":2,"rot":0,"min":3,"sol":[[4,6],[0,14],[3,7]],"tier":"入門"},
+  {"firsts":3,"nsol":7,"needrot":0,"n":5,"cells":"56beea95a7a99aa379c96edcd","hand":"c","piece":11,"goal":24,"rot":0,"min":4,"sol":[[2,12],[4,9],[3,14],[3,12]],"tier":"入門"},
+  {"firsts":3,"nsol":7,"needrot":0,"n":5,"cells":"c5dd53973eaaa6eb9ca5aeb9b","hand":"3","piece":13,"goal":0,"rot":0,"min":4,"sol":[[0,3],[7,14],[0,13],[0,3]],"tier":"入門"},
+  {"firsts":2,"nsol":2,"needrot":0,"n":5,"cells":"ce57399a55d5ea9cecca633be","hand":"5","piece":3,"goal":20,"rot":0,"min":4,"sol":[[4,5],[4,3],[7,14],[4,7]],"tier":"入門"},
+  {"firsts":2,"nsol":2,"needrot":0,"n":5,"cells":"55a655556aa75aabdccac55a5","hand":"7","piece":18,"goal":4,"rot":0,"min":4,"sol":[[3,7],[1,11],[4,5],[2,5]],"tier":"入門"},
+  {"firsts":1,"nsol":8,"needrot":1,"n":5,"cells":"76bac56a66a3b5da65ba5ccc5","hand":"9","piece":13,"goal":22,"rot":1,"min":3,"sol":[[5,3],[7,3],[3,5]],"tier":"初級"},
+  {"firsts":1,"nsol":4,"needrot":1,"n":5,"cells":"57d7b6736c5a93a5abbdaae9e","hand":"5","piece":16,"goal":4,"rot":1,"min":3,"sol":[[6,5],[6,6],[2,7]],"tier":"初級"},
+  {"firsts":1,"nsol":4,"needrot":1,"n":5,"cells":"cd567756a39ad335cb3ec63a3","hand":"5","piece":19,"goal":4,"rot":1,"min":3,"sol":[[1,5],[1,13],[6,5]],"tier":"初級"},
+  {"firsts":1,"nsol":4,"needrot":1,"n":5,"cells":"653c559caa96b763c5a535c7a","hand":"c","piece":5,"goal":14,"rot":1,"min":3,"sol":[[3,9],[1,12],[7,5]],"tier":"初級"},
+  {"firsts":1,"nsol":4,"needrot":1,"n":5,"cells":"775acdda69db6c359e65eaac9","hand":"3","piece":15,"goal":14,"rot":1,"min":3,"sol":[[6,6],[4,3],[1,5]],"tier":"初級"},
+  {"firsts":1,"nsol":4,"needrot":1,"n":5,"cells":"e655753d3d65399e555676ddc","hand":"6","piece":16,"goal":4,"rot":1,"min":3,"sol":[[3,3],[7,7],[3,10]],"tier":"初級"},
+  {"firsts":1,"nsol":2,"needrot":1,"n":5,"cells":"a9957aae5d7a3eee999a6abe6","hand":"6","piece":19,"goal":0,"rot":1,"min":3,"sol":[[0,6],[4,14],[2,5]],"tier":"初級"},
+  {"firsts":1,"nsol":2,"needrot":1,"n":5,"cells":"ea599c57a5566a6b357ae9ce3","hand":"5","piece":5,"goal":14,"rot":1,"min":3,"sol":[[3,10],[3,14],[3,9]],"tier":"初級"},
+  {"firsts":1,"nsol":1,"needrot":1,"n":5,"cells":"c6dbec575b5dda7e973aacc59","hand":"5","piece":23,"goal":0,"rot":1,"min":3,"sol":[[6,10],[1,10],[1,9]],"tier":"初級"},
+  {"firsts":4,"nsol":8,"needrot":1,"n":5,"cells":"ba5ed3567596cea93657533c7","hand":"3","piece":19,"goal":10,"rot":1,"min":4,"sol":[[4,3],[0,12],[2,10],[0,7]],"tier":"初級"},
+  {"firsts":2,"nsol":16,"needrot":1,"n":7,"cells":"5ab3966c5ee53d3ae9ace3c5e9a6a7ddea5339ea359ca9b95","hand":"7","piece":17,"goal":34,"rot":1,"min":3,"sol":[[3,7],[3,12],[8,3]],"tier":"中級"},
+  {"firsts":1,"nsol":8,"needrot":1,"n":7,"cells":"5553e3dc63b9b5ce6dc75db5a9aea9337ab5b5aa73dae93c5","hand":"c","piece":9,"goal":28,"rot":1,"min":3,"sol":[[2,6],[2,7],[9,5]],"tier":"中級"},
+  {"firsts":1,"nsol":8,"needrot":1,"n":7,"cells":"5a6333975956ccaca5ea7aaecd53bd75565e9bace5acb3a35","hand":"c","piece":13,"goal":28,"rot":1,"min":3,"sol":[[2,6],[2,3],[10,5]],"tier":"中級"},
+  {"firsts":1,"nsol":8,"needrot":1,"n":7,"cells":"999d66acd95cc95eaab3b5c535edaa637639e337656dd77c7","hand":"3","piece":38,"goal":4,"rot":1,"min":3,"sol":[[8,3],[0,7],[8,6]],"tier":"中級"},
+  {"firsts":1,"nsol":8,"needrot":1,"n":7,"cells":"9a36aa6b353adc59bc3c3acaaad3b575e5a35adc66a5e5baa","hand":"6","piece":3,"goal":34,"rot":1,"min":3,"sol":[[5,3],[5,3],[11,5]],"tier":"中級"},
+  {"firsts":1,"nsol":4,"needrot":1,"n":7,"cells":"a3ecd3b3579a637d36e53acec7b33353ada9b7bba6a3ae577","hand":"3","piece":39,"goal":0,"rot":1,"min":3,"sol":[[0,12],[0,6],[7,3]],"tier":"中級"},
+  {"firsts":1,"nsol":4,"needrot":1,"n":7,"cells":"e5daace557937bcaaabcb65bc653dc96da5d6bb566c3d359d","hand":"9","piece":38,"goal":0,"rot":1,"min":3,"sol":[[8,9],[8,6],[6,14]],"tier":"中級"},
+  {"firsts":1,"nsol":2,"needrot":1,"n":7,"cells":"ca9eb5ab3a397c5ac9ba5a6a395ad369a3c63e96ad5667d55","hand":"9","piece":7,"goal":34,"rot":1,"min":3,"sol":[[3,6],[1,5],[3,13]],"tier":"中級"},
+  {"firsts":1,"nsol":2,"needrot":1,"n":7,"cells":"b5c9bea9db9cb63959ce5633a7a5e36c97c3c5a66565aa657","hand":"6","piece":12,"goal":28,"rot":1,"min":3,"sol":[[6,6],[6,5],[8,6]],"tier":"中級"},
+  {"firsts":1,"nsol":1,"needrot":1,"n":7,"cells":"a5d9b3a6ab59aa55375aacb39cdb73cc67636ce97ae9b3356","hand":"c","piece":1,"goal":32,"rot":1,"min":3,"sol":[[9,6],[9,9],[7,10]],"tier":"中級"},
+  {"firsts":3,"nsol":36,"needrot":1,"n":7,"cells":"966a66a3e535a753333736a5b95acc3d35daaa3cac55a3b35","hand":"a","piece":9,"goal":34,"rot":1,"min":4,"sol":[[0,5],[3,14],[3,12],[8,5]],"tier":"上級"},
+  {"firsts":3,"nsol":32,"needrot":1,"n":7,"cells":"a66c55da6b693aa67957ecca5567c5d933e553aba736a37ae","hand":"d","piece":9,"goal":46,"rot":1,"min":4,"sol":[[11,14],[0,5],[3,5],[11,9]],"tier":"上級"},
+  {"firsts":2,"nsol":64,"needrot":1,"n":7,"cells":"63a6da5c99a36c957755d5d7693366eaa36a6ea36c37dcd93","hand":"6","piece":21,"goal":46,"rot":1,"min":4,"sol":[[7,3],[7,3],[2,3],[9,3]],"tier":"上級"},
+  {"firsts":2,"nsol":16,"needrot":1,"n":7,"cells":"acb9eaad3663363b6e5c35695ad3ba5cc63cc9d656da5699c","hand":"d","piece":8,"goal":32,"rot":1,"min":4,"sol":[[7,14],[4,6],[7,3],[4,3]],"tier":"上級"},
+  {"firsts":2,"nsol":16,"needrot":1,"n":7,"cells":"aeb96dabbda75537aaca6939ccd5d67dad56ca5d559eac9e5","hand":"b","piece":7,"goal":48,"rot":1,"min":4,"sol":[[3,7],[6,3],[3,14],[3,12]],"tier":"上級"},
+  {"firsts":2,"nsol":12,"needrot":1,"n":7,"cells":"da9695a7cdd99c5cb573d6dd5b336ab93a59d76a67ed39375","hand":"5","piece":19,"goal":42,"rot":1,"min":4,"sol":[[10,5],[2,14],[7,9],[2,10]],"tier":"上級"},
+  {"firsts":2,"nsol":5,"needrot":1,"n":7,"cells":"abdc39cc5bd6a5e59aac39a6d63b555c76ac569b5a556ce6a","hand":"9","piece":21,"goal":48,"rot":1,"min":4,"sol":[[9,6],[9,3],[11,14],[3,12]],"tier":"上級"},
+  {"firsts":1,"nsol":6,"needrot":1,"n":7,"cells":"79533999bb6ddc5bbb66bba5ce56a35cc6ac7d5d9c9a35659","hand":"5","piece":27,"goal":42,"rot":1,"min":4,"sol":[[4,10],[2,3],[4,6],[9,9]],"tier":"上級"},
+  {"firsts":1,"nsol":4,"needrot":1,"n":7,"cells":"d3b6a9a5ac3e59d76de7c5a5ea3aa779a6c6e9dca9caa5a53","hand":"c","piece":41,"goal":0,"rot":1,"min":4,"sol":[[2,12],[4,5],[2,3],[4,3]],"tier":"上級"},
+  {"firsts":1,"nsol":4,"needrot":1,"n":7,"cells":"39a6c595abca79b6a63757b65ebe9aebaeeb755c7d65ca353","hand":"9","piece":40,"goal":0,"rot":1,"min":4,"sol":[[0,12],[0,6],[6,14],[2,5]],"tier":"上級"}
+];
+/* LEVELS-END */
+
+var Oshidashi = (function () {
+  var HEX = '0123456789abcdef';
+  var GEO = {};
+
+  /* 盤の大きさごとの押し込み口。ops[i] = {side:'L'|'R'|'T'|'B', line:k} */
+  function geometry(n) {
+    if (GEO[n]) return GEO[n];
+    var ops = [], opp = [], k, i;
+    for (k = 1; k < n; k += 2) { ops.push({ side: 'L', line: k }); ops.push({ side: 'R', line: k }); }
+    for (k = 1; k < n; k += 2) { ops.push({ side: 'T', line: k }); ops.push({ side: 'B', line: k }); }
+    var OPP = { L: 'R', R: 'L', T: 'B', B: 'T' };
+    for (i = 0; i < ops.length; i++) {
+      for (k = 0; k < ops.length; k++) {
+        if (ops[k].line === ops[i].line && ops[k].side === OPP[ops[i].side]) { opp.push(k); break; }
+      }
+    }
+    GEO[n] = { n: n, N: n * n, ops: ops, opp: opp };
+    return GEO[n];
+  }
+
+  /* 偶数行かつ偶数列のマスは動かない */
+  function isFixed(n, i) { return ((i / n | 0) % 2 === 0) && ((i % n) % 2 === 0); }
+
+  function rotate(m, t) {
+    m = m & 15; t = ((t | 0) % 4 + 4) % 4;
+    for (var i = 0; i < t; i++) m = ((m << 1) | (m >> 3)) & 15;
+    return m;
+  }
+  /* 向きの重複を同一視した異なる向き（直線2・かど4・三叉4） */
+  function variants(m) {
+    var out = [], x = m & 15;
+    for (var i = 0; i < 4; i++) { if (out.indexOf(x) < 0) out.push(x); x = rotate(x, 1); }
+    return out;
+  }
+
+  /* 問題 -> 状態 {n, cells:[], hand, piece, goal, rot, ban}
+     ban = 次の1手で使えない押し込み口（直前の手を打ち消す口）。最初は -1 */
+  function parse(lv) {
+    var cells = [];
+    for (var i = 0; i < lv.cells.length; i++) cells.push(HEX.indexOf(lv.cells.charAt(i)));
+    return { n: lv.n, cells: cells, hand: HEX.indexOf(lv.hand), piece: lv.piece, goal: lv.goal,
+             rot: !!lv.rot, ban: -1 };
+  }
+  function clone(s) {
+    return { n: s.n, cells: s.cells.slice(), hand: s.hand, piece: s.piece, goal: s.goal, rot: s.rot, ban: s.ban };
+  }
+
+  /* 押せる口の一覧（直前の手を打ち消す口を除く） */
+  function legalOps(s) {
+    var g = geometry(s.n), out = [];
+    for (var i = 0; i < g.ops.length; i++) if (i !== s.ban) out.push(i);
+    return out;
+  }
+
+  /* 押し込み口 op に手持ちを押し込んだ新しい状態。元の s は変えない。
+     hand を渡すとその向きで押す（回せない段では s.hand と同じ向きのみ）。打てない手なら null */
+  function push(s, op, hand) {
+    var g = geometry(s.n), n = s.n;
+    if (!(op >= 0 && op < g.ops.length) || op === s.ban) return null;
+    var h = (hand === undefined || hand === null) ? s.hand : (hand & 15);
+    if (h !== s.hand && (!s.rot || variants(s.hand).indexOf(h) < 0)) return null;
+    var o = g.ops[op], k = o.line, c = s.cells.slice(), p = s.piece, ej, j, r, col;
+    if (o.side === 'L') {
+      ej = c[k * n + n - 1];
+      for (j = n - 1; j > 0; j--) c[k * n + j] = c[k * n + j - 1];
+      c[k * n] = h;
+      if ((p / n | 0) === k) { col = p % n; p = k * n + (col < n - 1 ? col + 1 : 0); }
+    } else if (o.side === 'R') {
+      ej = c[k * n];
+      for (j = 0; j < n - 1; j++) c[k * n + j] = c[k * n + j + 1];
+      c[k * n + n - 1] = h;
+      if ((p / n | 0) === k) { col = p % n; p = k * n + (col > 0 ? col - 1 : n - 1); }
+    } else if (o.side === 'T') {
+      ej = c[(n - 1) * n + k];
+      for (j = n - 1; j > 0; j--) c[j * n + k] = c[(j - 1) * n + k];
+      c[k] = h;
+      if (p % n === k) { r = p / n | 0; p = (r < n - 1 ? r + 1 : 0) * n + k; }
+    } else {
+      ej = c[k];
+      for (j = 0; j < n - 1; j++) c[j * n + k] = c[(j + 1) * n + k];
+      c[(n - 1) * n + k] = h;
+      if (p % n === k) { r = p / n | 0; p = (r > 0 ? r - 1 : n - 1) * n + k; }
+    }
+    return { n: n, cells: c, hand: ej, piece: p, goal: s.goal, rot: s.rot, ban: g.opp[op] };
+  }
+
+  /* 駒のマスから、両側に腕がある辺だけを渡って届くマス（真偽の配列） */
+  function reachable(s) {
+    var n = s.n, c = s.cells, seen = [], stack = [s.piece], i, r, q;
+    for (i = 0; i < n * n; i++) seen.push(false);
+    seen[s.piece] = true;
+    while (stack.length) {
+      i = stack.pop(); r = i / n | 0; q = i % n;
+      if ((c[i] & 1) && r > 0 && (c[i - n] & 4) && !seen[i - n]) { seen[i - n] = true; stack.push(i - n); }
+      if ((c[i] & 4) && r < n - 1 && (c[i + n] & 1) && !seen[i + n]) { seen[i + n] = true; stack.push(i + n); }
+      if ((c[i] & 8) && q > 0 && (c[i - 1] & 2) && !seen[i - 1]) { seen[i - 1] = true; stack.push(i - 1); }
+      if ((c[i] & 2) && q < n - 1 && (c[i + 1] & 8) && !seen[i + 1]) { seen[i + 1] = true; stack.push(i + 1); }
+    }
+    return seen;
+  }
+  function isSolved(s) { return reachable(s)[s.goal] === true; }
+
+  /* 駒からゴールまでの通り道（マス番号の列）。つながっていなければ [] */
+  function pathToGoal(s) {
+    var n = s.n, c = s.cells, prev = {}, queue = [s.piece], head = 0, i, r, q, j, d;
+    prev[s.piece] = -1;
+    var step = [[1, 4, -n], [4, 1, n], [8, 2, -1], [2, 8, 1]];
+    while (head < queue.length) {
+      i = queue[head++];
+      if (i === s.goal) {
+        var out = [];
+        for (j = i; j !== -1; j = prev[j]) out.unshift(j);
+        return out;
+      }
+      r = i / n | 0; q = i % n;
+      for (d = 0; d < 4; d++) {
+        var a = step[d], t = i + a[2];
+        if (!(c[i] & a[0])) continue;
+        if (d === 0 && r === 0) continue;
+        if (d === 1 && r === n - 1) continue;
+        if (d === 2 && q === 0) continue;
+        if (d === 3 && q === n - 1) continue;
+        if (!(c[t] & a[1]) || prev[t] !== undefined) continue;
+        prev[t] = i; queue.push(t);
+      }
+    }
+    return [];
+  }
+
+  /* 最短手数を幅優先で求める。1手＝押し込み1回（回せる段は「向きを決めて押す」を1手）。
+     局面＝盤の全タイル＋手持ち（回せる段は形だけ）＋駒＋次に使えない口。
+     戻り値 {min, path:[[op, 押し込んだ向き], ...]}。maxDepth 以内に無ければ null */
+  function solve(lvOrState, maxDepth) {
+    var s0 = (typeof lvOrState.cells === 'string') ? parse(lvOrState) : clone(lvOrState);
+    var n = s0.n, N = n * n, g = geometry(n), nops = g.ops.length;
+    if (isSolved(s0)) return { min: 0, path: [] };
+    maxDepth = maxDepth || 8;
+    var canonOf = [], varsOf = [], m;
+    for (m = 0; m < 16; m++) {
+      var vs = variants(m);
+      canonOf.push(s0.rot ? Math.min.apply(null, vs) : m);
+      varsOf.push(s0.rot ? vs : [m]);
+    }
+    function key(st) {
+      return String.fromCharCode.apply(null, st.cells) + String.fromCharCode(canonOf[st.hand], st.piece, st.ban + 1);
+    }
+    var seen = new Map();          /* key -> [親のkey, op, 向き] */
+    var k0 = key(s0);
+    seen.set(k0, null);
+    var frontier = [s0], fkeys = [k0];
+    for (var d = 1; d <= maxDepth; d++) {
+      var nxt = [], nkeys = [];
+      for (var f = 0; f < frontier.length; f++) {
+        var st = frontier[f];
+        if (st.rot) st = { n: n, cells: st.cells, hand: canonOf[st.hand], piece: st.piece, goal: st.goal, rot: true, ban: st.ban };
+        for (var op = 0; op < nops; op++) {
+          if (op === st.ban) continue;
+          var hs = varsOf[st.hand];
+          for (var v = 0; v < hs.length; v++) {
+            var ch = push(st, op, hs[v]);
+            if (isSolved(ch)) {
+              var path = [[op, hs[v]]], kk = fkeys[f], e;
+              while ((e = seen.get(kk)) !== null) { path.unshift([e[1], e[2]]); kk = e[0]; }
+              return { min: d, path: path };
+            }
+            if (d < maxDepth) {
+              var ck = key(ch);
+              if (!seen.has(ck)) { seen.set(ck, [fkeys[f], op, hs[v]]); nxt.push(ch); nkeys.push(ck); }
+            }
+          }
+        }
+      }
+      frontier = nxt; fkeys = nkeys;
+      if (!frontier.length) break;
+    }
+    return null;
+  }
+
+  /* 手順 [[op, 向き], ...] を最初の局面から順に打った結果。打てない手があれば null */
+  function replay(lv, path) {
+    var s = parse(lv);
+    for (var i = 0; i < path.length; i++) {
+      s = push(s, path[i][0], path[i][1]);
+      if (!s) return null;
+    }
+    return s;
+  }
+
+  return {
+    LEVELS: LEVELS, HEX: HEX,
+    geometry: geometry, isFixed: isFixed, rotate: rotate, variants: variants,
+    parse: parse, clone: clone, legalOps: legalOps, push: push,
+    reachable: reachable, isSolved: isSolved, pathToGoal: pathToGoal,
+    solve: solve, replay: replay
+  };
+})();
+
+if (typeof window !== 'undefined') window.Oshidashi = Oshidashi;
+if (typeof globalThis !== 'undefined') globalThis.Oshidashi = Oshidashi;
+</script>
+
+<script>
+/* =====================================================================
+   画面
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var KEY = 'oshidashi';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var CELL = 100;          /* 1マスの user unit */
+  var GUT = 40;            /* 矢印を置く余白（7×7 で幅360pxでも1マス44px以上を保つ） */
+  var SLIDE_MS = 170;
+
+  var elTitle = document.getElementById('title');
+  var elMoves = document.getElementById('moves');
+  var elBest  = document.getElementById('best');
+  var elSvg   = document.getElementById('svg');
+  var elHand  = document.getElementById('hand');
+  var elHandLabel = document.getElementById('handLabel');
+  var elUndo  = document.getElementById('undo');
+  var elReset = document.getElementById('reset');
+  var elClear = document.getElementById('clear');
+  var elClearSub = document.getElementById('clearSub');
+  var elNext  = document.getElementById('next');
+  var elLevels = document.getElementById('levels');
+
+  var LEVELS = Oshidashi.LEVELS;
+
+  /* 段階名と何本目か（例「初級 3」） */
+  var LABELS = (function () {
+    var out = [], count = {};
+    for (var i = 0; i < LEVELS.length; i++) {
+      var t = LEVELS[i].tier;
+      count[t] = (count[t] || 0) + 1;
+      out.push({ tier: t, no: count[t], text: t + ' ' + count[t] });
+    }
+    return out;
+  })();
+
+  /* ---- 保存 ---- */
+  var save = { cleared: {}, last: 0 };
+  function loadSave() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (!o || typeof o !== 'object') return;
+      if (o.cleared && typeof o.cleared === 'object') save.cleared = o.cleared;
+      if (Number.isInteger(o.last) && o.last >= 0 && o.last < LEVELS.length) save.last = o.last;
+    } catch (e) { save = { cleared: {}, last: 0 }; }
+  }
+  function storeSave() {
+    try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {}
+  }
+
+  /* ---- 状態 ---- */
+  var index = 0, st = null, n = 5, geo = null;
+  var moves = 0, history = [], finished = false, busy = false;
+  var handBase = 0, handTurn = 0;      /* 見た目は常に時計回り（回数を増やし続ける） */
+
+  function el(name, attrs, parent) {
+    var e = document.createElementNS(SVGNS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  /* 1枚のタイル（中心から辺へ伸びる腕）。cx,cy は中心 */
+  function drawTile(parent, m, cx, cy, color, w) {
+    var g = el('g', { stroke: color, fill: color, 'stroke-width': w, 'stroke-linecap': 'butt' }, parent);
+    var h = CELL / 2;
+    if (m & 1) el('line', { x1: cx, y1: cy, x2: cx, y2: cy - h }, g);
+    if (m & 4) el('line', { x1: cx, y1: cy, x2: cx, y2: cy + h }, g);
+    if (m & 8) el('line', { x1: cx, y1: cy, x2: cx - h, y2: cy }, g);
+    if (m & 2) el('line', { x1: cx, y1: cy, x2: cx + h, y2: cy }, g);
+    el('circle', { cx: cx, cy: cy, r: w / 2, stroke: 'none' }, g);
+    return g;
+  }
+
+  function cx(i) { return GUT + (i % n) * CELL + CELL / 2; }
+  function cy(i) { return GUT + (i / n | 0) * CELL + CELL / 2; }
+
+  var layerTiles = null, layerTop = null, arrows = [];
+
+  function buildFrame() {
+    while (elSvg.firstChild) elSvg.removeChild(elSvg.firstChild);
+    var size = n * CELL + GUT * 2;
+    elSvg.setAttribute('viewBox', '0 0 ' + size + ' ' + size);
+    var defs = el('defs', {}, elSvg);
+    var cp = el('clipPath', { id: 'boardClip' }, defs);
+    el('rect', { x: GUT, y: GUT, width: n * CELL, height: n * CELL }, cp);
+    /* 盤の地。動かないマスは少し濃く */
+    el('rect', { x: GUT, y: GUT, width: n * CELL, height: n * CELL, fill: 'var(--panel)' }, elSvg);
+    for (var i = 0; i < n * n; i++) {
+      if (Oshidashi.isFixed(n, i)) {
+        el('rect', { x: GUT + (i % n) * CELL, y: GUT + (i / n | 0) * CELL, width: CELL, height: CELL, fill: 'var(--fixed)' }, elSvg);
+      }
+    }
+    var grid = el('g', { stroke: 'rgba(0,0,0,.08)', 'stroke-width': 2 }, elSvg);
+    for (i = 1; i < n; i++) {
+      el('line', { x1: GUT + i * CELL, y1: GUT, x2: GUT + i * CELL, y2: GUT + n * CELL }, grid);
+      el('line', { x1: GUT, y1: GUT + i * CELL, x2: GUT + n * CELL, y2: GUT + i * CELL }, grid);
+    }
+    layerTiles = el('g', { 'clip-path': 'url(#boardClip)' }, elSvg);
+    el('rect', { x: GUT, y: GUT, width: n * CELL, height: n * CELL, fill: 'none', stroke: 'var(--thick)', 'stroke-width': 5, rx: 6 }, elSvg);
+    layerTop = el('g', {}, elSvg);
+
+    /* 押し込み口の矢印（盤の外側から内向き） */
+    arrows = [];
+    var a = GUT * 0.42, b = GUT * 0.36;
+    for (var op = 0; op < geo.ops.length; op++) {
+      var o = geo.ops[op], k = o.line, x, y, pts;
+      var mid = GUT + k * CELL + CELL / 2, end = GUT * 2 + n * CELL;
+      if (o.side === 'L') { x = GUT / 2; y = mid; pts = [[x - b, y - a], [x + b, y], [x - b, y + a]]; }
+      if (o.side === 'R') { x = end - GUT / 2; y = mid; pts = [[x + b, y - a], [x - b, y], [x + b, y + a]]; }
+      if (o.side === 'T') { x = mid; y = GUT / 2; pts = [[x - a, y - b], [x, y + b], [x + a, y - b]]; }
+      if (o.side === 'B') { x = mid; y = end - GUT / 2; pts = [[x - a, y + b], [x, y - b], [x + a, y + b]]; }
+      var g = el('g', { 'class': 'arrow' }, elSvg);
+      /* 押せる範囲は見た目より広く（余白＋端の1マス×1マス）。
+         余白だけだと7×7・幅360pxで約18pxしかなく44pxに届かないため、端のマスまで広げる（盤のマス自体は押せないので衝突しない） */
+      if (o.side === 'L') el('rect', { x: 0, y: mid - CELL / 2, width: GUT + CELL, height: CELL, fill: 'transparent' }, g);
+      else if (o.side === 'R') el('rect', { x: end - GUT - CELL, y: mid - CELL / 2, width: GUT + CELL, height: CELL, fill: 'transparent' }, g);
+      else if (o.side === 'T') el('rect', { x: mid - CELL / 2, y: 0, width: CELL, height: GUT + CELL, fill: 'transparent' }, g);
+      else el('rect', { x: mid - CELL / 2, y: end - GUT - CELL, width: CELL, height: GUT + CELL, fill: 'transparent' }, g);
+      el('polygon', { points: pts.map(function (p) { return p.join(','); }).join(' '), fill: 'var(--thick)' }, g);
+      g.dataset.op = String(op);
+      g.addEventListener('click', onArrow);
+      arrows.push(g);
+    }
+  }
+
+  /* 盤を描き直す。moved = その押し込みで動いたマス（滑らせる）、dx,dy = 1マス分の向き */
+  function render(anim) {
+    while (layerTiles.firstChild) layerTiles.removeChild(layerTiles.firstChild);
+    while (layerTop.firstChild) layerTop.removeChild(layerTop.firstChild);
+    var lit = Oshidashi.reachable(st);
+    var path = finished ? Oshidashi.pathToGoal(st) : [];
+    var onPath = {};
+    for (var p = 0; p < path.length; p++) onPath[path[p]] = 1;
+    var W = Math.round(CELL * 0.2), i, g, slid = [];
+    for (i = 0; i < n * n; i++) {
+      var col = onPath[i] ? 'var(--glow)' : (lit[i] ? 'var(--on)' : 'var(--off)');
+      g = drawTile(layerTiles, st.cells[i], cx(i), cy(i), col, W);
+      if (anim && anim.cells[i]) slid.push(g);
+    }
+    /* ゴール（動かないマス）と駒 */
+    el('circle', { cx: cx(st.goal), cy: cy(st.goal), r: CELL * 0.27, fill: 'var(--panel)', stroke: 'var(--ink)', 'stroke-width': 7 }, layerTop);
+    el('circle', { cx: cx(st.goal), cy: cy(st.goal), r: CELL * 0.09, fill: 'var(--ink)' }, layerTop);
+    var pg = el('circle', { cx: cx(st.piece), cy: cy(st.piece), r: CELL * 0.25, fill: 'var(--red)', stroke: 'var(--panel)', 'stroke-width': 5 }, layerTop);
+    if (anim && anim.piece) slid.push(pg);
+
+    /* 押し出された1枚は外へ滑って消える */
+    if (anim && anim.out) {
+      var go = drawTile(layerTiles, anim.out.m, anim.out.x, anim.out.y, 'var(--off)', W);
+      go.setAttribute('class', 'slide');
+      requestAnimationFrame(function () { requestAnimationFrame(function () {
+        go.style.transform = 'translate(' + anim.dx + 'px,' + anim.dy + 'px)';
+      }); });
+    }
+    if (slid.length) {
+      for (i = 0; i < slid.length; i++) slid[i].style.transform = 'translate(' + (-anim.dx) + 'px,' + (-anim.dy) + 'px)';
+      void elSvg.getBoundingClientRect();
+      requestAnimationFrame(function () { requestAnimationFrame(function () {
+        for (var j = 0; j < slid.length; j++) { slid[j].setAttribute('class', 'slide'); slid[j].style.transform = 'translate(0px,0px)'; }
+      }); });
+    }
+
+    for (i = 0; i < arrows.length; i++) {
+      var ban = finished || i === st.ban;
+      arrows[i].setAttribute('class', 'arrow' + (ban ? ' ban' : ''));
+      arrows[i].style.opacity = (i === st.ban) ? '.15' : '1';
+    }
+    elMoves.textContent = String(moves);
+    elUndo.disabled = finished || !history.length;
+  }
+
+  function renderHand() {
+    while (elHand.firstChild) elHand.removeChild(elHand.firstChild);
+    var g = el('g', { id: 'handTile' }, elHand);
+    /* 手持ちは viewBox 0..100 に1マスを描く（CELL=100 なので中心は 50,50） */
+    drawTile(g, handBase, 50, 50, 'var(--thick)', Math.round(CELL * 0.2));
+    g.style.transformOrigin = '50px 50px';
+    g.style.transform = 'rotate(' + (handTurn * 90) + 'deg)';
+    elHand.setAttribute('class', st.rot ? 'can' : '');
+    elHandLabel.textContent = st.rot ? '手持ち（タップで回す）' : '手持ち';
+  }
+
+  /* ---- 出題 ---- */
+  function loadLevel(i) {
+    index = i;
+    st = Oshidashi.parse(LEVELS[i]);
+    n = st.n;
+    geo = Oshidashi.geometry(n);
+    moves = 0; history = []; finished = false; busy = false;
+    handBase = st.hand; handTurn = 0;
+    elClear.hidden = true;
+    elTitle.textContent = LABELS[i].text;
+    elBest.textContent = String(LEVELS[i].min);
+    buildFrame();
+    render(null);
+    renderHand();
+    renderLevelList();
+    save.last = i;
+    storeSave();
+  }
+
+  /* ---- 操作 ---- */
+  elHand.addEventListener('click', function () {
+    if (!st.rot || finished || busy) return;
+    handTurn++;                                   /* 回すのは手数に数えない */
+    st.hand = Oshidashi.rotate(handBase, handTurn);
+    var g = document.getElementById('handTile');
+    if (g) g.style.transform = 'rotate(' + (handTurn * 90) + 'deg)';
+  });
+
+  function onArrow() {
+    if (finished || busy) return;
+    var op = parseInt(this.dataset.op, 10);
+    if (op === st.ban) return;
+    var o = geo.ops[op], k = o.line, before = st;
+    var ns = Oshidashi.push(st, op, st.hand);
+    if (!ns) return;
+    history.push({ st: Oshidashi.clone(st), handBase: handBase, handTurn: handTurn });
+    st = ns;
+    moves++;
+    /* 滑らせるマス・向き・押し出された1枚の行き先 */
+    var cells = {}, j, dx = 0, dy = 0, outIdx;
+    for (j = 0; j < n; j++) cells[(o.side === 'L' || o.side === 'R') ? k * n + j : j * n + k] = 1;
+    if (o.side === 'L') { dx = CELL; outIdx = k * n + n - 1; }
+    if (o.side === 'R') { dx = -CELL; outIdx = k * n; }
+    if (o.side === 'T') { dy = CELL; outIdx = (n - 1) * n + k; }
+    if (o.side === 'B') { dy = -CELL; outIdx = k; }
+    var pieceMoved = cells[before.piece] === 1;
+    handBase = st.hand; handTurn = 0;
+    finished = Oshidashi.isSolved(st);
+    busy = true;
+    render({ cells: cells, piece: pieceMoved, dx: dx, dy: dy,
+             out: { m: before.cells[outIdx], x: cx(outIdx), y: cy(outIdx) } });
+    renderHand();
+    setTimeout(function () { busy = false; if (finished) setTimeout(showClear, 450); }, SLIDE_MS + 20);
+  }
+
+  function showClear() {
+    var min = LEVELS[index].min;
+    save.cleared[String(index)] = 1;
+    storeSave();
+    renderLevelList();
+    elClearSub.textContent = (moves <= min) ? '★ 最短' : '';
+    elNext.hidden = (index >= LEVELS.length - 1);
+    elClear.hidden = false;
+  }
+
+  elUndo.addEventListener('click', function () {
+    if (finished || busy || !history.length) return;
+    var h = history.pop();
+    st = h.st; handBase = h.handBase; handTurn = h.handTurn;
+    moves = Math.max(0, moves - 1);
+    render(null);
+    renderHand();
+  });
+  elReset.addEventListener('click', function () { loadLevel(index); });
+  elNext.addEventListener('click', function () {
+    if (index < LEVELS.length - 1) { loadLevel(index + 1); window.scrollTo(0, 0); }
+  });
+
+  /* ---- レベル一覧 ---- */
+  function renderLevelList() {
+    if (!elLevels.childNodes.length) {
+      var tiers = [], seen = {}, i;
+      for (i = 0; i < LABELS.length; i++) {
+        if (!seen[LABELS[i].tier]) { seen[LABELS[i].tier] = []; tiers.push(LABELS[i].tier); }
+        seen[LABELS[i].tier].push(i);
+      }
+      for (var t = 0; t < tiers.length; t++) {
+        var box = document.createElement('div');
+        box.className = 'tier';
+        var name = document.createElement('div');
+        name.className = 'tierName';
+        name.textContent = tiers[t];
+        box.appendChild(name);
+        var row = document.createElement('div');
+        row.className = 'tierRow';
+        var idxs = seen[tiers[t]];
+        for (var k = 0; k < idxs.length; k++) {
+          var b = document.createElement('button');
+          b.className = 'lv';
+          b.dataset.idx = String(idxs[k]);
+          b.addEventListener('click', function () {
+            loadLevel(parseInt(this.dataset.idx, 10));
+            window.scrollTo(0, 0);
+          });
+          row.appendChild(b);
+        }
+        box.appendChild(row);
+        elLevels.appendChild(box);
+      }
+    }
+    var btns = elLevels.querySelectorAll('.lv');
+    for (var j = 0; j < btns.length; j++) {
+      var idx = parseInt(btns[j].dataset.idx, 10);
+      btns[j].textContent = LABELS[idx].no + (save.cleared[String(idx)] ? ' ✓' : '');
+      btns[j].className = 'lv' + (idx === index ? ' cur' : '');
+    }
+  }
+
+  loadSave();
+  if (LEVELS.length) loadLevel(save.last);
+})();
+</script>
+</body>
+</html>
