@@ -12,6 +12,7 @@
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
+  html{overflow-x:hidden}   /* 盤の外へ滑り出たタイルが画面の端で切れても、ページは横に伸ばさない */
   body{
     background:var(--bg); color:var(--ink);
     font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
@@ -31,7 +32,10 @@
 
   #stage{position:relative}
   #svg{display:block;width:100%;height:auto;touch-action:manipulation;
-       -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+       -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+       overflow:visible}   /* 押し出された1枚が枠の外（矢印の帯のさらに外）まで滑り出るのを見せる */
+  /* 手持ち⇔押し込み口を飛ぶ1枚。画面に固定した使い捨ての絵なので、ページの幅に影響しない */
+  .ghost{position:fixed;left:0;top:0;pointer-events:none;z-index:30;overflow:visible;transform-origin:50% 50%}
   .slide{transition:transform .16s ease-out}
   .walk{transition:transform .13s linear}   /* 駒が宝まで進む1マス。0.08秒では2〜3マスの道が一瞬で終わり目で追えない */
   .arrow{cursor:pointer}
@@ -488,6 +492,9 @@ if (typeof document !== 'undefined') (function () {
   var SLIDE_MS = 170;      /* 列が1マス滑る時間 */
   var WALK_MS = 140;       /* 駒が1マス進む時間（目で追える速さ。.walk の transition と合わせる） */
   var SHARE = CELL * 0.2;  /* 駒と宝が同じマスのとき、宝を左・駒を右へずらす幅（にげこみの「印が左」と同じ流儀） */
+  /* 1手の流れ：①手持ち→押し込み口 IN_MS ②列が1マスずれ、反対の1枚が枠の外へ SLIDE_MS ③出た1枚→手持ち OUT_MS。計約0.5秒 */
+  var IN_MS = 130;
+  var OUT_MS = 160;
 
   var elTitle = document.getElementById('title');
   var elMoves = document.getElementById('moves');
@@ -570,15 +577,39 @@ if (typeof document !== 'undefined') (function () {
   function cx(i) { return GUT + (i % n) * CELL + CELL / 2; }
   function cy(i) { return GUT + (i / n | 0) * CELL + CELL / 2; }
 
-  var layerTiles = null, layerTop = null, arrows = [], pieceEl = null, treEls = {}, pieceOff = 0;
+  var layerTiles = null, layerTop = null, arrows = [], pieceEl = null, treEls = {}, pieceOff = 0, outEl = null;
+
+  /* 盤の svg 座標 → 画面の座標（k は 1 user unit の画面px） */
+  function boardPt(x, y) {
+    var r = elSvg.getBoundingClientRect(), k = r.width / (n * CELL + GUT * 2);
+    return { x: r.left + x * k, y: r.top + y * k, k: k };
+  }
+  /* 手持ちの枠の中心と、盤の1マス(px)に対する縮尺（枠線2pxの内側に 0..100 が入る） */
+  function handPt(px) {
+    var r = elHand.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, s: (r.width - 4) / px };
+  }
+  /* 盤の外を飛ぶ1枚（手持ち⇔押し込み口）。向きは回したあとの形 m をそのまま描く */
+  function makeGhost(m, treId, isNext, px) {
+    var g = document.createElementNS(SVGNS, 'svg');
+    g.setAttribute('viewBox', '0 0 100 100');
+    g.setAttribute('class', 'ghost');
+    g.style.width = px + 'px'; g.style.height = px + 'px';
+    drawTile(g, m, 50, 50, 'var(--thick)', Math.round(CELL * 0.2));
+    if (treId >= 0) drawTreasure(g, treId, 50, 50, isNext);
+    document.body.appendChild(g);
+    return g;
+  }
+  function fly(g, a, b, px, ms) {
+    function tf(p) { return 'translate(' + (p.x - px / 2) + 'px,' + (p.y - px / 2) + 'px) scale(' + p.s + ')'; }
+    g.style.transform = tf(b);
+    if (g.animate) g.animate([{ transform: tf(a) }, { transform: tf(b) }], { duration: ms, easing: 'ease-in-out' });
+  }
 
   function buildFrame() {
     while (elSvg.firstChild) elSvg.removeChild(elSvg.firstChild);
     var size = n * CELL + GUT * 2;
     elSvg.setAttribute('viewBox', '0 0 ' + size + ' ' + size);
-    var defs = el('defs', {}, elSvg);
-    var cp = el('clipPath', { id: 'boardClip' }, defs);
-    el('rect', { x: GUT, y: GUT, width: n * CELL, height: n * CELL }, cp);
     /* 盤の地。動かないマスは少し濃く */
     el('rect', { x: GUT, y: GUT, width: n * CELL, height: n * CELL, fill: 'var(--panel)' }, elSvg);
     for (var i = 0; i < n * n; i++) {
@@ -591,10 +622,11 @@ if (typeof document !== 'undefined') (function () {
       el('line', { x1: GUT + i * CELL, y1: GUT, x2: GUT + i * CELL, y2: GUT + n * CELL }, grid);
       el('line', { x1: GUT, y1: GUT + i * CELL, x2: GUT + n * CELL, y2: GUT + i * CELL }, grid);
     }
-    layerTiles = el('g', { 'clip-path': 'url(#boardClip)' }, elSvg);
+    /* 盤の枠で切らない：押し込む1枚は枠の外から入り、押し出された1枚は枠の外まで出るのを見せる
+       （止まっている間は全部マスの内側に収まるので、切らなくても見た目は変わらない） */
+    layerTiles = el('g', {}, elSvg);
     el('rect', { x: GUT, y: GUT, width: n * CELL, height: n * CELL, fill: 'none', stroke: 'var(--thick)', 'stroke-width': 5, rx: 6 }, elSvg);
-    /* 宝と駒も盤の外へははみ出さない（押し出されて手持ちへ行く宝が、外へ滑って消える） */
-    layerTop = el('g', { 'clip-path': 'url(#boardClip)' }, elSvg);
+    layerTop = el('g', {}, elSvg);
 
     /* 押し込み口の矢印（盤の外側から内向き） */
     arrows = [];
@@ -642,15 +674,26 @@ if (typeof document !== 'undefined') (function () {
     }
     pieceEl = el('g', {}, layerTop);
     el('circle', { cx: cx(s.piece) + pieceOff, cy: cy(s.piece), r: CELL * 0.22, fill: 'var(--red)', stroke: 'var(--panel)', 'stroke-width': 5 }, pieceEl);
-    if (anim && anim.cells[s.piece]) slid.push(pieceEl);
+    /* 押し出される1枚に駒が乗っていたら、駒はまず1枚と一緒に枠の外へ出る（反対の端へ回り込むのは次の段） */
+    var pfx = 0, pfy = 0;
+    if (anim && anim.pieceFrom) {
+      pfx = anim.pieceFrom.x - (cx(s.piece) + pieceOff); pfy = anim.pieceFrom.y - cy(s.piece);
+      pieceEl.style.transform = 'translate(' + pfx + 'px,' + pfy + 'px)';
+    } else if (anim && anim.cells[s.piece]) slid.push(pieceEl);
 
-    /* 押し出された1枚（と乗っていた宝）は外へ滑って消える */
+    /* 押し出された1枚（と乗っていた宝）は枠の外まで滑り出る。色は手持ちと同じ濃さ（次の手持ちになる合図） */
+    outEl = null;
     if (anim && anim.out) {
       var go = el('g', { 'class': 'slide' }, layerTiles);
-      drawTile(go, anim.out.m, anim.out.x, anim.out.y, 'var(--off)', W);
-      if (anim.out.tre >= 0) drawTreasure(go, anim.out.tre, anim.out.x, anim.out.y, anim.out.tre === s.next);
+      drawTile(go, anim.out.m, anim.out.x, anim.out.y, 'var(--thick)', W);
+      if (anim.out.tre >= 0) drawTreasure(go, anim.out.tre, anim.out.x - (anim.pieceFrom ? SHARE : 0), anim.out.y, anim.out.tre === s.next);
+      outEl = go;
       requestAnimationFrame(function () { requestAnimationFrame(function () {
         go.style.transform = 'translate(' + anim.dx + 'px,' + anim.dy + 'px)';
+        if (anim.pieceFrom) {
+          pieceEl.setAttribute('class', 'slide');
+          pieceEl.style.transform = 'translate(' + (pfx + anim.dx) + 'px,' + (pfy + anim.dy) + 'px)';
+        }
       }); });
     }
     if (slid.length) {
@@ -724,13 +767,44 @@ if (typeof document !== 'undefined') (function () {
     var cells = {}, j, L = o.cells, outIdx = L[n - 1];
     for (j = 0; j < n; j++) cells[L[j]] = 1;
     var dx = (cx(L[1]) - cx(L[0])), dy = (cy(L[1]) - cy(L[0]));
-    st = mid;                                      /* まず押しただけの盤を見せる */
-    handBase = st.hand; handTurn = 0;
+    var inTre = before.tre.indexOf(-1), outTre = before.tre.indexOf(outIdx), pieceOut = (before.piece === outIdx);
     busy = true;
-    render(st, { cells: cells, dx: dx, dy: dy,
-                 out: { m: before.cells[outIdx], x: cx(outIdx), y: cy(outIdx), tre: before.tre.indexOf(outIdx) } });
-    renderHand();
-    setTimeout(function () { walk(res, 0); }, SLIDE_MS + 30);
+    elUndo.disabled = true;
+
+    /* ① 手持ち → 押し込み口（枠の1マス外）。回した向きのまま飛ぶ。手持ちの枠はいったん空に */
+    var pIn = boardPt(cx(L[0]) - dx, cy(L[0]) - dy), px = CELL * pIn.k;
+    var gIn = makeGhost(mid.cells[L[0]], inTre, inTre === before.next, px);
+    fly(gIn, handPt(px), { x: pIn.x, y: pIn.y, s: 1 }, px, IN_MS);
+    while (elHand.firstChild) elHand.removeChild(elHand.firstChild);
+
+    setTimeout(function () {
+      gIn.remove();
+      /* ② 列が1マスずれる。入る1枚は枠の外から、反対の1枚は枠の外へ（駒が乗っていれば一緒に出る） */
+      st = mid;
+      handBase = st.hand; handTurn = 0;
+      render(st, { cells: cells, dx: dx, dy: dy,
+                   pieceFrom: pieceOut ? { x: cx(outIdx) + (outTre >= 0 ? SHARE : 0), y: cy(outIdx) } : null,
+                   out: { m: before.cells[outIdx], x: cx(outIdx), y: cy(outIdx), tre: outTre } });
+
+      setTimeout(function () {
+        /* ③ 出た1枚（と宝）→ 手持ちの枠へ。駒は反対の端の外から、入ってきた1枚の上へ回り込む */
+        var pOut = boardPt(cx(outIdx) + dx, cy(outIdx) + dy), px2 = CELL * pOut.k;
+        var gOut = makeGhost(before.cells[outIdx], outTre, outTre === st.next, px2);
+        if (outEl) { outEl.remove(); outEl = null; }
+        fly(gOut, { x: pOut.x, y: pOut.y, s: 1 }, handPt(px2), px2, OUT_MS);
+        if (pieceOut) {
+          pieceEl.removeAttribute('class');
+          pieceEl.style.transform = '';
+          if (pieceEl.animate) pieceEl.animate([{ transform: 'translate(' + (-dx) + 'px,' + (-dy) + 'px)' },
+                                                { transform: 'translate(0px,0px)' }], { duration: OUT_MS, easing: 'ease-out' });
+        }
+        setTimeout(function () {
+          gOut.remove();
+          renderHand();
+          walk(res, 0);
+        }, OUT_MS + 10);
+      }, SLIDE_MS + 30);
+    }, IN_MS);
   }
 
   /* 駒が宝まで1マスずつ進んで拾う（続けて次の宝も） */
