@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>おしあい</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --line:#dedcd6; --frame:#c9c6be;
+    --ink:#2b2b2b; --sub:#77736c; --thick:#5d5952;
+    --off:#c6cdd2; --fixed:#ebe9e3;
+    --blue:#2f7fd4; --red:#d94f43;
+    --blueT:#d6e6f7; --redT:#f7d9d5;
+    --side:150px;
+    --b:min(calc(100vw - 8px), calc(100vh - var(--side) * 2), 560px);   /* 盤（矢印の余白込み）の一辺 */
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    -webkit-text-size-adjust:100%;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+  }
+
+  /* 縦持ち：上の陣・盤・下の陣。横持ち：左上に向こうの陣・盤・右下に手前の陣（どちらも盤は真ん中） */
+  #app{position:fixed;inset:0;display:grid;grid-template-rows:1fr auto 1fr;grid-template-columns:100%;
+       align-items:center;justify-items:center}
+  @media (orientation:landscape){
+    :root{ --side:170px; --b:min(calc(100vh - 8px), calc(100vw - var(--side) * 2), 560px); }
+    #app{grid-template-rows:100%;grid-template-columns:1fr auto 1fr}
+    #side1{align-self:start}
+    #side0{align-self:end}
+  }
+
+  /* 陣。向こうの陣は180度回して向こうの人から読めるようにする。
+     外側（各自の手元の端）に40pxあけて、左上の「‹ パズル箱」と右上の「？」に重ならないようにする */
+  .side{display:flex;align-items:center;justify-content:center;gap:12px;padding:6px 8px 40px;
+        max-width:100%;transition:opacity .2s}
+  #side1{transform:rotate(180deg)}
+  .side.dim{opacity:.4}
+  @media (orientation:landscape){ .side{flex-direction:column;gap:6px} }
+
+  .info{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+  .status{font-size:14px;font-weight:700;white-space:nowrap}
+  .status small{display:block;font-size:12px;font-weight:400;color:var(--sub);text-align:center;white-space:normal}
+  /* 小さい行は語の塊ごとに折り返す（横持ちの陣は幅が約150pxしかない。縦持ちでは1行に収まる） */
+  .status small span{display:inline-block;white-space:nowrap}
+  .score{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--sub);white-space:nowrap}
+  .score svg{width:30px;height:30px;display:block}
+  .again{font:inherit;font-size:11px;line-height:1;padding:8px 10px;margin-top:2px;
+         border:1px solid var(--frame);border-radius:8px;background:var(--panel);color:var(--sub);cursor:pointer;
+         position:relative}
+  .again::after{content:"";position:absolute;inset:-8px}   /* 押せる範囲を44pxに */
+  .again:active{background:#eeece7}
+
+  .handBox{display:flex;flex-direction:column;align-items:center;gap:2px}
+  .hand{width:60px;height:60px;display:block;background:var(--panel);border:2px solid var(--thick);border-radius:8px}
+  .hand.can{cursor:pointer}
+  .hand.none{visibility:hidden}
+  .handLabel{font-size:11px;color:var(--sub);white-space:nowrap;min-height:16px}
+  .handTile{transition:transform .12s ease-out}
+
+  #mid{width:var(--b);height:var(--b)}
+  #svg{display:block;width:100%;height:100%;touch-action:manipulation;overflow:visible}
+  .ghost{position:fixed;left:0;top:0;pointer-events:none;z-index:30;overflow:visible;transform-origin:50% 50%}
+  .slide{transition:transform .16s ease-out}
+  .walk{transition:transform .13s linear}
+  .arrow{cursor:pointer}
+  .arrow.ban,.arrow.off{pointer-events:none}
+
+  #over{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:min(18px,3vh);background:rgba(245,244,241,.92)}
+  #over[hidden]{display:none}
+  .res{font-size:min(26px,6vh);font-weight:700;text-align:center}
+  .res span{display:block;font-size:13px;font-weight:400;color:var(--sub)}
+  #res1{transform:rotate(180deg)}
+  #againOver{font:inherit;font-size:17px;padding:12px 28px;border:1px solid var(--frame);border-radius:9px;
+             background:var(--panel);color:var(--ink);cursor:pointer}
+  #againOver:active{background:#eeece7}
+
+  #helpBtn{position:fixed;right:min(14px,2vw);top:min(14px,2vh);z-index:36;
+           width:28px;height:28px;margin:0;padding:0;border-radius:50%;
+           font:inherit;font-size:14px;font-weight:700;line-height:1;
+           border:1px solid var(--frame);background:var(--panel);color:var(--sub);
+           display:flex;align-items:center;justify-content:center;cursor:pointer}
+  #helpBtn::after{content:"";position:absolute;inset:-8px}   /* 押せる範囲を44pxに */
+  #home{position:fixed;left:min(14px,2vw);top:min(14px,2vh);z-index:36;
+        height:28px;padding:0 10px;border-radius:14px;display:flex;align-items:center;
+        font-size:12px;line-height:1;white-space:nowrap;text-decoration:none;
+        border:1px solid var(--frame);background:var(--panel);color:var(--sub)}
+  #home::after{content:"";position:absolute;inset:-8px -4px}
+  #helpPanel{position:fixed;inset:0;z-index:35;display:flex;flex-direction:column;align-items:center;
+             justify-content:space-between;background:rgba(245,244,241,.97);padding:min(52px,8vh) 12px;cursor:pointer}
+  #helpPanel[hidden]{display:none}
+  .helpText{font-size:13px;line-height:1.8;text-align:left;color:var(--ink)}
+  .helpText div{white-space:nowrap}
+  .helpText.top{transform:rotate(180deg)}
+</style>
+</head>
+<body>
+<div id="app">
+  <section class="side" id="side1">
+    <div class="info">
+      <div class="status" id="status1"></div>
+      <div class="score"><svg id="next1" viewBox="0 0 100 100"></svg><span id="got1"></span></div>
+      <button class="again" type="button">はじめから</button>
+    </div>
+    <div class="handBox"><svg class="hand" id="hand1" viewBox="0 0 100 100"></svg><div class="handLabel" id="handLabel1"></div></div>
+  </section>
+
+  <div id="mid"><svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg></div>
+
+  <section class="side" id="side0">
+    <div class="info">
+      <div class="status" id="status0"></div>
+      <div class="score"><svg id="next0" viewBox="0 0 100 100"></svg><span id="got0"></span></div>
+      <button class="again" type="button">はじめから</button>
+    </div>
+    <div class="handBox"><svg class="hand" id="hand0" viewBox="0 0 100 100"></svg><div class="handLabel" id="handLabel0"></div></div>
+  </section>
+</div>
+
+<div id="over" hidden>
+  <div class="res" id="res1"></div>
+  <button id="againOver" type="button">もう一局</button>
+  <div class="res" id="res0"></div>
+</div>
+
+<!-- 戻り先は一覧（../#puzzle）。../ だけだとタイトル画面（パズル／クエストの2択）に着いてしまう -->
+<a id="home" href="../#puzzle">‹ パズル箱</a>
+<button id="helpBtn" type="button" aria-label="あそびかた">？</button>
+<div id="helpPanel" hidden>
+  <div class="helpText top" id="helpTop"></div>
+  <div class="helpText" id="helpBottom"></div>
+</div>
+
+<script>
+/* =====================================================================
+   純粋ロジック（DOM に依存しない。qa係が Node で独立検証するため
+   window.Oshiai として公開する）
+
+   おしだし（oshidashi/）の押し込みの仕組みを写して、二人の対戦にしたもの（コードは共有しない）
+   腕のビット N=1 E=2 S=4 W=8。時計回り90°は1ビット左巡回。マス番号 i = r*5 + c
+   押し込み口: 0=行1左 1=行1右 2=行3左 3=行3右 4=列1上 5=列1下 6=列3上 7=列3下（反対の口は op^1）
+   人: 0=手前（青・画面の下）／1=向こう（赤・画面の上）
+   宝 tre[人][k]: 盤のマス番号／-1=手持ちのタイルに乗っている／-2=拾った。next[人]=次に拾う宝の番号
+   手番は「押し込む（phase 'push'）→ 自分の駒を動かす（phase 'move'）」の2段
+   ===================================================================== */
+var Oshiai = (function () {
+  var N = 5, NN = 25, GOAL = 3, MAX_TURNS = 60;
+  var START = [20, 4];                         /* 駒の出発点：各自から見て手前の左の角 */
+  var CORNER = { 0: 6, 4: 12, 20: 3, 24: 9 };  /* 四隅は動かないので、内向きのかどに決めておく（閉じ込め防止） */
+  var GEO = null;
+
+  function geometry() {
+    if (GEO) return GEO;
+    var ops = [], k, j;
+    function line(side, k) {
+      var cells = [];
+      for (j = 0; j < N; j++) cells.push((side === 'L' || side === 'R') ? k * N + j : j * N + k);
+      if (side === 'R' || side === 'B') cells.reverse();
+      return { side: side, line: k, cells: cells };
+    }
+    for (k = 1; k < N; k += 2) { ops.push(line('L', k)); ops.push(line('R', k)); }
+    for (k = 1; k < N; k += 2) { ops.push(line('T', k)); ops.push(line('B', k)); }
+    GEO = { n: N, N: NN, ops: ops };
+    return GEO;
+  }
+  function isFixed(i) { return ((i / N | 0) % 2 === 0) && ((i % N) % 2 === 0); }
+  function rotate(m, t) {
+    m = m & 15; t = ((t | 0) % 4 + 4) % 4;
+    for (var i = 0; i < t; i++) m = ((m << 1) | (m >> 3)) & 15;
+    return m;
+  }
+  function variants(m) {
+    var out = [], x = m & 15;
+    for (var i = 0; i < 4; i++) { if (out.indexOf(x) < 0) out.push(x); x = rotate(x, 1); }
+    return out;
+  }
+  /* 180度回転で対になるマス */
+  function mirror(i) { return NN - 1 - i; }
+
+  /* タイル3種（直線:かど:三叉 = 3:4:3。おしだしと同じ）を向きもランダムに1枚 */
+  function randomTile(rng) {
+    var r = rng() * 10, base = r < 3 ? 5 : (r < 7 ? 3 : 7);
+    return rotate(base, Math.floor(rng() * 4));
+  }
+
+  function clone(s) {
+    return { cells: s.cells.slice(), hand: s.hand, piece: s.piece.slice(),
+             tre: [s.tre[0].slice(), s.tre[1].slice()], next: s.next.slice(),
+             turn: s.turn, phase: s.phase, ban: s.ban, turns: s.turns, first: s.first,
+             over: s.over, winner: s.winner };
+  }
+
+  /* 毎回ランダムな盤。タイル・駒・宝は盤の中心について180度回転で対称（先手・後手の条件を同じに）。
+     opt.rng: 0..1 を返す関数（自動対局で種を固定する用）／opt.first: 先手（0=手前 1=向こう） */
+  function newGame(opt) {
+    opt = opt || {};
+    var rng = opt.rng || Math.random, first = opt.first === 1 ? 1 : 0;
+    for (var tries = 0; ; tries++) {
+      var cells = [], i, m;
+      for (i = 0; i < NN; i++) cells.push(0);
+      for (i in CORNER) cells[i] = CORNER[i];
+      cells[12] = rng() < 0.5 ? 5 : 10;        /* 中心は自分自身と対になるので、180度回して同じ形＝直線だけ */
+      for (i = 0; i < 12; i++) {
+        if (CORNER[i] !== undefined) continue;
+        m = randomTile(rng);
+        cells[i] = m; cells[mirror(i)] = rotate(m, 2);
+      }
+      /* 宝：四隅（駒の出発点）と中心を除く10対から3対を選び、対の片方を手前、もう片方を向こうの宝にする */
+      var pool = [];
+      for (i = 0; i < 12; i++) if (CORNER[i] === undefined) pool.push(i);
+      for (i = pool.length - 1; i > 0; i--) { var j = Math.floor(rng() * (i + 1)), t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
+      var t0 = [], t1 = [];
+      for (i = 0; i < GOAL; i++) {
+        var a = rng() < 0.5 ? pool[i] : mirror(pool[i]);
+        t0.push(a); t1.push(mirror(a));
+      }
+      var s = { cells: cells, hand: randomTile(rng), piece: START.slice(), tre: [t0, t1], next: [0, 0],
+                turn: first, phase: 'push', ban: -1, turns: 0, first: first, over: false, winner: -1 };
+      /* はじめから①につながっている盤は配り直す（押さずに拾えてしまう）。対称なので片方だけ見ればよい */
+      if (!reachable(s, 0)[t0[0]] || tries > 200) return s;
+    }
+  }
+
+  /* 盤が180度対称か（自動対局・qa係の確かめ用） */
+  function isSymmetric(s) {
+    for (var i = 0; i < NN; i++) if (s.cells[mirror(i)] !== rotate(s.cells[i], 2)) return false;
+    if (s.piece[1] !== mirror(s.piece[0])) return false;
+    for (var k = 0; k < s.tre[0].length; k++) if (s.tre[1][k] !== mirror(s.tre[0][k])) return false;
+    return true;
+  }
+
+  /* 押せる口（相手がたった今押した列を、その口の反対側から押し戻す口を除く） */
+  function legalOps(s) {
+    if (s.over || s.phase !== 'push') return [];
+    var out = [];
+    for (var i = 0; i < geometry().ops.length; i++) if (i !== s.ban) out.push(i);
+    return out;
+  }
+
+  /* 押し込む。手持ち（向きは hand。回すのは自由）が入口のマスに入り、列が1マスずれ、
+     反対の端の1枚（と乗っている宝）が次の手持ちになる。両方の駒・両方の宝が列と一緒に動く。
+     押し出された駒は入ってきた1枚の上へ回り込む。打てない手なら null */
+  function push(s, op, hand) {
+    if (s.over || s.phase !== 'push') return null;
+    var g = geometry();
+    if (!(op >= 0 && op < g.ops.length) || op === s.ban) return null;
+    var h = (hand === undefined || hand === null) ? s.hand : (hand & 15);
+    if (variants(s.hand).indexOf(h) < 0) return null;
+    var L = g.ops[op].cells, c = s.cells.slice(), j, w;
+    var ej = c[L[N - 1]];
+    for (j = N - 1; j > 0; j--) c[L[j]] = c[L[j - 1]];
+    c[L[0]] = h;
+    function move(p) {
+      var k = L.indexOf(p);
+      if (k < 0) return p;
+      return k < N - 1 ? L[k + 1] : -1;
+    }
+    var t = clone(s);
+    t.cells = c; t.hand = ej; t.phase = 'move'; t.ban = op ^ 1;
+    for (w = 0; w < 2; w++) {
+      var p = move(s.piece[w]);
+      t.piece[w] = p < 0 ? L[0] : p;
+      for (j = 0; j < s.tre[w].length; j++) {
+        var q = s.tre[w][j];
+        t.tre[w][j] = q === -2 ? -2 : (q === -1 ? L[0] : move(q));
+      }
+    }
+    return t;
+  }
+
+  /* 人 who の駒から、両側に腕がある辺だけを渡って届くマス（真偽の配列） */
+  function reachable(s, who) {
+    var c = s.cells, start = s.piece[who], seen = [], stack = [start], i, r, q;
+    for (i = 0; i < NN; i++) seen.push(false);
+    seen[start] = true;
+    while (stack.length) {
+      i = stack.pop(); r = i / N | 0; q = i % N;
+      if ((c[i] & 1) && r > 0 && (c[i - N] & 4) && !seen[i - N]) { seen[i - N] = true; stack.push(i - N); }
+      if ((c[i] & 4) && r < N - 1 && (c[i + N] & 1) && !seen[i + N]) { seen[i + N] = true; stack.push(i + N); }
+      if ((c[i] & 8) && q > 0 && (c[i - 1] & 2) && !seen[i - 1]) { seen[i - 1] = true; stack.push(i - 1); }
+      if ((c[i] & 2) && q < N - 1 && (c[i + 1] & 8) && !seen[i + 1]) { seen[i + 1] = true; stack.push(i + 1); }
+    }
+    return seen;
+  }
+
+  /* a から b までの通り道（マス番号の列・最短）。つながっていなければ [] */
+  function pathBetween(s, a, b) {
+    var c = s.cells, prev = {}, queue = [a], head = 0, i, r, q, d, j;
+    var step = [[1, 4, -N], [4, 1, N], [8, 2, -1], [2, 8, 1]];
+    prev[a] = -1;
+    while (head < queue.length) {
+      i = queue[head++];
+      if (i === b) { var out = []; for (j = i; j !== -1; j = prev[j]) out.unshift(j); return out; }
+      r = i / N | 0; q = i % N;
+      for (d = 0; d < 4; d++) {
+        var t = i + step[d][2];
+        if (!(c[i] & step[d][0])) continue;
+        if ((d === 0 && r === 0) || (d === 1 && r === N - 1) || (d === 2 && q === 0) || (d === 3 && q === N - 1)) continue;
+        if (!(c[t] & step[d][1]) || prev[t] !== undefined) continue;
+        prev[t] = i; queue.push(t);
+      }
+    }
+    return [];
+  }
+
+  /* 押した後、手番の人が自分の駒を cell へ動かす（今のマスなら「とどまる」）。
+     次に拾う自分の宝のマスで止まったら拾う。3つ目で勝ち。手番の上限に着いたら拾った数で決める。
+     そうでなければ手番を渡す。動けないマスなら null */
+  function moveTo(s, cell) {
+    if (s.over || s.phase !== 'move') return null;
+    var me = s.turn;
+    if (!(cell >= 0 && cell < NN) || !reachable(s, me)[cell]) return null;
+    var t = clone(s);
+    t.piece[me] = cell;
+    if (t.next[me] < GOAL && t.tre[me][t.next[me]] === cell) { t.tre[me][t.next[me]] = -2; t.next[me]++; }
+    t.turns++;
+    if (t.next[me] >= GOAL) { t.over = true; t.winner = me; return t; }
+    if (t.turns >= MAX_TURNS) {
+      t.over = true;
+      t.winner = t.next[0] > t.next[1] ? 0 : (t.next[1] > t.next[0] ? 1 : -1);   /* -1 は引き分け */
+      return t;
+    }
+    t.turn = 1 - me; t.phase = 'push';
+    return t;
+  }
+
+  return {
+    N: N, GOAL: GOAL, MAX_TURNS: MAX_TURNS, START: START,
+    geometry: geometry, isFixed: isFixed, rotate: rotate, variants: variants, mirror: mirror,
+    newGame: newGame, clone: clone, isSymmetric: isSymmetric,
+    legalOps: legalOps, push: push, reachable: reachable, pathBetween: pathBetween, moveTo: moveTo
+  };
+})();
+
+if (typeof window !== 'undefined') window.Oshiai = Oshiai;
+if (typeof globalThis !== 'undefined') globalThis.Oshiai = Oshiai;
+</script>
+
+<script>
+/* =====================================================================
+   画面（向かい合い専用）。押し込みの動きは oshidashi/ の流れを写す
+   ===================================================================== */
+if (typeof document !== 'undefined') (function () {
+  var KEY = 'oshiai';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var CELL = 100, GUT = 40, n = 5;
+  var IN_MS = 130, SLIDE_MS = 170, OUT_MS = 160, WALK_MS = 140;
+  var SHARE = CELL * 0.22;
+  var COL = ['var(--blue)', 'var(--red)'], TINT = ['var(--blueT)', 'var(--redT)'];
+  var HELP = [
+    '手持ちを矢印から押し込み、列を1マスずらす',
+    '駒も宝も列と一緒に動き、端から出たら反対へ',
+    'それから自分の●を、道のつながる所へ動かす',
+    '自分の宝①②③に順に止まって拾う',
+    '相手がいま押した列は、押し戻せない',
+    '先に3つ拾った方の勝ち'
+  ];
+
+  var elSvg = document.getElementById('svg');
+  var elSide = [document.getElementById('side0'), document.getElementById('side1')];
+  var elStatus = [document.getElementById('status0'), document.getElementById('status1')];
+  var elNext = [document.getElementById('next0'), document.getElementById('next1')];
+  var elGot = [document.getElementById('got0'), document.getElementById('got1')];
+  var elHand = [document.getElementById('hand0'), document.getElementById('hand1')];
+  var elHandLabel = [document.getElementById('handLabel0'), document.getElementById('handLabel1')];
+  var elOver = document.getElementById('over');
+  var elRes = [document.getElementById('res0'), document.getElementById('res1')];
+
+  /* ---- 保存（あそびかたを見たかどうかだけ。対戦なので進み具合は持たない） ---- */
+  var seen = 0;
+  try { var o = JSON.parse(localStorage.getItem(KEY) || 'null'); if (o && o.seen) seen = 1; } catch (e) {}
+  function storeSeen() { try { localStorage.setItem(KEY, JSON.stringify({ seen: 1 })); } catch (e) {} }
+
+  /* ---- あそびかた（同じ文を上下2枚。初回だけ自動、以降は？） ---- */
+  ['helpTop', 'helpBottom'].forEach(function (id) {
+    var box = document.getElementById(id);
+    HELP.forEach(function (t) { var d = document.createElement('div'); d.textContent = t; box.appendChild(d); });
+  });
+  var elHelpPanel = document.getElementById('helpPanel');
+  elHelpPanel.addEventListener('click', function () { elHelpPanel.hidden = true; if (!seen) { seen = 1; storeSeen(); } });
+  document.getElementById('helpBtn').addEventListener('click', function () { elHelpPanel.hidden = false; });
+
+  /* ---- 状態 ---- */
+  var st = null, geo = Oshiai.geometry(), games = 0, busy = false;
+  var holder = 0;                 /* 手持ちを持っている側（押し出された1枚は次の人の側へ飛ぶ） */
+  var handBase = 0, handTurn = 0; /* 見た目は常に時計回り（回数を増やし続ける） */
+
+  function el(name, attrs, parent) {
+    var e = document.createElementNS(SVGNS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function drawTile(parent, m, x, y, color, w) {
+    var g = el('g', { stroke: color, fill: color, 'stroke-width': w, 'stroke-linecap': 'butt' }, parent);
+    var h = CELL / 2;
+    if (m & 1) el('line', { x1: x, y1: y, x2: x, y2: y - h }, g);
+    if (m & 4) el('line', { x1: x, y1: y, x2: x, y2: y + h }, g);
+    if (m & 8) el('line', { x1: x, y1: y, x2: x - h, y2: y }, g);
+    if (m & 2) el('line', { x1: x, y1: y, x2: x + h, y2: y }, g);
+    el('circle', { cx: x, cy: y, r: w / 2, stroke: 'none' }, g);
+    return g;
+  }
+  /* 宝（持ち主の色の番号つきの丸）。flip=番号を180度回す（向こうの人が正しく読めるように） */
+  function drawTreasure(parent, owner, id, x, y, isNext, flip) {
+    var g = el('g', { opacity: isNext ? 1 : 0.5 }, parent);
+    el('circle', { cx: x, cy: y, r: CELL * 0.25, fill: TINT[owner], stroke: COL[owner], 'stroke-width': isNext ? 7 : 4 }, g);
+    var t = el('text', { x: x, y: y + CELL * 0.11, 'text-anchor': 'middle', 'font-size': CELL * 0.32,
+                         'font-weight': 700, fill: COL[owner] }, g);
+    if (flip) t.setAttribute('transform', 'rotate(180 ' + x + ' ' + y + ')');
+    t.textContent = String(id + 1);
+    return g;
+  }
+  function drawPiece(parent, who, x, y) {
+    var g = el('g', {}, parent);
+    el('circle', { cx: x, cy: y, r: CELL * 0.2, fill: COL[who], stroke: 'var(--panel)', 'stroke-width': 5 }, g);
+    return g;
+  }
+  function cx(i) { return GUT + (i % n) * CELL + CELL / 2; }
+  function cy(i) { return GUT + (i / n | 0) * CELL + CELL / 2; }
+
+  var layerHint, layerTiles, layerTop, arrows = [], pieceEls = [null, null], pieceOff = [0, 0], pieceOffY = [0, 0], outEl = null;
+
+  function boardPt(x, y) {
+    var r = elSvg.getBoundingClientRect(), k = r.width / (n * CELL + GUT * 2);
+    return { x: r.left + x * k, y: r.top + y * k, k: k };
+  }
+  function handPt(who, px) {
+    var r = elHand[who].getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, s: (r.width - 4) / px };
+  }
+  /* 盤の外を飛ぶ1枚。画面の向き（盤と同じ向き）で描く */
+  function makeGhost(m, items, px) {
+    var g = document.createElementNS(SVGNS, 'svg');
+    g.setAttribute('viewBox', '0 0 100 100');
+    g.setAttribute('class', 'ghost');
+    g.style.width = px + 'px'; g.style.height = px + 'px';
+    drawTile(g, m, 50, 50, 'var(--thick)', 20);
+    if (items) items.forEach(function (it) { drawTreasure(g, it.owner, it.id, 50, 50, it.isNext, it.owner === 1); });
+    document.body.appendChild(g);
+    return g;
+  }
+  function fly(g, a, b, px, ms) {
+    function tf(p) { return 'translate(' + (p.x - px / 2) + 'px,' + (p.y - px / 2) + 'px) scale(' + p.s + ')'; }
+    g.style.transform = tf(b);
+    if (g.animate) g.animate([{ transform: tf(a) }, { transform: tf(b) }], { duration: ms, easing: 'ease-in-out' });
+  }
+
+  function buildFrame() {
+    while (elSvg.firstChild) elSvg.removeChild(elSvg.firstChild);
+    var size = n * CELL + GUT * 2;
+    elSvg.setAttribute('viewBox', '0 0 ' + size + ' ' + size);
+    el('rect', { x: GUT, y: GUT, width: n * CELL, height: n * CELL, fill: 'var(--panel)' }, elSvg);
+    for (var i = 0; i < n * n; i++) {
+      if (Oshiai.isFixed(i)) el('rect', { x: GUT + (i % n) * CELL, y: GUT + (i / n | 0) * CELL, width: CELL, height: CELL, fill: 'var(--fixed)' }, elSvg);
+    }
+    layerHint = el('g', {}, elSvg);
+    var grid = el('g', { stroke: 'rgba(0,0,0,.08)', 'stroke-width': 2 }, elSvg);
+    for (i = 1; i < n; i++) {
+      el('line', { x1: GUT + i * CELL, y1: GUT, x2: GUT + i * CELL, y2: GUT + n * CELL }, grid);
+      el('line', { x1: GUT, y1: GUT + i * CELL, x2: GUT + n * CELL, y2: GUT + i * CELL }, grid);
+    }
+    layerTiles = el('g', {}, elSvg);
+    el('rect', { x: GUT, y: GUT, width: n * CELL, height: n * CELL, fill: 'none', stroke: 'var(--thick)', 'stroke-width': 5, rx: 6 }, elSvg);
+    layerTop = el('g', {}, elSvg);
+
+    arrows = [];
+    var a = GUT * 0.42, b = GUT * 0.36;
+    for (var op = 0; op < geo.ops.length; op++) {
+      var o = geo.ops[op], k = o.line, x, y, pts;
+      var mid = GUT + k * CELL + CELL / 2, end = GUT * 2 + n * CELL;
+      if (o.side === 'L') { x = GUT / 2; y = mid; pts = [[x - b, y - a], [x + b, y], [x - b, y + a]]; }
+      if (o.side === 'R') { x = end - GUT / 2; y = mid; pts = [[x + b, y - a], [x - b, y], [x + b, y + a]]; }
+      if (o.side === 'T') { x = mid; y = GUT / 2; pts = [[x - a, y - b], [x, y + b], [x + a, y - b]]; }
+      if (o.side === 'B') { x = mid; y = end - GUT / 2; pts = [[x - a, y + b], [x, y - b], [x + a, y + b]]; }
+      var g = el('g', { 'class': 'arrow' }, elSvg);
+      /* 押せる範囲は余白＋端の1マス（押す段階では盤のマスは押せないので衝突しない。動かす段階では矢印を切る） */
+      if (o.side === 'L') el('rect', { x: 0, y: mid - CELL / 2, width: GUT + CELL, height: CELL, fill: 'transparent' }, g);
+      else if (o.side === 'R') el('rect', { x: end - GUT - CELL, y: mid - CELL / 2, width: GUT + CELL, height: CELL, fill: 'transparent' }, g);
+      else if (o.side === 'T') el('rect', { x: mid - CELL / 2, y: 0, width: CELL, height: GUT + CELL, fill: 'transparent' }, g);
+      else el('rect', { x: mid - CELL / 2, y: end - GUT - CELL, width: CELL, height: GUT + CELL, fill: 'transparent' }, g);
+      el('polygon', { points: pts.map(function (p) { return p.join(','); }).join(' '), fill: 'var(--thick)' }, g);
+      g.dataset.op = String(op);
+      g.addEventListener('click', onArrow);
+      arrows.push(g);
+    }
+  }
+
+  /* 同じマスに乗るもの（宝・駒）を横に並べるずらし幅 */
+  function offsets(k) { return k === 1 ? [0] : (k === 2 ? [-SHARE, SHARE] : [-SHARE * 1.2, 0, SHARE * 1.2]); }
+
+  /* 盤を描き直す。anim があれば押した列を1マス手前から滑らせ、押し出された1枚（と乗っていた宝・駒）を枠の外へ滑らせる */
+  function render(s, anim) {
+    [layerHint, layerTiles, layerTop].forEach(function (L) { while (L.firstChild) L.removeChild(L.firstChild); });
+    var me = s.turn, lit = s.over ? [] : Oshiai.reachable(s, me);
+    var W = 20, i, g, slid = [], w, k;
+    if (!s.over && s.phase === 'move' && !anim) {
+      for (i = 0; i < n * n; i++) if (lit[i]) el('rect', { x: GUT + (i % n) * CELL + 3, y: GUT + (i / n | 0) * CELL + 3, width: CELL - 6, height: CELL - 6, rx: 8, fill: TINT[me] }, layerHint);
+    }
+    for (i = 0; i < n * n; i++) {
+      g = drawTile(layerTiles, s.cells[i], cx(i), cy(i), lit[i] ? COL[me] : 'var(--off)', W);
+      if (anim && anim.cells[i]) slid.push(g);
+    }
+    /* マスごとに乗っているもの：宝（盤上に1つまで）→ 駒の順で横に並べる */
+    var at = {};
+    function add(cell, item) { (at[cell] = at[cell] || []).push(item); }
+    for (w = 0; w < 2; w++) for (k = 0; k < s.tre[w].length; k++) if (s.tre[w][k] >= 0) add(s.tre[w][k], { t: 'tre', owner: w, id: k });
+    for (w = 0; w < 2; w++) add(s.piece[w], { t: 'piece', who: w });
+    for (var c in at) {
+      var list = at[c], off = offsets(list.length);
+      /* 宝＋駒2つ：横一列だと真ん中の駒が宝の番号を隠すので、宝は左・駒は右に上下（赤＝向こうが上、青＝手前が下） */
+      var three = list.length === 3, offY = three ? [0, SHARE, -SHARE] : [0, 0, 0];
+      if (three) off = [-SHARE, SHARE, SHARE];
+      for (k = 0; k < list.length; k++) {
+        var it = list[k], x = cx(+c) + off[k], y = cy(+c) + offY[k];
+        if (it.t === 'tre') g = drawTreasure(layerTop, it.owner, it.id, x, y, it.id === s.next[it.owner], it.owner === 1);
+        else { g = drawPiece(layerTop, it.who, x, y); pieceEls[it.who] = g; pieceOff[it.who] = off[k]; pieceOffY[it.who] = offY[k]; }
+        if (it.t === 'piece' && anim && anim.hide && anim.hide.indexOf(it.who) >= 0) g.style.opacity = '0';
+        else if (anim && anim.cells[+c]) slid.push(g);
+      }
+    }
+    outEl = null;
+    if (anim && anim.out) {
+      var go = el('g', { 'class': 'slide' }, layerTiles), ou = anim.out, ol = ou.items, oo = offsets(ol.length);
+      drawTile(go, ou.m, ou.x, ou.y, 'var(--thick)', W);
+      for (k = 0; k < ol.length; k++) {
+        if (ol[k].t === 'tre') drawTreasure(go, ol[k].owner, ol[k].id, ou.x + oo[k], ou.y, ol[k].isNext, ol[k].owner === 1);
+        else drawPiece(go, ol[k].who, ou.x + oo[k], ou.y);
+      }
+      outEl = go;
+      requestAnimationFrame(function () { requestAnimationFrame(function () {
+        go.style.transform = 'translate(' + anim.dx + 'px,' + anim.dy + 'px)';
+      }); });
+    }
+    if (slid.length) {
+      for (i = 0; i < slid.length; i++) slid[i].style.transform = 'translate(' + (-anim.dx) + 'px,' + (-anim.dy) + 'px)';
+      void elSvg.getBoundingClientRect();
+      requestAnimationFrame(function () { requestAnimationFrame(function () {
+        for (var j = 0; j < slid.length; j++) { slid[j].setAttribute('class', 'slide'); slid[j].style.transform = 'translate(0px,0px)'; }
+      }); });
+    }
+    var pushing = !s.over && s.phase === 'push' && !busy;
+    for (i = 0; i < arrows.length; i++) {
+      var ban = i === s.ban;
+      arrows[i].setAttribute('class', 'arrow' + (ban ? ' ban' : '') + (pushing ? '' : ' off'));
+      arrows[i].style.opacity = ban ? '.15' : (s.phase === 'push' && !s.over ? '1' : '.35');
+    }
+    renderSides(s);
+  }
+
+  /* 両方の陣：手番・次に拾う宝・拾った数・手持ち */
+  function renderSides(s) {
+    var left = Oshiai.MAX_TURNS - s.turns;
+    for (var w = 0; w < 2; w++) {
+      var mine = !s.over && s.turn === w;
+      elSide[w].classList.toggle('dim', !s.over && !mine);
+      var txt = '', sub = [];
+      if (mine) {
+        txt = 'あなたの番';
+        /* 動かす段は「行き先」と「とどまる」を分けて書く（塊ごとに折り返す） */
+        sub = s.phase === 'push' ? ['矢印で押し込む'] : ['行き先をタップ・', '●ならとどまる'];
+      } else if (!s.over) txt = 'あいての番';
+      /* のこりは二人の合計でなく、その人自身の手数（合計の「のこり10手」は自分が10手打てるように読める）。各自5手から。打ち終えた人（0手）には出さない */
+      var own = s.turn === w ? Math.ceil(left / 2) : Math.floor(left / 2);
+      if (!s.over && own >= 1 && own <= 5) { if (sub.length) sub[sub.length - 1] += '・'; sub.push('のこり' + own + '手'); }
+      elStatus[w].textContent = txt;
+      if (sub.length) {
+        var sm = document.createElement('small');
+        sub.forEach(function (t) { var sp = document.createElement('span'); sp.textContent = t; sm.appendChild(sp); });
+        elStatus[w].appendChild(sm);
+      }
+      /* 次に拾う宝（陣の中では各自が正しく読める向き＝回転なし） */
+      var nx = elNext[w];
+      while (nx.firstChild) nx.removeChild(nx.firstChild);
+      if (s.next[w] < Oshiai.GOAL) {
+        var sv = el('g', { transform: 'translate(50 50) scale(1.6) translate(-50 -50)' }, nx);
+        drawTreasure(sv, w, s.next[w], 50, 50, true, false);
+      }
+      elGot[w].textContent = '拾った ' + s.next[w] + '/' + Oshiai.GOAL;
+    }
+    renderHands(s);
+  }
+
+  /* 手持ち。持っている側の枠にだけ描く。向こうの陣は180度回っているので、
+     画面の上で盤と同じ向きに見えるよう、タイルは180度回して描く（宝の番号は持ち主が読める向き） */
+  function renderHands(s) {
+    for (var w = 0; w < 2; w++) {
+      var h = elHand[w];
+      while (h.firstChild) h.removeChild(h.firstChild);
+      var has = (w === holder) && !s.over;
+      h.setAttribute('class', 'hand' + (has ? '' : ' none') + (has && canRotate(w) ? ' can' : ''));
+      elHandLabel[w].textContent = has ? (canRotate(w) ? '手持ち（タップで回す）' : '手持ち') : '';
+      if (!has) continue;
+      var g = el('g', { 'class': 'handTile' }, h);
+      drawTile(g, w === 1 ? Oshiai.rotate(handBase, 2) : handBase, 50, 50, 'var(--thick)', 20);
+      g.style.transformOrigin = '50px 50px';
+      g.style.transform = 'rotate(' + (handTurn * 90) + 'deg)';
+      for (var o = 0; o < 2; o++) {
+        var j = s.tre[o].indexOf(-1);
+        if (j >= 0) drawTreasure(h, o, j, 50, 50, j === s.next[o], o !== w);
+      }
+    }
+  }
+  function canRotate(w) { return !busy && st && !st.over && st.phase === 'push' && st.turn === w; }
+
+  elHand.forEach(function (h, w) {
+    h.addEventListener('click', function () {
+      if (!canRotate(w) || holder !== w) return;
+      handTurn++;                                   /* 回すのは自由（何度でも） */
+      st.hand = Oshiai.rotate(handBase, handTurn);
+      var g = h.querySelector('.handTile');
+      if (g) g.style.transform = 'rotate(' + (handTurn * 90) + 'deg)';
+    });
+  });
+
+  /* ---- 押し込む ---- */
+  function onArrow() {
+    if (busy || !st || st.over || st.phase !== 'push') return;
+    var op = parseInt(this.dataset.op, 10);
+    if (op === st.ban) return;
+    var before = st, mid = Oshiai.push(st, op, st.hand);
+    if (!mid) return;
+    var o = geo.ops[op], L = o.cells, outIdx = L[n - 1], cells = {}, j, w;
+    for (j = 0; j < n; j++) cells[L[j]] = 1;
+    var dx = cx(L[1]) - cx(L[0]), dy = cy(L[1]) - cy(L[0]);
+    var inItems = [], outItems = [], outPieces = [];
+    for (w = 0; w < 2; w++) {
+      var a = before.tre[w].indexOf(-1), b = before.tre[w].indexOf(outIdx);
+      if (a >= 0) inItems.push({ owner: w, id: a, isNext: a === before.next[w] });
+      if (b >= 0) outItems.push({ t: 'tre', owner: w, id: b, isNext: b === before.next[w] });
+    }
+    for (w = 0; w < 2; w++) if (before.piece[w] === outIdx) { outItems.push({ t: 'piece', who: w }); outPieces.push(w); }
+    var nextHolder = 1 - before.turn;
+    busy = true;
+
+    /* ① 手持ち → 押し込み口（枠の1マス外） */
+    var pIn = boardPt(cx(L[0]) - dx, cy(L[0]) - dy), px = CELL * pIn.k;
+    var gIn = makeGhost(mid.cells[L[0]], inItems, px);
+    fly(gIn, handPt(holder, px), { x: pIn.x, y: pIn.y, s: 1 }, px, IN_MS);
+    while (elHand[holder].firstChild) elHand[holder].removeChild(elHand[holder].firstChild);
+
+    setTimeout(function () {
+      gIn.remove();
+      /* ② 列が1マスずれる。反対の1枚（と乗っていた宝・駒）は枠の外へ */
+      st = mid;
+      holder = -1;                       /* 飛んでいるあいだはどちらの枠も空 */
+      handBase = st.hand; handTurn = 0;
+      render(st, { cells: cells, dx: dx, dy: dy, hide: outPieces,
+                   out: { m: before.cells[outIdx], x: cx(outIdx), y: cy(outIdx), items: outItems } });
+
+      setTimeout(function () {
+        /* ③ 出た1枚（と宝）→ 次の人の手持ちの枠へ。駒は反対の端の外から、入ってきた1枚の上へ回り込む */
+        var pOut = boardPt(cx(outIdx) + dx, cy(outIdx) + dy), px2 = CELL * pOut.k;
+        var gOut = makeGhost(before.cells[outIdx], outItems.filter(function (x) { return x.t === 'tre'; }), px2);
+        if (outEl) { outEl.remove(); outEl = null; }
+        fly(gOut, { x: pOut.x, y: pOut.y, s: 1 }, handPt(nextHolder, px2), px2, OUT_MS);
+        outPieces.forEach(function (w2) {
+          var pe = pieceEls[w2];
+          pe.style.opacity = '1';
+          if (pe.animate) pe.animate([{ transform: 'translate(' + (-dx) + 'px,' + (-dy) + 'px)' },
+                                      { transform: 'translate(0px,0px)' }], { duration: OUT_MS, easing: 'ease-out' });
+        });
+        setTimeout(function () {
+          gOut.remove();
+          holder = nextHolder;
+          busy = false;
+          render(st, null);
+        }, OUT_MS + 10);
+      }, SLIDE_MS + 30);
+    }, IN_MS);
+  }
+
+  /* ---- 駒を動かす（届くマスをタップ。自分の●のマスならとどまる） ---- */
+  elSvg.addEventListener('click', function (e) {
+    if (busy || !st || st.over || st.phase !== 'move') return;
+    var r = elSvg.getBoundingClientRect(), k = r.width / (n * CELL + GUT * 2);
+    var x = (e.clientX - r.left) / k - GUT, y = (e.clientY - r.top) / k - GUT;
+    if (x < 0 || y < 0 || x >= n * CELL || y >= n * CELL) return;
+    var cell = (y / CELL | 0) * n + (x / CELL | 0), me = st.turn;
+    if (!Oshiai.reachable(st, me)[cell]) return;
+    var path = Oshiai.pathBetween(st, st.piece[me], cell), res = Oshiai.moveTo(st, cell);
+    if (!res || !path.length) return;
+    busy = true;
+    var pe = pieceEls[me], x0 = cx(path[0]) + pieceOff[me], y0 = cy(path[0]) + pieceOffY[me], s = 1;
+    pe.setAttribute('class', 'walk');
+    (function step() {
+      if (s >= path.length) {
+        setTimeout(function () {
+          st = res; busy = false;
+          render(st, null);
+          if (st.over) setTimeout(showOver, 350);
+        }, path.length > 1 ? 80 : 0);
+        return;
+      }
+      pe.style.transform = 'translate(' + (cx(path[s]) - x0) + 'px,' + (cy(path[s]) - y0) + 'px)';
+      s++;
+      setTimeout(step, WALK_MS);
+    })();
+  });
+
+  /* ---- 決着 ---- */
+  function showOver() {
+    /* 各自の側に「かち／まけ／ひきわけ」（はやつかみ・かぶせっこと同じ。「青の勝ち」は自分の色を思い出させる）。
+       打ち切りのときだけ下に「60手で 自分対相手」。3つ拾った決着は見れば分かるので添えない */
+    var w = st.winner, cap = st.next[0] < Oshiai.GOAL && st.next[1] < Oshiai.GOAL;
+    for (var i = 0; i < 2; i++) {
+      elRes[i].textContent = w < 0 ? 'ひきわけ' : (w === i ? 'かち' : 'まけ');
+      if (!cap) continue;
+      var sp = document.createElement('span'); sp.textContent = Oshiai.MAX_TURNS + '手で ' + st.next[i] + '対' + st.next[1 - i]; elRes[i].appendChild(sp);
+    }
+    elOver.hidden = false;
+  }
+
+  /* ---- 一局を始める。先手は毎回交代（1局目は手前） ---- */
+  function start() {
+    if (busy) return;
+    st = Oshiai.newGame({ first: games % 2 });
+    games++;
+    holder = st.turn;
+    handBase = st.hand; handTurn = 0;
+    elOver.hidden = true;
+    render(st, null);
+  }
+  document.getElementById('againOver').addEventListener('click', start);
+  Array.prototype.forEach.call(document.querySelectorAll('.again'), function (b) { b.addEventListener('click', start); });
+
+  buildFrame();
+  start();
+  if (!seen) elHelpPanel.hidden = false;
+})();
+</script>
+</body>
+</html>
