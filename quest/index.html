@@ -24,6 +24,8 @@
   .big:disabled{order:1;padding:8px 0;margin-bottom:4px;font-size:14px;font-weight:400;color:var(--sub);background:transparent;border-color:transparent;cursor:default}
   .big small{display:block;font-size:13px;font-weight:400;color:var(--sub);margin-top:4px}
   .num{font-size:min(56px,12vw);font-weight:700;line-height:1.1;white-space:nowrap;font-variant-numeric:tabular-nums}
+  /* 11桁（100億以上・ボスで届く）だけ少し小さく＝320幅でも「点」まで1行で余白が残る。10桁以下は今まで通り（ui係） */
+  .num.long{font-size:min(56px,10vw)}
   .num small{font-size:18px;color:var(--sub);font-weight:400;margin-left:4px}
   .label{font-size:13px;color:var(--sub);margin:22px 0 2px}
   .line{font-size:15px;color:var(--sub);margin:8px 0}
@@ -211,6 +213,8 @@ function show(id) {
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function fmt(n) { return n.toLocaleString('ja-JP'); }
 function digits(n) { return String(n).length; }
+/* 累計の大きな数字を入れる（完走・ステージ後・アウトの3か所）。11桁以上は .long で少し小さく（ui係） */
+function setTotal(id, n) { $(id).classList.toggle('long', digits(n) >= 11); $(id).innerHTML = fmt(n) + '<small>点</small>'; }
 function mmss(ms) { var s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); }
 
 function start() {
@@ -280,7 +284,7 @@ function out(gaveUp) {
   recordRun(gaveUp ? 'giveup' : 'out');
   var cleared = run.stage > 0;
   offerBoard(cleared ? boardEntry(gaveUp ? 'giveup' : 'out') : null, 'outTitle');   /* 「もう一度」の下へ（ui係） */
-  $('outScore').innerHTML = (cleared ? fmt(run.total) : '0') + '<small>点</small>';
+  setTotal('outScore', cleared ? run.total : 0);
   $('outDigits').textContent = cleared ? digits(run.total) + '桁' + best() : '';
   $('outTime').textContent = cleared ? 'タイム ' + mmss(run.time) : '';
   run = null;
@@ -524,7 +528,7 @@ function solved(d) {
   $('endStage').textContent = st.name + '・' + st.tierName;
   $('endScore').textContent = (before ? '× ' : '') + fmt(s) + '点';
   $('endDetail').textContent = '手数 ' + d.moves + ' ／ 最短 ' + d.min + (d.moves === d.min ? ' ★' : '');
-  $('endTotal').innerHTML = fmt(run.total) + '<small>点</small>';
+  setTotal('endTotal', run.total);
   $('endDigits').innerHTML = before
     ? before + '桁 → <span class="up">' + after + '桁</span>' + (after > before ? ' ↑' : '')
     : '<span class="up">' + after + '桁</span>';
@@ -567,7 +571,7 @@ function boutEnd(d) {
   $('endStage').textContent = b.name;
   $('endScore').textContent = win ? '勝ち ×' + rate : '負け';
   $('endDetail').textContent = win && b.type === 'quest-boss' ? d.moves + '手' : '';
-  $('endTotal').innerHTML = fmt(run.total) + '<small>点</small>';
+  setTotal('endTotal', run.total);
   $('endDigits').innerHTML = win
     ? before + '桁 → <span class="up">' + after + '桁</span>' + (after > before ? ' ↑' : '')
     : after + '桁';
@@ -591,7 +595,7 @@ function onward() {
   if (run.exact) why.push('最短で解いた');
   if (isKiriban(run.total)) why.push('キリ番');
   $('charRare').innerHTML = rare ? '✨レア版<small>' + why.join('・') + '</small>' : '';
-  $('finalScore').innerHTML = fmt(run.total) + '<small>点</small>';
+  setTotal('finalScore', run.total);
   $('finalDigits').textContent = digits(run.total) + '桁' + best();
   $('finalBoss').textContent = run.boss ? 'ボス 勝ち ×' + run.boss : 'ボス 負け';
   $('finalTime').textContent = 'タイム ' + mmss(run.time);
