@@ -1,4 +1,5 @@
-// 自前エンジンで自動対局 v0.2：node tools/qa_selfplay.js <方針A> <方針B> <局数> <盤.json> [seed]
+// 自前エンジンで自動対局 v0.3（先手の最初の手番は押すだけ）：node tools/qa_selfplay.js <方針A> <方針B> <局数> <盤.json> [seed]
+// 先手の1手目は、方針が「動かせるつもりで」選んだ押し込みだけを使い、動かす指しは捨てる（v0.2 の方針定義をそのまま流用）
 // 盤は window.Oshiai.newGame が配ったものを JSON で渡す（配りの検査は別。ここでは規則は自前エンジンだけで進める）
 require('./qa_engine.js'); const Q=globalThis.QA; const fs=require('fs');
 const [a,b,n,bp,sd]=[process.argv[2],process.argv[3],+process.argv[4],process.argv[5],+process.argv[6]||12345];
@@ -6,7 +7,7 @@ const boards=JSON.parse(fs.readFileSync(bp,'utf8'));
 let seed=sd; const R=()=>{seed^=seed<<13;seed>>>=0;seed^=seed>>>17;seed^=seed<<5;seed>>>=0;return seed/4294967296;};
 const pick=a=>a[Math.floor(R()*a.length)];
 const man=(a,b)=>Math.abs((a/5|0)-(b/5|0))+Math.abs(a%5-b%5);
-function pushes(s){const out=[];for(const op of Q.legalOps(s))for(const m of Q.variants(s.hand)){const t=Q.push(s,op,m);if(t)out.push(t);}return out;}
+function pushes(s){const out=[];for(const op of Q.legalOps(s))for(const m of Q.variants(s.hand)){const t=Q.pushRaw(s,op,m);if(t){t._op=op;t._m=m;out.push(t);}}return out;}
 function cells(t){const r=Q.reachable(t,t.turn);return [...Array(25).keys()].filter(i=>r[i]);}
 function canPick(t,p){const x=Q.target(t,p);return x>=0&&Q.reach(t.cells,t.piece[p])[x];}
 // 1手の評価：拾えるなら最優先、だめなら次に狙うマスに一番近いマス（自分の宝が手持ちなら距離は据え置き4）
@@ -29,12 +30,21 @@ const POL={
      if(k[0]<best[0]||(k[0]===best[0]&&k[1]<best[1])){best=k;b=[[t,c]];}else if(k[0]===best[0]&&k[1]===best[1])b.push([t,c]);}
    return pick(b);},
 };
+// QA_FIRST=still：先手の1手目を「動かせない前提」で選ぶ（駒は現在地のまま。次に狙うマスまでの距離＝駒の今の位置から。手持ちが狙いなら4）。未指定は「動かせるつもり」
+function stillKey(t,me,name){const x=Q.target(t,me),d=x>=0?man(t.piece[me],x):4;
+  if(name==='greedy')return [0,d];
+  if(name==='blocker1')return [canPick(t,me^1)?1:0,d];
+  if(name==='blocker'){const u=Q.clone(t);u.phase='push';u.turn=me^1;let th=0;for(const v of pushes(u))if(canPick(v,me^1))th++;return [th,d];}
+  return [0,0];}
+function firstPick(s,name){const ps=pushes(s);if(name==='random')return pick(ps);let best=null,b=[];
+  for(const t of ps){const k=stillKey(t,s.turn,name);if(!best||k[0]<best[0]||(k[0]===best[0]&&k[1]<best[1])){best=k;b=[t];}else if(k[0]===best[0]&&k[1]===best[1])b.push(t);}
+  return pick(b);}
 function play(board,first,P){let s=Q.clone(board);s.turn=first;s.first=first;
-  while(!s.over){const [t,c]=P[s.turn](s);s=Q.moveTo(t,c);if(!s)throw new Error('illegal');}return s;}
+  while(!s.over){let t,c;if(process.env.QA_FIRST==='still'&&Q.pushOnly(s)){t=firstPick(s,P[s.turn].nm);c=0;}else [t,c]=P[s.turn](s);s=Q.pushOnly(s)?Q.push(s,t._op,t._m):Q.moveTo(t,c);if(!s)throw new Error('illegal');}return s;}
 function q(a,p){const b=a.slice().sort((x,y)=>x-y);return b[Math.floor(p*(b.length-1))];}
 const res={games:0,turns:[],cut:0,draw:0,firstWin:0,decided:0,firstWinCommon:0,common:0,aWin:0};
 for(let g=0;g<n;g++){const board=boards[g%boards.length];const first=g%2;
-  const seatA=(g>>1)%2; const P=[];P[seatA]=POL[a];P[seatA^1]=POL[b];
+  const seatA=(g>>1)%2; const P=[];P[seatA]=POL[a];P[seatA^1]=POL[b];P[seatA].nm=a;P[seatA^1].nm=b;
   const s=play(board,first,P);res.games++;res.turns.push(s.turns);
   const full=Math.max(...s.next)>=2; if(!full)res.cut++; else{res.common++;if(s.winner===first)res.firstWinCommon++;}
   if(s.winner===-1)res.draw++; else{res.decided++;if(s.winner===first)res.firstWin++;if(s.winner===seatA)res.aWin++;}}

@@ -1,11 +1,11 @@
-// ページ内で実行：Oshiai と QA（自前エンジン）を並走。v0.2（自分の宝→共通12・40手）
+// ページ内で実行：Oshiai と QA（自前エンジン）を並走。v0.3（自分の宝→共通12・40手・先手の最初の手番は押すだけ）
 window.QAPAR=function(seed0,ngames){
   const O=window.Oshiai,Q=window.QA;
   const mk=seed=>{let s=seed>>>0||1;return()=>{s^=s<<13;s>>>=0;s^=s>>>17;s^=s<<5;s>>>=0;return s/4294967296;};};
   const J=JSON.stringify, KEYS=['cells','hand','piece','tre','next','turn','phase','ban','turns','first','over','winner'];
   const eq=(a,b)=>{if(a===null||b===null)return a===b;for(const k of KEYS)if(J(a[k])!==J(b[k]))return k;return true;};
   const st={games:0,steps:0,pushCalls:0,moveCalls:0,ownPicks:0,wins:0,cut:0,draws:0,minLegal:99,maxLegal:0,mism:{},ex:{},endTurns:[],
-    ev:{stop12_before_own:0,win_while_opp_next0:0,win_while_opp_next1:0,stop_on_opp_tre:0,stay_pick:0,center_changed:0,cut_at40:0,cut_win:0}};
+    ev:{pushOnly_turns:0,pushOnly_first0:0,pushOnly_first1:0,pushOnly_synth:0,pushOnly_synth_samecell:0,pushOnly_stay_on_target:0,pushOnly_move_null_ok:0,second_turn_normal:0,stop12_before_own:0,win_while_opp_next0:0,win_while_opp_next1:0,stop_on_opp_tre:0,stay_pick:0,center_changed:0,cut_at40:0,cut_win:0}};
   const bad=(cat,info)=>{st.mism[cat]=(st.mism[cat]||0)+1;if(!st.ex[cat])st.ex[cat]=info;};
   if(J([O.GOAL,O.OWN,O.MAX_TURNS,O.COMMON])!==J([2,1,40,12]))bad('consts',[O.GOAL,O.OWN,O.MAX_TURNS,O.COMMON]);
   for(let g=0;g<ngames;g++){
@@ -19,10 +19,23 @@ window.QAPAR=function(seed0,ngames){
     for(let step=0;step<200&&!s.over;step++){
       st.steps++;
       for(const p of [0,1])if(O.target(s,p)!==Q.target(s,p))bad('target',{s:J(s),p,O:O.target(s,p),Q:Q.target(s,p)});
+      if(O.pushOnly(s)!==Q.pushOnly(s))bad('pushOnly',{s:J(s),O:O.pushOnly(s),Q:Q.pushOnly(s)});
+      if(s.phase==='push'&&s.turns===1)st.ev.second_turn_normal++;
       const lo=O.legalOps(s),lq=Q.legalOps(s);
       if(J(lo)!==J(lq))bad('legalOps',{s:J(s),O:lo,Q:lq});
       st.minLegal=Math.min(st.minLegal,lq.length);st.maxLegal=Math.max(st.maxLegal,lq.length);
       const masks=(st.steps%10===0)?[...Array(16).keys()]:Q.variants(s.hand);
+      if(s.turns===0&&s.phase==='push'){
+        for(const kind of [0,1,2]){const d=Q.clone(s);const p=s.turn;
+          if(kind===0){d.piece[p]=d.tre[p][0];d.piece[p^1]=d.tre[p^1][0];}
+          else if(kind===1){d.next[p]=1;d.tre[p][0]=-2;d.piece[p]=12;}
+          else{d.next[p]=1;d.tre[p][0]=-2;d.next[p^1]=1;d.tre[p^1][0]=-2;d.piece=[12,12];}
+          for(let op=0;op<8;op++)for(const m of Q.variants(d.hand)){
+            const a=O.push(d,op,m),b=Q.push(d,op,m);st.ev.pushOnly_synth++;
+            const r=eq(a,b);if(r!==true)bad('synthPush:'+(a===null?'O=null':b===null?'Q=null':r),{s:J(d),op,m,O:J(a),Q:J(b)});
+            if(a){ if(J(a.next)!==J(d.next)||a.over)bad('synthPush:picked',{s:J(d),op,m,O:J(a)});
+              for(const q of [0,1])if(a.piece[q]===Q.target(a,q)&&Q.target(a,q)>=0)st.ev.pushOnly_synth_samecell++; }}}
+      }
       const cand=[];
       for(let op=-1;op<9;op++)for(const m of masks){
         st.pushCalls++;
@@ -35,6 +48,14 @@ window.QAPAR=function(seed0,ngames){
       let t=null;
       if(R()<mode){const good=cand.filter(c=>{const x=Q.target(c,c.turn);return x>=0&&Q.reachable(c,c.turn)[x];});if(good.length)t=good[Math.floor(R()*good.length)];}
       if(!t)t=cand[Math.floor(R()*cand.length)];
+      if(Q.pushOnly(s)){ // いま押したのは押すだけの手番：独立の不変条件
+        st.ev.pushOnly_turns++; if(s.first===0)st.ev.pushOnly_first0++; else st.ev.pushOnly_first1++;
+        if(t.phase!=='push'||t.turn!==(s.turn^1)||t.turns!==1||J(t.next)!==J(s.next)||t.over||t.hand===undefined)bad('pushOnly:state',{s:J(s),t:J(t)});
+        for(const q of [0,1])if(t.piece[q]===Q.target(t,q)&&Q.target(t,q)>=0)st.ev.pushOnly_stay_on_target++;
+        let anyMove=false;for(let c=-1;c<26;c++){let a;try{a=O.moveTo(t,c);}catch(e){a='EXC';}if(a!==null)anyMove=true;}
+        if(anyMove)bad('pushOnly:moveAllowedAfter',{t:J(t)}); else st.ev.pushOnly_move_null_ok++;
+        if(O.pushOnly(t))bad('pushOnly:stillPushOnly',{t:J(t)});
+        s=t;continue;}
       s=t;
       for(const p of [0,1]){const a=J(O.reachable(s,p)),b=J(Q.reachable(s,p));if(a!==b)bad('reachable',{s:J(s),p,O:a,Q:b});}
       for(const p of [0,1])if(O.target(s,p)!==Q.target(s,p))bad('target',{s:J(s),p,O:O.target(s,p),Q:Q.target(s,p)});

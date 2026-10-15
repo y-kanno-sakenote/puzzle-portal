@@ -1,4 +1,5 @@
-// おしあい 独立規則エンジン（docs/spec.md v0.2 だけから書いた。index.html のロジック・tools/selfplay.js は読んでいない）
+// おしあい 独立規則エンジン（docs/spec.md だけから書いた。index.html のロジック・tools/selfplay.js は読んでいない）
+// v0.3：先手の最初の手番（turns=0 の押す段）は押すだけ。押したら駒はその場（押し込みで列ごと動くのみ）、拾わず、turns+1 で手番が相手の押す段へ移る
 // v0.2：宝は1人2つ（自分の色の宝 tre[p][0] → 真ん中12の共通の宝）。共通を先に拾った方の勝ち。打ち切りは合わせて40手
 (function(root){
   const N=5, GOAL=2, OWN=1, COMMON=12, MAX_TURNS=40;
@@ -23,7 +24,8 @@
   // 次に狙うマス：自分の宝の位置（-1=手持ち）→ 共通12 → -2（拾い終えた）
   function target(s,p){return s.next[p]===0?s.tre[p][0]:s.next[p]===1?COMMON:-2;}
   function legalOps(s){if(s.over||s.phase!=='push')return[];const o=[];for(let op=0;op<8;op++)if(op!==s.ban)o.push(op);return o;}
-  function push(s,op,mask){
+  // pushRaw：押し込みの機械的な部分（列ずらし・宝/駒の移動・ban）。押した後は move 段。方針が「動かせたら」を仮に評価するのにも使う
+  function pushRaw(s,op,mask){
     if(s.over||s.phase!=='push'||op===s.ban||!(op>=0&&op<8)||!variants(s.hand).includes(mask))return null;
     const t=clone(s),L=LINES[op];
     for(let k=4;k>0;k--)t.cells[L[k]]=s.cells[L[k-1]];
@@ -32,6 +34,11 @@
     t.tre=s.tre.map(a=>a.map(mv));   // 共通の宝は12（動かないマス）なので tre に持たない
     t.piece=s.piece.map(x=>{const k=L.indexOf(x);if(k<0)return x;return k===4?L[0]:L[k+1];});
     t.ban=op^1;t.phase='move';return t;}
+  // v0.3：この手番は押すだけか（一局の最初の手番＝押す段で turns=0）
+  const pushOnly=s=>!s.over&&s.phase==='push'&&s.turns===0;
+  function push(s,op,mask){
+    const t=pushRaw(s,op,mask);if(!t||!pushOnly(s))return t;
+    t.turns++;t.turn^=1;t.phase='push';return t;}   // 動かす段なし・拾わない・手番は相手の押す段へ
   function reachable(s,p){return reach(s.cells,s.piece[p]);}
   function moveTo(s,cell){
     if(s.over||s.phase!=='move')return null;const p=s.turn;
@@ -43,5 +50,5 @@
     if(t.next[p]>=GOAL){t.over=true;t.winner=p;}
     else if(t.turns>=MAX_TURNS){t.over=true;t.winner=t.next[0]>t.next[1]?0:t.next[1]>t.next[0]?1:-1;}
     if(!t.over){t.turn^=1;t.phase='push';}return t;} // 終局時は手番・段を据え置く（v0.1 で合わせた表記の約束。規則ではない）
-  root.QA={N,GOAL,OWN,COMMON,MAX_TURNS,rot,rot180,variants,isFixed,LINES,reach,dist,nbrs,clone,target,legalOps,push,reachable,moveTo};
+  root.QA={N,GOAL,OWN,COMMON,MAX_TURNS,rot,rot180,variants,isFixed,LINES,reach,dist,nbrs,clone,target,legalOps,pushRaw,pushOnly,push,reachable,moveTo};
 })(typeof window!=='undefined'?window:globalThis);

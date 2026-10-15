@@ -147,7 +147,9 @@
    宝は1人2つ：1つ目は自分の色の宝 tre[人][0]（盤のマス番号／-1=手持ちのタイルに乗っている／-2=拾った）、
    2つ目は二人共通の宝 COMMON（盤の真ん中＝動かないマスなので押し出されない）。next[人]=0 自分の宝を狙う／1 共通の宝を狙う／2 拾った
    共通の宝を先に拾った方の勝ち（2026-10-15 オーナー決定「冗長になりすぎる」への対策。旧：自分の宝①②③を先に3つ）
-   手番は「押し込む（phase 'push'）→ 自分の駒を動かす（phase 'move'）」の2段
+   手番は「押し込む（phase 'push'）→ 自分の駒を動かす（phase 'move'）」の2段。
+   ただし**先手の最初の手番は押すだけ**（駒は動かせない＝その場にとどまる。押した時点で手番が終わる）。
+   先手の有利を縮めるため（2026-10-15 オーナー了承。決着した局の先手勝率 58〜68% → 46〜50%・tools/selfplay.js）
    ===================================================================== */
 var Oshiai = (function () {
   var N = 5, NN = 25, GOAL = 2, MAX_TURNS = 40, COMMON = 12, OWN = 1;
@@ -241,6 +243,9 @@ var Oshiai = (function () {
     return s.next[who] < OWN ? s.tre[who][s.next[who]] : COMMON;
   }
 
+  /* この手番は押すだけか（先手の最初の手番＝一局の1手目） */
+  function pushOnly(s) { return !s.over && s.turns === 0; }
+
   /* 押せる口（相手がたった今押した列を、その口の反対側から押し戻す口を除く） */
   function legalOps(s) {
     if (s.over || s.phase !== 'push') return [];
@@ -251,7 +256,8 @@ var Oshiai = (function () {
 
   /* 押し込む。手持ち（向きは hand。回すのは自由）が入口のマスに入り、列が1マスずれ、
      反対の端の1枚（と乗っている宝）が次の手持ちになる。両方の駒・両方の宝が列と一緒に動く。
-     押し出された駒は入ってきた1枚の上へ回り込む。打てない手なら null */
+     押し出された駒は入ってきた1枚の上へ回り込む。打てない手なら null。
+     押すだけの手番（pushOnly）なら、駒はその場にとどまったことにして手番を終える（返る状態は相手の押す段） */
   function push(s, op, hand) {
     if (s.over || s.phase !== 'push') return null;
     var g = geometry();
@@ -277,7 +283,7 @@ var Oshiai = (function () {
         t.tre[w][j] = q === -2 ? -2 : (q === -1 ? L[0] : move(q));
       }
     }
-    return t;
+    return pushOnly(s) ? moveTo(t, t.piece[s.turn]) : t;
   }
 
   /* 人 who の駒から、両側に腕がある辺だけを渡って届くマス（真偽の配列） */
@@ -337,7 +343,7 @@ var Oshiai = (function () {
   }
 
   return {
-    N: N, GOAL: GOAL, MAX_TURNS: MAX_TURNS, START: START, COMMON: COMMON, OWN: OWN, target: target,
+    N: N, GOAL: GOAL, MAX_TURNS: MAX_TURNS, START: START, COMMON: COMMON, OWN: OWN, target: target, pushOnly: pushOnly,
     geometry: geometry, isFixed: isFixed, rotate: rotate, variants: variants, mirror: mirror,
     newGame: newGame, clone: clone, isSymmetric: isSymmetric,
     legalOps: legalOps, push: push, reachable: reachable, pathBetween: pathBetween, moveTo: moveTo
@@ -366,7 +372,8 @@ if (typeof document !== 'undefined') (function () {
     'それから自分の●を、道のつながる所へ動かす',
     'まず自分の色の宝に、止まって拾う',
     '次に真ん中の金の宝を、先に拾った方の勝ち',
-    '相手がいま押した列は、押し戻せない'
+    '相手がいま押した列は、押し戻せない',
+    '先手の1手目は押すだけ（駒は動かせない）'
   ];
 
   var elSvg = document.getElementById('svg');
@@ -571,7 +578,8 @@ if (typeof document !== 'undefined') (function () {
       if (mine) {
         txt = 'あなたの番';
         /* 動かす段は「行き先」と「とどまる」を分けて書く（塊ごとに折り返す） */
-        sub = s.phase === 'push' ? ['矢印で押し込む'] : ['行き先をタップ・', '●ならとどまる'];
+        sub = s.phase !== 'push' ? ['行き先をタップ・', '●ならとどまる']
+            : Oshiai.pushOnly(s) ? ['押し込むだけ・', '1手目は動かせない'] : ['矢印で押し込む'];
       } else if (!s.over) txt = 'あいての番';
       /* のこりは二人の合計でなく、その人自身の手数（合計の「のこり10手」は自分が10手打てるように読める）。各自5手から。打ち終えた人（0手）には出さない */
       var own = s.turn === w ? Math.ceil(left / 2) : Math.floor(left / 2);

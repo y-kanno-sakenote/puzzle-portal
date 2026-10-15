@@ -1,5 +1,5 @@
 // CDP直結の最小ヘルパ
-export async function open(url,{w=360,h=740,mobile=true,port=9341,pre=null}={}){
+export async function open(url,{w=360,h=740,mobile=true,port=+process.env.CDP_PORT||9341,pre=null}={}){
   const t=await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`,{method:'PUT'})).json();
   const ws=new WebSocket(t.webSocketDebuggerUrl); await new Promise(r=>ws.onopen=r);
   let id=0; const pend=new Map(); const logs=[]; const evh=[];
