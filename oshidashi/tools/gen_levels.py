@@ -1,24 +1,31 @@
 #!/usr/bin/env python3
 """おしだし（oshidashi）の問題生成器。Python3 標準ライブラリのみ。
 
-ランダムな盤 → 状態（盤の全タイル・手持ち・駒・直前の押し込み）で幅優先探索して
-「駒からゴールまで通路がつながる」までの最短手数を出し、条件を満たす盤だけを
-tools/levels.json に書き、../index.html の LEVELS-BEGIN〜END に埋め込む。
+規則（spec.md）: 盤の端から手持ちのタイルを押し込んで列を1マスずらす（1手＝押し込み1回）。
+盤の宝①②③はタイルに乗っていて列と一緒に動き、押し出されたら手持ちのタイルに乗る。
+押し込みの後、駒から「次の宝」まで道がつながっていれば駒はそこまで進んで拾う（続けて次も）。
+最後の宝を拾えばクリア。
 
-記法（index.html の window.Oshidashi と同じ。spec.md §記法）
+記法（index.html の window.Oshidashi と同じ）
   - 腕のビット N=1 E=2 S=4 W=8。時計回り90°は1ビット左巡回
-  - タイルは 直線(5,10) / かど(3,6,12,9) / 三叉(7,14,13,11) の3種
-  - マス番号 i = r*n + c（左上0、右へ c、下へ r）
-  - 押せる列＝奇数番目の行・列（0始まりで 1,3,5…）。偶数行かつ偶数列のマスは動かない
-  - 押し込み口の番号: 押せる行ごとに [左から, 右から]、続いて押せる列ごとに [上から, 下から]
-      5×5: 0=行1左 1=行1右 2=行3左 3=行3右 4=列1上 5=列1下 6=列3上 7=列3下
-  - 1手＝押し込み1回。直前に押し込んだ口の反対側の口（＝いま押し出された1枚が出た口）は次の1手で使えない
-  - 回せる段では押す前に手持ちを回せる（手数に数えない）。探索では「向きを決めて押す」を1手として展開し、
-    同じ形になる向き（直線の180°）は同一視する
+  - タイルは 直線(5,10) / かど(3,6,12,9) / 三叉(7,14,13,11)
+  - マス番号 i = r*n + c。押せる列＝奇数番目の行・列。偶数行かつ偶数列のマスは動かない
+  - 押し込み口 op: 押せる行ごとに [左から, 右から]、続いて押せる列ごとに [上から, 下から]。反対の口は op^1
+  - 直前に押し込んだ口の反対の口は、次の1手で使えない
+  - 局面 = (腕ごとのビット盤4枚, 手持ち（回せる段は形だけ）, 残りの宝の位置（手持ちに乗っていれば -1）, 駒, 使えない口)
+
+探索
+  - 最短: 幅優先（同じ局面はまとめる）を S 手まで持ち、その先は深さ優先で1手ずつ深める。
+    最後の1〜2手は「その列を押して次の宝とつながりうるか」の必要条件で枝を刈る（leaf_lines）
+  - 解の数・初手・押し出しの有無: 最短手数の全解を数える（analyze）
+  - 素直な順: 毎回「次の宝に一番早く届く押し込み」だけを選び続ける全分岐（greedy_reaches）
 
 使い方
   python3 tools/gen_levels.py            # 40問を作って levels.json と index.html を更新
-  python3 tools/gen_levels.py --survey   # 段ごとに最短手数の分布だけを見る（書き出さない）
+  python3 tools/gen_levels.py --survey 96   # 段ごとの通過・落ちた理由を見る（書き出さない）
+  python3 tools/gen_levels.py --embed-only  # levels.json を index.html に埋め込むだけ
+  python3 tools/gen_levels.py --check       # levels.json を今の規則で測り直す（最短・解の数・拾う手・素直な順・回転）
+  python3 tools/gen_levels.py --cache <file>  # 試行結果を貯めて、条件だけ変えた再実行を速くする
 """
 import argparse
 import json
@@ -32,6 +39,7 @@ from multiprocessing import Pool
 HERE = os.path.dirname(os.path.abspath(__file__))
 HTML = os.path.join(HERE, '..', 'index.html')
 OUT = os.path.join(HERE, 'levels.json')
+HEX = '0123456789abcdef'
 
 STRAIGHT = (5, 10)
 CORNER = (3, 6, 12, 9)
@@ -39,9 +47,7 @@ TEE = (7, 14, 13, 11)
 
 
 def rot(m, t=1):
-    """時計回りに t 回（90°ずつ）"""
-    t %= 4
-    for _ in range(t):
+    for _ in range(t % 4):
         m = ((m << 1) | (m >> 3)) & 15
     return m
 
@@ -57,39 +63,41 @@ def variants(m):
     return out
 
 
-def canon(m):
-    return min(variants(m))
+CANON = [min(variants(m)) for m in range(16)]
+VARS = [tuple(variants(m)) for m in range(16)]
 
 
 class Geo:
-    """盤の大きさごとの定数（押し込み口・ビットマスク）"""
+    """盤の大きさごとの定数"""
 
     def __init__(self, n):
         self.n = n
         self.N = n * n
-        self.lines = [k for k in range(1, n, 2)]
-        self.ops = []           # (側, 何番目の行/列)  側: 'L','R','T','B'
-        for r in self.lines:
-            self.ops.append(('L', r))
-            self.ops.append(('R', r))
-        for c in self.lines:
-            self.ops.append(('T', c))
-            self.ops.append(('B', c))
-        self.opp = []
-        for side, k in self.ops:
-            o = {'L': 'R', 'R': 'L', 'T': 'B', 'B': 'T'}[side]
-            self.opp.append(self.ops.index((o, k)))
-        self.rowfull = (1 << n) - 1
+        self.ops = []
+        for r in range(1, n, 2):
+            self.ops += [('L', r), ('R', r)]
+        for c in range(1, n, 2):
+            self.ops += [('T', c), ('B', c)]
+        self.nops = len(self.ops)
         self.full = (1 << self.N) - 1
-        self.colmask = []
-        for c in range(n):
-            m = 0
-            for r in range(n):
-                m |= 1 << (r * n + c)
-            self.colmask.append(m)
+        self.rowfull = (1 << n) - 1
+        self.colmask = [sum(1 << (r * n + c) for r in range(n)) for c in range(n)]
         self.notlast = self.full & ~self.colmask[n - 1]
+        self.notfirst = self.full & ~self.colmask[0]
         self.fixed = [i for i in range(self.N) if (i // n) % 2 == 0 and (i % n) % 2 == 0]
         self.movable = [i for i in range(self.N) if i not in self.fixed]
+        self.posmap, self.entry, self.exit, self.linemask = [], [], [], []
+        for side, k in self.ops:
+            cells = [k * n + c for c in range(n)] if side in 'LR' else [r * n + k for r in range(n)]
+            if side in 'RB':
+                cells = cells[::-1]          # 入口側から並べる
+            pm = list(range(self.N))
+            for j, i in enumerate(cells):
+                pm[i] = cells[j + 1] if j + 1 < n else -1     # -1 = 押し出される
+            self.posmap.append(tuple(pm))
+            self.entry.append(cells[0])
+            self.exit.append(cells[-1])
+            self.linemask.append(sum(1 << i for i in cells))
 
 
 GEO = {}
@@ -102,7 +110,6 @@ def geo(n):
 
 
 def to_bb(cells):
-    """タイルの並び → 腕ごとのビット盤 (N,E,S,W)"""
     b = [0, 0, 0, 0]
     for i, m in enumerate(cells):
         for a in range(4):
@@ -111,23 +118,12 @@ def to_bb(cells):
     return tuple(b)
 
 
-def from_bb(g, bb):
-    out = []
-    for i in range(g.N):
-        m = 0
-        for a in range(4):
-            if bb[a] >> i & 1:
-                m |= 1 << a
-        out.append(m)
-    return out
-
-
-def push_bb(g, bb, piece, op, h):
-    """押し込み口 op に向き h の手持ちを押し込む → (新しいビット盤, 押し出された1枚, 駒の新位置)"""
+def push_bb(g, bb, op, h):
+    """押し込み口 op に向き h の手持ちを押し込む → (新しいビット盤, 押し出された1枚)"""
     n = g.n
     side, k = g.ops[op]
-    nb = [0, 0, 0, 0]
     ej = 0
+    nb = []
     if side == 'L' or side == 'R':
         base = k * n
         rf = g.rowfull
@@ -142,14 +138,7 @@ def push_bb(g, bb, piece, op, h):
                 e = row & 1
                 new = (row >> 1) | (b << (n - 1))
             ej |= e << a
-            nb[a] = (B & ~(rf << base)) | (new << base)
-        if piece // n == k:
-            c = piece % n
-            if side == 'L':
-                c = c + 1 if c < n - 1 else 0
-            else:
-                c = c - 1 if c > 0 else n - 1
-            piece = k * n + c
+            nb.append((B & ~(rf << base)) | (new << base))
     else:
         cm = g.colmask[k]
         last = (n - 1) * n + k
@@ -164,24 +153,17 @@ def push_bb(g, bb, piece, op, h):
                 e = (col >> k) & 1
                 new = (col >> n) | (b << last)
             ej |= e << a
-            nb[a] = (B & ~cm) | new
-        if piece % n == k:
-            r = piece // n
-            if side == 'T':
-                r = r + 1 if r < n - 1 else 0
-            else:
-                r = r - 1 if r > 0 else n - 1
-            piece = r * n + k
-    return (nb[0], nb[1], nb[2], nb[3]), ej, piece
+            nb.append((B & ~cm) | new)
+    return (nb[0], nb[1], nb[2], nb[3]), ej
 
 
-def reach(g, bb, piece):
-    """駒のマスから、両側に腕がある辺だけを渡って届くマスのビット集合"""
+def flood(g, bb, start, allowed):
+    """start（ビット集合）から、allowed のマスだけを通って両側に腕がある辺で届くマス"""
     n = g.n
     Nb, Eb, Sb, Wb = bb
-    ee = Eb & (Wb >> 1) & g.notlast       # i と i+1 がつながる
-    se = Sb & (Nb >> n)                   # i と i+n がつながる
-    r = 1 << piece
+    ee = Eb & (Wb >> 1) & g.notlast & allowed & (allowed >> 1)
+    se = Sb & (Nb >> n) & allowed & (allowed >> n)
+    r = start
     while True:
         nr = r | ((r & ee) << 1) | ((r >> 1) & ee) | ((r & se) << n) | ((r >> n) & se)
         if nr == r:
@@ -189,215 +171,316 @@ def reach(g, bb, piece):
         r = nr
 
 
-def solve(n, cells, hand, piece, goal, rotatable, maxd):
-    """最短手数と解の1例 [(op, 押し込んだ向き), ...]。maxd 以内に無ければ (None, None)"""
-    return solve_from(geo(n), to_bb(cells), hand, piece, -1, goal, rotatable, maxd)
+def reach(g, bb, p):
+    return flood(g, bb, 1 << p, g.full)
 
 
-MAX_STATES = 2500000   # 局面がこれを超える盤は重すぎるので捨てる（最短手数を不確かにしないため打ち切りでなく棄却）
+def collect(g, bb, piece, tpos):
+    """押し込みの後：駒から次の宝まで道がつながっていれば拾ってそこへ進む（続けて次も）"""
+    if tpos and tpos[0] >= 0:
+        R = reach(g, bb, piece)
+        while tpos and tpos[0] >= 0 and (R >> tpos[0]) & 1:
+            piece = tpos[0]
+            tpos = tpos[1:]
+    return piece, tpos
+
+
+def step(g, st, op, h, rotatable):
+    """1手打った局面と、宝を押し出したか"""
+    bb, hand, tpos, piece, ban = st
+    cbb, ej = push_bb(g, bb, op, h)
+    pm = g.posmap[op]
+    ent = g.entry[op]
+    np_ = pm[piece]
+    if np_ < 0:
+        np_ = ent
+    out = False
+    nt = []
+    for p in tpos:
+        if p < 0:
+            nt.append(ent)
+        else:
+            q = pm[p]
+            if q < 0:
+                out = True
+            nt.append(q)
+    np_, nt = collect(g, cbb, np_, tuple(nt))
+    return (cbb, CANON[ej] if rotatable else ej, nt, np_, op ^ 1), out
+
+
+def touches(g, comp, bb, ml):
+    """comp のどこかから ml のマスへ腕が向いているか"""
+    n = g.n
+    Nb, Eb, Sb, Wb = bb
+    return bool((((comp & Eb & g.notlast) << 1) | ((comp & Wb & g.notfirst) >> 1)
+                 | ((comp & Sb) << n) | ((comp & Nb) >> n)) & ml)
+
+
+def can_link(g, st, ml):
+    """ml のマスだけが変わる押し込みで、駒と次の宝がつながりうるか（必要条件・ゆるい側に倒す）"""
+    bb, hand, tpos, piece, ban = st
+    t = tpos[0]
+    allowed = g.full & ~ml
+    if not (ml >> piece) & 1:
+        cp = flood(g, bb, 1 << piece, allowed)
+        if t >= 0 and (cp >> t) & 1:
+            return True
+        if not touches(g, cp, bb, ml):
+            return False
+    if t >= 0 and not (ml >> t) & 1:
+        ct = flood(g, bb, 1 << t, allowed)
+        if not touches(g, ct, bb, ml):
+            return False
+    return True
+
+
+def leaf_ops(g, st, rem):
+    """残り rem 手（1か2）でクリアしうる押し込み口だけを返す"""
+    ops = [op for op in range(g.nops) if op != st[4]]
+    if rem == 1:
+        ok = {}
+        out = []
+        for op in ops:
+            ml = g.linemask[op]
+            if ml not in ok:
+                ok[ml] = can_link(g, st, ml)
+            if ok[ml]:
+                out.append(op)
+        return out
+    if rem == 2:
+        masks = sorted(set(g.linemask))
+        ok = {}
+        out = []
+        for op in ops:
+            m1 = g.linemask[op]
+            good = False
+            for m2 in masks:
+                u = m1 | m2
+                if u not in ok:
+                    ok[u] = can_link(g, st, u)
+                if ok[u]:
+                    good = True
+                    break
+            if good:
+                out.append(op)
+        return out
+    return ops
+
+
+def hands(st, rotatable):
+    return VARS[st[1]] if rotatable else (st[1],)
 
 
 class Heavy(Exception):
     pass
 
 
-def solve_from(g, bb, hand, piece, ban, goal, rotatable, maxd):
-    gbit = 1 << goal
-    if reach(g, bb, piece) & gbit:
+def solve(g, start, rotatable, maxd, S, max_states=1500000, budget=None):
+    """最短手数と解の1例。幅優先で S 手まで（同じ局面はまとめる）、その先は深さ優先で1手ずつ深める。
+    maxd 手以内に無ければ (None, None)。budget（1手を打つ回数の上限）を超えたら Heavy（最短を不確かにしないため棄却）"""
+    if not start[2]:
         return 0, []
-    h0 = canon(hand) if rotatable else hand
-    start = (bb, h0, piece, ban)
+    calls = [0]
     parent = {start: None}
     frontier = [start]
-    nops = len(g.ops)
-    VAR = {m: (variants(m) if rotatable else [m]) for m in range(16)}
-    for d in range(1, maxd + 1):
+
+    def path_to(st):
+        out = []
+        while parent[st] is not None:
+            st, mv = parent[st]
+            out.append(mv)
+        return out[::-1]
+
+    for d in range(1, min(S, maxd) + 1):
         nxt = []
         for st in frontier:
-            sbb, sh, sp, sban = st
-            for op in range(nops):
-                if op == sban:
-                    continue
-                nban = g.opp[op]
-                for h in VAR[sh]:
-                    cbb, ej, cp = push_bb(g, sbb, sp, op, h)
-                    if reach(g, cbb, cp) & gbit:
-                        path = [(op, h)]
-                        cur = st
-                        while parent[cur] is not None:
-                            pst, mv = parent[cur]
-                            path.append(mv)
-                            cur = pst
-                        path.reverse()
-                        return d, path
-                    if d < maxd:
-                        key = (cbb, canon(ej) if rotatable else ej, cp, nban)
-                        if key not in parent:
-                            parent[key] = (st, (op, h))
-                            nxt.append(key)
-            if len(parent) > MAX_STATES:
+            ops = leaf_ops(g, st, 1) if d == maxd else [op for op in range(g.nops) if op != st[4]]
+            for op in ops:
+                for h in hands(st, rotatable):
+                    ch, _ = step(g, st, op, h, rotatable)
+                    if not ch[2]:
+                        return d, path_to(st) + [(op, h)]
+                    if d < maxd and ch not in parent:
+                        parent[ch] = (st, (op, h))
+                        nxt.append(ch)
+            if len(parent) > max_states:
                 raise Heavy()
         frontier = nxt
+    if maxd <= S:
+        return None, None
+
+    def dfs(st, rem):
+        ops = leaf_ops(g, st, rem)
+        if budget is not None:
+            calls[0] += len(ops)
+            if calls[0] > budget:
+                raise Heavy()
+        for op in ops:
+            for h in hands(st, rotatable):
+                ch, _ = step(g, st, op, h, rotatable)
+                if not ch[2]:
+                    return [(op, h)]
+                if rem > 1:
+                    r = dfs(ch, rem - 1)
+                    if r is not None:
+                        return [(op, h)] + r
+        return None
+
+    for D in range(S + 1, maxd + 1):
+        for st in frontier:
+            r = dfs(st, D - S)
+            if r is not None:
+                return D, path_to(st) + r
     return None, None
 
 
-def first_moves(n, cells, hand, piece, goal, rotatable, d):
-    """最短 d 手の解につながる初手（押し込み口と向き）の数。少ないほど考えどころが狭い"""
-    g = geo(n)
-    bb = to_bb(cells)
-    cnt = 0
-    for op in range(len(g.ops)):
-        for h in (variants(hand) if rotatable else [hand]):
-            cbb, ej, cp = push_bb(g, bb, piece, op, h)
-            dd, _ = solve_from(g, cbb, ej, cp, g.opp[op], goal, rotatable, d - 1)
-            if dd is not None and dd == d - 1:
-                cnt += 1
-    return cnt
-
-
-def manhattan_to_goal(g, rbits, goal):
-    n = g.n
-    gr, gc = divmod(goal, n)
-    best = 99
-    i = 0
-    while rbits:
-        if rbits & 1:
-            r, c = divmod(i, n)
-            d = abs(r - gr) + abs(c - gc)
-            if d < best:
-                best = d
-        rbits >>= 1
-        i += 1
-    return best
-
-
-def naive_solves(n, cells, hand, piece, goal, rotatable, steps, beam=400):
-    """「素直な手」で steps 手以内に届いてしまうか。
-    素直な手 = (a) 駒の乗っている列を押す手だけ、または
-               (b) 毎手「駒から届く範囲がゴールに一番近づく」手（その手番の全局面で一番の手・同点は全部残す）
-    (c) どの局面からも、その局面で一番ゴールに近づく手（同点は全部）を選び続ける全分岐（親ごと）
-    のどれかで最短手数に届くなら、その問題は素直すぎるので捨てる"""
-    g = geo(n)
-    gbit = 1 << goal
-    bb0 = to_bb(cells)
-    nops = len(g.ops)
-    VAR = {m: (variants(m) if rotatable else [m]) for m in range(16)}
-
-    def piece_line(op, p):
-        side, k = g.ops[op]
-        return (p // n == k) if side in 'LR' else (p % n == k)
-
-    # (a) 駒の列だけ
-    front = {(bb0, hand, piece, -1)}
-    for _ in range(steps):
-        nxt = set()
-        for sbb, sh, sp, ban in front:
-            for op in range(nops):
-                if op == ban or not piece_line(op, sp):
-                    continue
-                for h in VAR[sh]:
-                    cbb, ej, cp = push_bb(g, sbb, sp, op, h)
-                    if reach(g, cbb, cp) & gbit:
-                        return 'piece-line'
-                    nxt.add((cbb, ej, cp, g.opp[op]))
-        front = nxt
-        if not front:
-            break
-    # (b) 近づく手を貪る
-    front = [(bb0, hand, piece, -1)]
-    for _ in range(steps):
-        cand = []
-        best = 99
-        for sbb, sh, sp, ban in front:
-            for op in range(nops):
-                if op == ban:
-                    continue
-                for h in VAR[sh]:
-                    cbb, ej, cp = push_bb(g, sbb, sp, op, h)
-                    rb = reach(g, cbb, cp)
-                    if rb & gbit:
-                        return 'greedy'
-                    sc = manhattan_to_goal(g, rb, goal)
-                    if sc < best:
-                        best = sc
-                        cand = []
-                    if sc == best:
-                        cand.append((cbb, ej, cp, g.opp[op]))
-        seen = set()
-        front = []
-        for s in cand:
-            if s not in seen:
-                seen.add(s)
-                front.append(s)
-            if len(front) >= beam:
-                break
-    # (c) 親ごとに貪る：どの局面からも、その局面で一番ゴールに近づく手（同点は全部）を選び続ける全分岐
-    front = {(bb0, hand, piece, -1)}
-    for _ in range(steps):
-        nxt = set()
-        for sbb, sh, sp, ban in front:
-            best = 99
-            mine = []
-            for op in range(nops):
-                if op == ban:
-                    continue
-                for h in VAR[sh]:
-                    cbb, ej, cp = push_bb(g, sbb, sp, op, h)
-                    rb = reach(g, cbb, cp)
-                    if rb & gbit:
-                        return 'greedy-each'
-                    sc = manhattan_to_goal(g, rb, goal)
-                    if sc < best:
-                        best = sc
-                        mine = []
-                    if sc == best:
-                        mine.append((cbb, canon(ej) if rotatable else ej, cp, g.opp[op]))
-            nxt.update(mine)
-        front = nxt
-        if len(front) > 300000:
-            return 'greedy-each-heavy'    # 全分岐が数え切れないほど広い盤は素直とみなして捨てる（安全側）
-    return None
-
-
-def count_min_solutions(n, cells, hand, piece, goal, rotatable, m):
-    """最短 m 手の解（押し込み口と向きの列）の数。qa の数え方と同じく、途中でつながる列は数えない"""
-    g = geo(n)
-    gbit = 1 << goal
-    VAR = {x: (variants(x) if rotatable else [x]) for x in range(16)}
-    layer = {(to_bb(cells), canon(hand) if rotatable else hand, piece, -1): 1}
-    for d in range(1, m + 1):
+def analyze(g, start, rotatable, m, S):
+    """最短 m 手の全解を数える → (解の数, 最短につながる初手の数, 押し出して入れ直す解の数, 拾う手の数の最小)
+    「拾う手の数」= 解の中で宝を1個以上拾った押し込みの数（同じ手で続けて拾えば1と数える）。
+    途中でつながる列は数えない（m が最短なので起こらない）"""
+    assert m >= 2
+    Sl = min(S, m - 1)
+    # 局面 -> [押し出しなしの数, 押し出しありの数, 初手のビット集合, ここまでの拾う手の数のビット集合]
+    layer = {start: [1, 0, 0, 1]}
+    for d in range(1, Sl + 1):
         nxt = {}
-        total = 0
-        for (sbb, sh, sp, ban), cnt in layer.items():
-            for op in range(len(g.ops)):
-                if op == ban:
+        for st, (c0, c1, fm, pm) in layer.items():
+            r0 = len(st[2])
+            for op in range(g.nops):
+                if op == st[4]:
                     continue
-                for h in VAR[sh]:
-                    cbb, ej, cp = push_bb(g, sbb, sp, op, h)
-                    if reach(g, cbb, cp) & gbit:
-                        total += cnt
-                        continue
-                    if d < m:
-                        key = (cbb, canon(ej) if rotatable else ej, cp, g.opp[op])
-                        nxt[key] = nxt.get(key, 0) + cnt
-        if d == m:
-            return total
+                for h in hands(st, rotatable):
+                    ch, out = step(g, st, op, h, rotatable)
+                    v = nxt.get(ch)
+                    if v is None:
+                        v = nxt[ch] = [0, 0, 0, 0]
+                    if out:
+                        v[1] += c0 + c1
+                    else:
+                        v[0] += c0
+                        v[1] += c1
+                    v[2] |= (1 << (op * 16 + h)) if d == 1 else fm
+                    v[3] |= (pm << 1) if len(ch[2]) < r0 else pm
         layer = nxt
-    return 0
+
+    def dfs(st, rem):
+        """(押し出しなしで着く解の数, 押し出しありで着く解の数, 残りで拾う手の数のビット集合)"""
+        n0 = n1 = 0
+        em = 0
+        r0 = len(st[2])
+        for op in leaf_ops(g, st, rem):
+            for h in hands(st, rotatable):
+                ch, out = step(g, st, op, h, rotatable)
+                if rem == 1:
+                    if not ch[2]:
+                        if out:
+                            n1 += 1
+                        else:
+                            n0 += 1
+                        em |= 2          # 最後の手で拾う（1手）
+                else:
+                    a, b, sm = dfs(ch, rem - 1)
+                    if not (a or b):
+                        continue
+                    if out:
+                        n1 += a + b
+                    else:
+                        n0 += a
+                        n1 += b
+                    em |= (sm << 1) if len(ch[2]) < r0 else sm
+        return n0, n1, em
+
+    tot0 = tot1 = 0
+    fmask = 0
+    allp = 0
+    rem = m - Sl
+    for st, (c0, c1, fm, pm) in layer.items():
+        a, b, sm = dfs(st, rem)
+        if not (a or b):
+            continue
+        fmask |= fm
+        tot0 += c0 * a
+        tot1 += c1 * (a + b) + c0 * b
+        i = 0
+        while pm >> i:
+            if (pm >> i) & 1:
+                allp |= sm << i
+            i += 1
+    minpick = (allp & -allp).bit_length() - 1
+    return tot0 + tot1, bin(fmask).count('1'), tot1, minpick
+
+
+def greedy_reaches(g, st, rotatable, budget):
+    """素直な順：毎回「次の宝に一番早く届く押し込み」だけを選び続けて（同点は全部）budget 手以内に全部拾えるか"""
+    if not st[2]:
+        return True
+    if budget <= 0:
+        return False
+    r0 = len(st[2])
+    seen = {st}
+    layer = [st]
+    ends = set()
+    used = 0
+    for d in range(1, budget + 1):
+        nxt = []
+        for s in layer:
+            for op in range(g.nops):
+                if op == s[4]:
+                    continue
+                for h in hands(s, rotatable):
+                    ch, _ = step(g, s, op, h, rotatable)
+                    if len(ch[2]) < r0:
+                        ends.add(ch)
+                    elif not ends and ch not in seen:
+                        seen.add(ch)
+                        nxt.append(ch)
+        if ends:
+            used = d
+            break
+        layer = nxt
+        if len(seen) > 600000:
+            return True     # 広すぎて数え切れない盤は素直とみなして捨てる（安全側）
+    if not ends:
+        return False
+    for e in ends:
+        if greedy_reaches(g, e, rotatable, budget - used):
+            return True
+    return False
+
+
+def segments(g, start, path, rotatable):
+    """解の手順で、各宝を何手目に拾ったか → 区間ごとの手数"""
+    st = start
+    k = len(start[2])
+    got = []
+    for i, (op, h) in enumerate(path):
+        before = len(st[2])
+        st, _ = step(g, st, op, h, rotatable)
+        for _ in range(before - len(st[2])):
+            got.append(i + 1)
+    seg = []
+    prev = 0
+    for x in got:
+        seg.append(x - prev)
+        prev = x
+    assert len(seg) == k
+    return seg
 
 
 # ---- 段 ----
-# min..max = 採る最短手数の帯 / maxd = 探索の深さの上限（これより深い盤は「解けない」扱いで捨てる）
-# gather = 10本の何倍を集めてから、最短手数の大きい順（同じなら最短につながる初手の少ない順）に10本を採るか
+# k = 宝の数 / min..max = 採る最短手数 / S = 幅優先で持つ深さ（SA は全解を数えるとき）/ gather = 10本の何倍を集めてから選ぶか
+# budget = 深さ優先で調べる押し込み口の数の上限（超える盤は重すぎるので捨てる）
 TIERS = [
-    {'tier': '入門', 'n': 5, 'rot': 0, 'min': 3, 'max': 4, 'maxd': 4, 'gather': 1},
-    {'tier': '初級', 'n': 5, 'rot': 1, 'min': 3, 'max': 5, 'maxd': 5, 'gather': 3},
-    {'tier': '中級', 'n': 7, 'rot': 1, 'min': 3, 'max': 3, 'maxd': 3, 'gather': 3},
-    {'tier': '上級', 'n': 7, 'rot': 1, 'min': 4, 'max': 4, 'maxd': 4, 'gather': 2},
+    {'tier': '入門', 'n': 5, 'rot': 0, 'k': 2, 'min': 4, 'max': 5, 'S': 6, 'gather': 2},
+    {'tier': '初級', 'n': 5, 'rot': 1, 'k': 2, 'min': 4, 'max': 5, 'S': 3, 'gather': 2},
+    {'tier': '中級', 'n': 5, 'rot': 1, 'k': 3, 'min': 5, 'max': 5, 'S': 3, 'gather': 2},
+    {'tier': '上級', 'n': 5, 'rot': 1, 'k': 3, 'min': 6, 'max': 6, 'S': 3, 'SA': 4, 'gather': 1, 'budget': 2000000, 'max_tries': 600000,
+     'firsts': 10},   # 6手の解は順番の入れ替えが効くので初手が増える（5では作れない）
 ]
 PER_TIER = 10
+CAP3 = 0            # 宝3個の段で「3回に分けて拾う盤を半分以上」を目指して集め足す試行の上限（2026-10-15 0に：上級でその盤は約5.7万回に1本で、半分は現実的でない。中級は集め足さなくても5/10ある）
 MAX_FIRSTS = 5      # 最短につながる初手（押し込み口×向き）がこれより多い盤は易しすぎるので捨てる
-NSOL_RATIO = 5      # 最短の解の数が、段で採った10本の中央値のこの倍を超える盤は捨てる
+NSOL_RATIO = 5      # 最短の解の数が、段で採った10本の中央値のこの倍を超える盤は外す
 WEIGHTS = (STRAIGHT, 3), (CORNER, 4), (TEE, 3)   # 直線:かど:三叉 の出やすさ
 
 
@@ -408,55 +491,56 @@ def rand_tile(rng):
     return rng.choice(rng.choice(pool))
 
 
-def rand_board(rng, n):
-    g = geo(n)
-    cells = [rand_tile(rng) for _ in range(g.N)]
-    hand = rand_tile(rng)
-    goal = rng.choice(g.fixed)
-    # 駒は動くマスに置き、ゴールからマンハッタン距離 n//2+1 以上離す（5×5で3・7×7で4）
-    far = [i for i in g.movable
-           if abs(i // n - goal // n) + abs(i % n - goal % n) >= n // 2 + 1]
-    piece = rng.choice(far)
-    return cells, hand, piece, goal
-
-
 def try_one(args):
-    """1本作って測る（multiprocessing 用）。条件を満たせば問題の dict、満たさなければ理由の文字列"""
+    """1本作って測る。条件を満たせば (理由'ok', 問題の dict)、満たさなければ (理由, None)"""
     ti, seed = args
     t = TIERS[ti]
     rng = random.Random(seed)
-    n = t['n']
-    cells, hand, piece, goal = rand_board(rng, n)
+    n, k, rotatable = t['n'], t['k'], t['rot']
+    g = geo(n)
+    cells = [rand_tile(rng) for _ in range(g.N)]
+    hand = rand_tile(rng)
+    piece = rng.choice(g.movable)
+    tre = rng.sample([i for i in range(g.N) if i != piece], k)
+    start = (to_bb(cells), CANON[hand] if rotatable else hand, tuple(tre), piece, -1)
+    if collect(g, start[0], piece, start[2])[1] != start[2]:
+        return ('start', None)          # 最初から①とつながっている
     try:
-        d, path = solve(n, cells, hand, piece, goal, t['rot'], t['maxd'])
+        d, path = solve(g, start, rotatable, t['max'], t['S'], budget=t.get('budget'))
     except Heavy:
         return ('heavy', None)
     if d is None:
         return ('deep', None)
-    if d < t['min'] or d > t['max']:
+    if d < t['min']:
         return ('min%d' % d, None)
-    if t['rot']:
-        # 回さないと最短手数で解けないか（回せない規則で解くと長くなる、または解けない）
-        dn, _ = solve(n, cells, hand, piece, goal, 0, d)
-        needrot = dn is None
-        if not needrot and t.get('needrot', 1) == 1:
-            return ('norot', None)
-    else:
-        needrot = False
-    why = naive_solves(n, cells, hand, piece, goal, t['rot'], d)
-    if why:
-        return (why, None)
-    firsts = first_moves(n, cells, hand, piece, goal, t['rot'], d)
-    if firsts > MAX_FIRSTS:
+    needrot = 0
+    if rotatable:
+        s0 = (start[0], hand, start[2], piece, -1)
+        dn, _ = solve(g, s0, 0, d, 6)
+        if dn is not None:
+            return ('norot', None)      # 回さなくても最短で解ける
+        needrot = 1
+    if greedy_reaches(g, start, rotatable, d):
+        return ('greedy', None)         # 素直な順で最短に届く
+    nsol, firsts, nej, minpick = analyze(g, start, rotatable, d, t.get('SA', t['S']))
+    if minpick < 2:
+        return ('onepick', None)        # 最後の1手で残りの宝をまとめて拾う最短解がある
+    if firsts > t.get('firsts', MAX_FIRSTS):
         return ('firsts', None)
     return ('ok', {
-        'firsts': firsts,
-        'nsol': count_min_solutions(n, cells, hand, piece, goal, t['rot'], d),
-        'needrot': int(needrot),
-        'n': n, 'cells': ''.join('0123456789abcdef'[m] for m in cells),
-        'hand': '0123456789abcdef'[hand], 'piece': piece, 'goal': goal,
-        'rot': t['rot'], 'min': d, 'sol': [[op, h] for op, h in path], 'tier': t['tier'],
+        'n': n, 'cells': ''.join(HEX[m] for m in cells), 'hand': HEX[hand],
+        'piece': piece, 'tre': tre, 'rot': rotatable, 'min': d,
+        'seg': segments(g, start, path, rotatable),
+        'sol': [[op, h] for op, h in path],
+        'firsts': firsts, 'nsol': nsol, 'ej': nej, 'minpick': minpick, 'needrot': needrot, 'tier': t['tier'],
     })
+
+
+def overlap(a, b):
+    if a['n'] != b['n']:
+        return 0.0
+    same = sum(1 for x, y in zip(a['cells'], b['cells']) if x == y)
+    return same / len(a['cells'])
 
 
 def median(xs):
@@ -465,21 +549,22 @@ def median(xs):
     return (xs[(k - 1) // 2] + xs[k // 2]) / 2.0
 
 
-def pick(cands, t):
-    """候補から10本を採る。
-    最短手数の大きい順、同じなら最短につながる初手の少ない順（同点は集まった順＝seed 順）に並べ、
-    回さないと解けない盤を needrot_min 本以上含め、最短の解の数が採った10本の中央値の NSOL_RATIO 倍を
-    超える盤を外して、条件が落ち着くまで繰り返す。並びは易しい順（最短手数の昇順、同じなら初手・解の多い順）"""
+def pick(cands, t, strict3=True):
+    """候補から10本を採る。最短手数の大きい順、同じなら初手の少ない順（同点は seed 順）。
+    宝3個の段は「どの最短解でも3回に分けて拾う」盤を半分以上含める。
+    最短の解の数が採った10本の中央値の NSOL_RATIO 倍を超える盤は外して採り直す。
+    並びは易しい順（最短手数の昇順、同じなら初手・解の多い順）"""
     order = sorted(cands, key=lambda x: (-x['min'], x['firsts']))
     banned = set()
+    want3 = PER_TIER // 2 if t['k'] >= 3 else 0     # 宝3個の段は、どの最短解でも3回に分けて拾う盤を半分以上
     while True:
-        pool = [c for c in order if id(c) not in banned]
-        need = t.get('needrot_min', 0)
-        rot_ok = [c for c in pool if c['needrot']][:need]
-        rest = [c for c in pool if c not in rot_ok]
-        sel = rot_ok + rest[:PER_TIER - len(rot_ok)]
+        pool_ = [c for c in order if id(c) not in banned]
+        three = [c for c in pool_ if c['minpick'] >= 3][:want3]
+        if strict3 and len(three) < want3:
+            return None                 # 3回に分けて拾う盤が半分に足りない → もう少し集める
+        sel = three + [c for c in pool_ if c not in three][:PER_TIER - len(three)]
         if len(sel) < PER_TIER:
-            raise SystemExit('%s: 候補が足りない' % t['tier'])
+            return None                 # 候補が足りない（呼び出し側がもう1回り集める）
         med = median([c['nsol'] for c in sel])
         over = [c for c in sel if c['nsol'] > NSOL_RATIO * med]
         if not over:
@@ -490,89 +575,200 @@ def pick(cands, t):
     return sel
 
 
-def overlap(a, b):
-    if a['n'] != b['n']:
-        return 0.0
-    same = sum(1 for x, y in zip(a['cells'], b['cells']) if x == y)
-    return same / len(a['cells'])
+def seeds(seed, ti, k0, cnt):
+    return [(ti, seed * 1000003 + ti * 7919 + k0 + j) for j in range(cnt)]
 
 
-def survey(pool, count, seed):
+def survey(pool, count, seed, only):
     for ti, t in enumerate(TIERS):
+        if only is not None and ti != only:
+            continue
         t0 = time.time()
-        res = pool.map(try_one, [(ti, seed * 1000003 + ti * 7919 + k) for k in range(count)])
+        res = pool.map(try_one, seeds(seed, ti, 0, count), chunksize=1)
         hist = {}
-        for why, _ in res:
+        for why, lv in res:
             hist[why] = hist.get(why, 0) + 1
-        print('%s %dx%d rot=%d  %s  %.1fs' % (t['tier'], t['n'], t['n'], t['rot'],
-              json.dumps(hist, ensure_ascii=False, sort_keys=True), time.time() - t0))
+        oks = [lv for why, lv in res if lv]
+        extra = ''
+        if oks:
+            extra = ' 押し出しを含む最短解がある %d/%d' % (sum(1 for x in oks if x['ej']), len(oks))
+        print('%s %dx%d rot=%d 宝%d  %s%s  %.1fs' % (t['tier'], t['n'], t['n'], t['rot'], t['k'],
+              json.dumps(hist, ensure_ascii=False, sort_keys=True), extra, time.time() - t0))
         sys.stdout.flush()
 
 
-def generate(pool, seed, sim_max):
+def run_batch(pool, args, cache):
+    """try_one を並列で回す。cache（seed→結果）にあれば使い回す（同じ seed なら結果は同じ）"""
+    def stale(r):
+        return r[1] is not None and 'minpick' not in r[1]     # 拾う手の数を測る前の結果
+    key = lambda a: '%d:%d' % a                     # 段:seed（seed は段をまたいで重なりうる）
+    todo = [a for a in args if key(a) not in cache or stale(cache[key(a)])]
+    for a, r in zip(todo, pool.map(try_one, todo, chunksize=1)):
+        cache[key(a)] = r
+    return [cache[key(a)] for a in args]
+
+
+def save_cache(path, cache):
+    """試行結果を書き出す（途中で落ちても再開できるように、一時ファイルに書いてから置き換える）"""
+    if not path:
+        return
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(cache, f, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def generate(pool, seed, sim_max, cache, only=None, keep=(), cache_path=None):
+    """only = 作り直す段の番号の集合（None なら全部）。作り直さない段は keep（今の levels.json）から引き継ぐ"""
     levels = []
     report = []
     for ti, t in enumerate(TIERS):
+        if only is not None and ti not in only:
+            old = [lv for lv in keep if lv['tier'] == t['tier']]
+            levels += old
+            report.append('%s: 作り直さず引き継ぎ %d本' % (t['tier'], len(old)))
+            print(report[-1])
+            continue
         t0 = time.time()
         got = []
         tried = 0
         k = 0
-        batch = 48
+        batch = 240
         want = PER_TIER * t['gather']
-        while len(got) < want:
-            args = [(ti, seed * 1000003 + ti * 7919 + k + j) for j in range(batch)]
-            k += batch
-            for why, lv in pool.map(try_one, args):
-                tried += 1
-                if lv is None or len(got) >= want:
-                    continue
-                if any(overlap(lv, o) > sim_max for o in got + levels):
-                    continue
-                got.append(lv)
-            if tried > 200000:
-                raise SystemExit('%s: %d 本試して %d 本しか作れない' % (t['tier'], tried, len(got)))
+        sel = None
+        while sel is None:
+            while len(got) < want:
+                for why, lv in run_batch(pool, seeds(seed, ti, k, batch), cache):
+                    tried += 1
+                    if lv is None or len(got) >= want:
+                        continue
+                    if any(overlap(lv, o) > sim_max for o in got + levels):
+                        continue
+                    got.append(lv)
+                k += batch
+                print('  %s 進み具合: 試行%d 条件を満たした%d本（3回に分けて拾う%d本）%.0fs' % (
+                    t['tier'], tried, len(got), sum(1 for x in got if x['minpick'] >= 3), time.time() - t0))
+                sys.stdout.flush()
+                if (k // batch) % 5 == 0:
+                    save_cache(cache_path, cache)
+                if tried > t.get('max_tries', 100000):
+                    raise SystemExit('%s: %d 本試して %d 本しか作れない' % (t['tier'], tried, len(got)))
+            # 3回に分けて拾う盤は「できれば半分以上」：CAP3 試行までは集め足し、それでも足りなければあるだけ
+            sel = pick(got, t, strict3=tried < CAP3)
+            want += PER_TIER // 2           # 外れ値を外して足りなければ、もう少し集める
         passed = len(got)
-        got = pick(got, t)
-        levels += got
-        report.append('%s: 条件を満たした%d本/%d試行（%.1f%%）から%d本 最短%d〜%d %.1fs' % (
-            t['tier'], passed, tried, 100.0 * passed / tried, len(got),
-            got[0]['min'], got[-1]['min'], time.time() - t0))
+        levels += sel
+        report.append('%s: 条件を満たした%d本/%d試行（%.1f%%）から%d本 最短%d〜%d 押し出しを含む最短解あり%d本 %.0fs' % (
+            t['tier'], passed, tried, 100.0 * passed / tried, len(sel),
+            sel[0]['min'], sel[-1]['min'], sum(1 for x in sel if x['ej']), time.time() - t0))
         print(report[-1])
         sys.stdout.flush()
     return levels, report
+
+
+def check_one(lv):
+    """levels.json の1問を今の規則で測り直す → 食い違いの一覧（空なら合格）"""
+    t = [x for x in TIERS if x['tier'] == lv['tier']][0]
+    rotatable = lv['rot']
+    g = geo(lv['n'])
+    cells = [HEX.index(ch) for ch in lv['cells']]
+    hand = HEX.index(lv['hand'])
+    start = (to_bb(cells), CANON[hand] if rotatable else hand, tuple(lv['tre']), lv['piece'], -1)
+    bad = []
+    if collect(g, start[0], lv['piece'], start[2])[1] != start[2]:
+        bad.append('最初から①とつながる')
+    d, _ = solve(g, start, rotatable, lv['min'], t['S'])
+    if d != lv['min']:
+        bad.append('最短 %s' % d)
+    if len(lv['sol']) != lv['min'] or segments(g, start, [tuple(x) for x in lv['sol']], rotatable) != lv['seg']:
+        bad.append('解の手順・区間')
+    nsol, firsts, nej, minpick = analyze(g, start, rotatable, lv['min'], t.get('SA', t['S']))
+    if [nsol, firsts, nej, minpick] != [lv['nsol'], lv['firsts'], lv['ej'], lv.get('minpick')]:
+        bad.append('解の数など %s' % [nsol, firsts, nej, minpick])
+    if minpick < 2:
+        bad.append('最後の1手でまとめて拾う解がある')
+    if firsts > t.get('firsts', MAX_FIRSTS):
+        bad.append('初手が多い')
+    if greedy_reaches(g, start, rotatable, lv['min']):
+        bad.append('素直な順で最短に届く')
+    if rotatable and solve(g, (start[0], hand, start[2], lv['piece'], -1), 0, lv['min'], 6)[0] is not None:
+        bad.append('回さずに最短で解ける')
+    return bad
+
+
+def check(pool, levels):
+    res = pool.map(check_one, levels, chunksize=1)
+    ng = 0
+    for i, (lv, bad) in enumerate(zip(levels, res)):
+        if bad:
+            ng += 1
+            print('#%d %s %s' % (i + 1, lv['tier'], ' / '.join(bad)))
+    for t in TIERS:
+        xs = [lv for lv in levels if lv['tier'] == t['tier']]
+        if xs:
+            med = median([x['nsol'] for x in xs])
+            over = [x for x in xs if x['nsol'] > NSOL_RATIO * med]
+            if over:
+                ng += 1
+                print('%s: 解の数が中央値の%d倍を超える問題 %d' % (t['tier'], NSOL_RATIO, len(over)))
+    print('検査 %d 問：%s' % (len(levels), '全部合格' if not ng else '不合格 %d' % ng))
+    return ng
 
 
 def embed(levels):
     with open(HTML, encoding='utf-8') as f:
         src = f.read()
     body = ',\n'.join('  ' + json.dumps(lv, ensure_ascii=False, separators=(',', ':')) for lv in levels)
-    new = re.sub(r'(/\* LEVELS-BEGIN[^\n]*\n)var LEVELS = \[.*?\];\n(/\* LEVELS-END \*/)',
-                 lambda m: m.group(1) + 'var LEVELS = [\n' + body + '\n];\n' + m.group(2),
-                 src, count=1, flags=re.S)
-    if new == src and 'LEVELS-BEGIN' not in src:
-        raise SystemExit('index.html に LEVELS-BEGIN が無い')
+    new, cnt = re.subn(r'(/\* LEVELS-BEGIN[^\n]*\n)var LEVELS = \[.*?\];\n(/\* LEVELS-END \*/)',
+                       lambda m: m.group(1) + 'var LEVELS = [\n' + body + '\n];\n' + m.group(2),
+                       src, count=1, flags=re.S)
+    if cnt != 1:
+        raise SystemExit('index.html に LEVELS-BEGIN〜END が無い')
     with open(HTML, 'w', encoding='utf-8') as f:
         f.write(new)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--seed', type=int, default=20261014)
+    ap.add_argument('--seed', type=int, default=20261015)
     ap.add_argument('--survey', type=int, default=0, help='段ごとに N 本測るだけ')
+    ap.add_argument('--tier', type=int, default=None, help='--survey で測る段（0始まり）')
     ap.add_argument('--sim', type=float, default=0.5, help='同じ大きさの盤で同じタイルの割合の上限')
     ap.add_argument('--no-embed', action='store_true')
-    ap.add_argument('--embed-only', action='store_true', help='levels.json を index.html に埋め込むだけ')
+    ap.add_argument('--embed-only', action='store_true')
+    ap.add_argument('--check', action='store_true', help='levels.json を今の規則で測り直す（書き換えない）')
+    ap.add_argument('--cache', default=None, help='試した結果を貯めて再実行で使い回す JSON（任意）')
+    ap.add_argument('--only', default=None, help='作り直す段（名前か0始まりの番号・カンマ区切り）。ほかの段は今の levels.json から引き継ぐ')
     a = ap.parse_args()
     if a.embed_only:
         with open(OUT, encoding='utf-8') as f:
             embed(json.load(f)['levels'])
         return
+    if a.check:
+        with open(OUT, encoding='utf-8') as f:
+            levels = json.load(f)['levels']
+        with Pool() as pool:
+            sys.exit(1 if check(pool, levels) else 0)
     with Pool() as pool:
         if a.survey:
-            survey(pool, a.survey, a.seed)
+            survey(pool, a.survey, a.seed, a.tier)
             return
+        cache = {}
+        if a.cache and os.path.exists(a.cache):
+            with open(a.cache, encoding='utf-8') as f:
+                cache = json.load(f)
         t0 = time.time()
-        levels, report = generate(pool, a.seed, a.sim)
+        try:
+            only = None
+            keep = []
+            if a.only is not None:
+                names = [t['tier'] for t in TIERS]
+                only = set(names.index(x) if x in names else int(x) for x in a.only.split(','))
+                with open(OUT, encoding='utf-8') as f:
+                    keep = json.load(f)['levels']
+            levels, report = generate(pool, a.seed, a.sim, cache, only, keep, a.cache)
+        finally:
+            save_cache(a.cache, cache)
     total = time.time() - t0
     with open(OUT, 'w', encoding='utf-8') as f:
         json.dump({'seed': a.seed, 'seconds': round(total, 1), 'report': report, 'levels': levels},

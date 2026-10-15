@@ -33,6 +33,7 @@
   #svg{display:block;width:100%;height:auto;touch-action:manipulation;
        -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
   .slide{transition:transform .16s ease-out}
+  .walk{transition:transform .13s linear}   /* 駒が宝まで進む1マス。0.08秒では2〜3マスの道が一瞬で終わり目で追えない */
   .arrow{cursor:pointer}
   .arrow.ban{cursor:default}
 
@@ -67,7 +68,7 @@
   .tier{margin-bottom:10px}
   .tierName{font-size:13px;color:var(--sub);padding:2px 2px 4px}
   .tierRow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
-  .lv{padding:0;height:40px;font-size:14px;border-radius:7px;
+  .lv{padding:0;height:44px;font-size:14px;border-radius:7px;   /* 押せる高さ44px（にげこみと同じ） */
       display:flex;align-items:center;justify-content:center}
   .lv.cur{border-color:var(--ink);font-weight:700}
 </style>
@@ -80,13 +81,14 @@
     <div id="counts">手数 <b id="moves">0</b> ／ 最短 <b id="best">3</b></div>
   </header>
 
-  <!-- 箱の流儀：1行1か条・句点なし・目的を先頭。各行21字以内（幅360pxで折り返さない） -->
+  <!-- 箱の流儀：1行1か条・句点なし・目的を先頭。各行21字以内（幅360pxで折り返さない）
+       目的と「つながると拾いに行く」を1行にまとめて5行に。宝が2個の段もあるので「①②③」でなく「番号の順」 -->
   <div id="rules">
-    <div>●から◎まで道をつなぐ</div>
+    <div>道をつなぎ、●に宝を番号の順に拾わせる</div>
     <div>矢印を押すと手持ちが入り、列が1マスずれる</div>
-    <div>押し出された1枚が次の手持ち</div>
-    <div>1枚が出た側の矢印は、次の1手だけ休み</div>
+    <div>押し出された1枚が次の手持ち（宝も乗る）</div>
     <div>●は列ごと動き、端から出たら反対の端へ</div>
+    <div>1枚が出た側の矢印は、次の1手だけ休み</div>
   </div>
 
   <div id="stage">
@@ -119,51 +121,52 @@
 
    腕のビット N=1 E=2 S=4 W=8（16進1桁）。時計回り90°は1ビット左巡回
    マス番号 i = r*n + c。押せる列＝奇数番目（0始まりで 1,3,5…）の行・列
-   押し込み口の番号: 押せる行ごとに [左から, 右から]、続いて押せる列ごとに [上から, 下から]
+   押し込み口の番号: 押せる行ごとに [左から, 右から]、続いて押せる列ごとに [上から, 下から]。反対の口は op^1
+   宝 tre[j]: 盤のマス番号／-1=手持ちのタイルに乗っている／-2=拾った。next=次に拾う宝の番号（0始まり）
    ===================================================================== */
 
 /* LEVELS-BEGIN  tools/gen_levels.py の出力をそのまま貼る。手で書き換えない */
 var LEVELS = [
-  {"firsts":4,"nsol":10,"needrot":0,"n":5,"cells":"5dc7b67ceb639ee7d5dc6a6ea","hand":"e","piece":15,"goal":4,"rot":0,"min":3,"sol":[[1,14],[2,6],[5,12]],"tier":"入門"},
-  {"firsts":4,"nsol":8,"needrot":0,"n":5,"cells":"eab7c6acd53c55caa359db5d3","hand":"a","piece":9,"goal":24,"rot":0,"min":3,"sol":[[1,10],[2,6],[7,9]],"tier":"入門"},
-  {"firsts":3,"nsol":3,"needrot":0,"n":5,"cells":"cbcee5666ad6e7a57a55a5997","hand":"a","piece":13,"goal":20,"rot":0,"min":3,"sol":[[5,10],[6,11],[3,9]],"tier":"入門"},
-  {"firsts":1,"nsol":6,"needrot":0,"n":5,"cells":"6a5eb3933ca5cbbcc9c79b556","hand":"e","piece":6,"goal":14,"rot":0,"min":3,"sol":[[1,14],[2,3],[1,7]],"tier":"入門"},
-  {"firsts":1,"nsol":4,"needrot":0,"n":5,"cells":"d375adca5c9b59ecb539bc997","hand":"b","piece":18,"goal":20,"rot":0,"min":3,"sol":[[2,11],[0,9],[2,12]],"tier":"入門"},
-  {"firsts":1,"nsol":1,"needrot":0,"n":5,"cells":"cb55cc9ac7a6777cea35ce3a6","hand":"6","piece":15,"goal":2,"rot":0,"min":3,"sol":[[4,6],[0,14],[3,7]],"tier":"入門"},
-  {"firsts":3,"nsol":7,"needrot":0,"n":5,"cells":"56beea95a7a99aa379c96edcd","hand":"c","piece":11,"goal":24,"rot":0,"min":4,"sol":[[2,12],[4,9],[3,14],[3,12]],"tier":"入門"},
-  {"firsts":3,"nsol":7,"needrot":0,"n":5,"cells":"c5dd53973eaaa6eb9ca5aeb9b","hand":"3","piece":13,"goal":0,"rot":0,"min":4,"sol":[[0,3],[7,14],[0,13],[0,3]],"tier":"入門"},
-  {"firsts":2,"nsol":2,"needrot":0,"n":5,"cells":"ce57399a55d5ea9cecca633be","hand":"5","piece":3,"goal":20,"rot":0,"min":4,"sol":[[4,5],[4,3],[7,14],[4,7]],"tier":"入門"},
-  {"firsts":2,"nsol":2,"needrot":0,"n":5,"cells":"55a655556aa75aabdccac55a5","hand":"7","piece":18,"goal":4,"rot":0,"min":4,"sol":[[3,7],[1,11],[4,5],[2,5]],"tier":"入門"},
-  {"firsts":1,"nsol":8,"needrot":1,"n":5,"cells":"76bac56a66a3b5da65ba5ccc5","hand":"9","piece":13,"goal":22,"rot":1,"min":3,"sol":[[5,3],[7,3],[3,5]],"tier":"初級"},
-  {"firsts":1,"nsol":4,"needrot":1,"n":5,"cells":"57d7b6736c5a93a5abbdaae9e","hand":"5","piece":16,"goal":4,"rot":1,"min":3,"sol":[[6,5],[6,6],[2,7]],"tier":"初級"},
-  {"firsts":1,"nsol":4,"needrot":1,"n":5,"cells":"cd567756a39ad335cb3ec63a3","hand":"5","piece":19,"goal":4,"rot":1,"min":3,"sol":[[1,5],[1,13],[6,5]],"tier":"初級"},
-  {"firsts":1,"nsol":4,"needrot":1,"n":5,"cells":"653c559caa96b763c5a535c7a","hand":"c","piece":5,"goal":14,"rot":1,"min":3,"sol":[[3,9],[1,12],[7,5]],"tier":"初級"},
-  {"firsts":1,"nsol":4,"needrot":1,"n":5,"cells":"775acdda69db6c359e65eaac9","hand":"3","piece":15,"goal":14,"rot":1,"min":3,"sol":[[6,6],[4,3],[1,5]],"tier":"初級"},
-  {"firsts":1,"nsol":4,"needrot":1,"n":5,"cells":"e655753d3d65399e555676ddc","hand":"6","piece":16,"goal":4,"rot":1,"min":3,"sol":[[3,3],[7,7],[3,10]],"tier":"初級"},
-  {"firsts":1,"nsol":2,"needrot":1,"n":5,"cells":"a9957aae5d7a3eee999a6abe6","hand":"6","piece":19,"goal":0,"rot":1,"min":3,"sol":[[0,6],[4,14],[2,5]],"tier":"初級"},
-  {"firsts":1,"nsol":2,"needrot":1,"n":5,"cells":"ea599c57a5566a6b357ae9ce3","hand":"5","piece":5,"goal":14,"rot":1,"min":3,"sol":[[3,10],[3,14],[3,9]],"tier":"初級"},
-  {"firsts":1,"nsol":1,"needrot":1,"n":5,"cells":"c6dbec575b5dda7e973aacc59","hand":"5","piece":23,"goal":0,"rot":1,"min":3,"sol":[[6,10],[1,10],[1,9]],"tier":"初級"},
-  {"firsts":4,"nsol":8,"needrot":1,"n":5,"cells":"ba5ed3567596cea93657533c7","hand":"3","piece":19,"goal":10,"rot":1,"min":4,"sol":[[4,3],[0,12],[2,10],[0,7]],"tier":"初級"},
-  {"firsts":2,"nsol":16,"needrot":1,"n":7,"cells":"5ab3966c5ee53d3ae9ace3c5e9a6a7ddea5339ea359ca9b95","hand":"7","piece":17,"goal":34,"rot":1,"min":3,"sol":[[3,7],[3,12],[8,3]],"tier":"中級"},
-  {"firsts":1,"nsol":8,"needrot":1,"n":7,"cells":"5553e3dc63b9b5ce6dc75db5a9aea9337ab5b5aa73dae93c5","hand":"c","piece":9,"goal":28,"rot":1,"min":3,"sol":[[2,6],[2,7],[9,5]],"tier":"中級"},
-  {"firsts":1,"nsol":8,"needrot":1,"n":7,"cells":"5a6333975956ccaca5ea7aaecd53bd75565e9bace5acb3a35","hand":"c","piece":13,"goal":28,"rot":1,"min":3,"sol":[[2,6],[2,3],[10,5]],"tier":"中級"},
-  {"firsts":1,"nsol":8,"needrot":1,"n":7,"cells":"999d66acd95cc95eaab3b5c535edaa637639e337656dd77c7","hand":"3","piece":38,"goal":4,"rot":1,"min":3,"sol":[[8,3],[0,7],[8,6]],"tier":"中級"},
-  {"firsts":1,"nsol":8,"needrot":1,"n":7,"cells":"9a36aa6b353adc59bc3c3acaaad3b575e5a35adc66a5e5baa","hand":"6","piece":3,"goal":34,"rot":1,"min":3,"sol":[[5,3],[5,3],[11,5]],"tier":"中級"},
-  {"firsts":1,"nsol":4,"needrot":1,"n":7,"cells":"a3ecd3b3579a637d36e53acec7b33353ada9b7bba6a3ae577","hand":"3","piece":39,"goal":0,"rot":1,"min":3,"sol":[[0,12],[0,6],[7,3]],"tier":"中級"},
-  {"firsts":1,"nsol":4,"needrot":1,"n":7,"cells":"e5daace557937bcaaabcb65bc653dc96da5d6bb566c3d359d","hand":"9","piece":38,"goal":0,"rot":1,"min":3,"sol":[[8,9],[8,6],[6,14]],"tier":"中級"},
-  {"firsts":1,"nsol":2,"needrot":1,"n":7,"cells":"ca9eb5ab3a397c5ac9ba5a6a395ad369a3c63e96ad5667d55","hand":"9","piece":7,"goal":34,"rot":1,"min":3,"sol":[[3,6],[1,5],[3,13]],"tier":"中級"},
-  {"firsts":1,"nsol":2,"needrot":1,"n":7,"cells":"b5c9bea9db9cb63959ce5633a7a5e36c97c3c5a66565aa657","hand":"6","piece":12,"goal":28,"rot":1,"min":3,"sol":[[6,6],[6,5],[8,6]],"tier":"中級"},
-  {"firsts":1,"nsol":1,"needrot":1,"n":7,"cells":"a5d9b3a6ab59aa55375aacb39cdb73cc67636ce97ae9b3356","hand":"c","piece":1,"goal":32,"rot":1,"min":3,"sol":[[9,6],[9,9],[7,10]],"tier":"中級"},
-  {"firsts":3,"nsol":36,"needrot":1,"n":7,"cells":"966a66a3e535a753333736a5b95acc3d35daaa3cac55a3b35","hand":"a","piece":9,"goal":34,"rot":1,"min":4,"sol":[[0,5],[3,14],[3,12],[8,5]],"tier":"上級"},
-  {"firsts":3,"nsol":32,"needrot":1,"n":7,"cells":"a66c55da6b693aa67957ecca5567c5d933e553aba736a37ae","hand":"d","piece":9,"goal":46,"rot":1,"min":4,"sol":[[11,14],[0,5],[3,5],[11,9]],"tier":"上級"},
-  {"firsts":2,"nsol":64,"needrot":1,"n":7,"cells":"63a6da5c99a36c957755d5d7693366eaa36a6ea36c37dcd93","hand":"6","piece":21,"goal":46,"rot":1,"min":4,"sol":[[7,3],[7,3],[2,3],[9,3]],"tier":"上級"},
-  {"firsts":2,"nsol":16,"needrot":1,"n":7,"cells":"acb9eaad3663363b6e5c35695ad3ba5cc63cc9d656da5699c","hand":"d","piece":8,"goal":32,"rot":1,"min":4,"sol":[[7,14],[4,6],[7,3],[4,3]],"tier":"上級"},
-  {"firsts":2,"nsol":16,"needrot":1,"n":7,"cells":"aeb96dabbda75537aaca6939ccd5d67dad56ca5d559eac9e5","hand":"b","piece":7,"goal":48,"rot":1,"min":4,"sol":[[3,7],[6,3],[3,14],[3,12]],"tier":"上級"},
-  {"firsts":2,"nsol":12,"needrot":1,"n":7,"cells":"da9695a7cdd99c5cb573d6dd5b336ab93a59d76a67ed39375","hand":"5","piece":19,"goal":42,"rot":1,"min":4,"sol":[[10,5],[2,14],[7,9],[2,10]],"tier":"上級"},
-  {"firsts":2,"nsol":5,"needrot":1,"n":7,"cells":"abdc39cc5bd6a5e59aac39a6d63b555c76ac569b5a556ce6a","hand":"9","piece":21,"goal":48,"rot":1,"min":4,"sol":[[9,6],[9,3],[11,14],[3,12]],"tier":"上級"},
-  {"firsts":1,"nsol":6,"needrot":1,"n":7,"cells":"79533999bb6ddc5bbb66bba5ce56a35cc6ac7d5d9c9a35659","hand":"5","piece":27,"goal":42,"rot":1,"min":4,"sol":[[4,10],[2,3],[4,6],[9,9]],"tier":"上級"},
-  {"firsts":1,"nsol":4,"needrot":1,"n":7,"cells":"d3b6a9a5ac3e59d76de7c5a5ea3aa779a6c6e9dca9caa5a53","hand":"c","piece":41,"goal":0,"rot":1,"min":4,"sol":[[2,12],[4,5],[2,3],[4,3]],"tier":"上級"},
-  {"firsts":1,"nsol":4,"needrot":1,"n":7,"cells":"39a6c595abca79b6a63757b65ebe9aebaeeb755c7d65ca353","hand":"9","piece":40,"goal":0,"rot":1,"min":4,"sol":[[0,12],[0,6],[6,14],[2,5]],"tier":"上級"}
+  {"n":5,"cells":"a3b5b97a93abecae9b5b975b3","hand":"3","piece":3,"tre":[14,24],"rot":0,"min":4,"seg":[3,1],"sol":[[0,3],[0,3],[6,9],[2,11]],"firsts":1,"nsol":1,"ej":0,"minpick":2,"needrot":0,"tier":"入門"},
+  {"n":5,"cells":"5b93daeec636e63dcae33a655","hand":"3","piece":23,"tre":[12,2],"rot":0,"min":4,"seg":[2,2],"sol":[[1,3],[7,10],[7,3],[4,6]],"firsts":1,"nsol":1,"ej":0,"minpick":2,"needrot":0,"tier":"入門"},
+  {"n":5,"cells":"67997a559bea56e9dacbad795","hand":"c","piece":18,"tre":[10,2],"rot":0,"min":4,"seg":[3,1],"sol":[[4,12],[2,13],[2,11],[5,12]],"firsts":1,"nsol":1,"ej":0,"minpick":2,"needrot":0,"tier":"入門"},
+  {"n":5,"cells":"3c9a35caa9c35e5cda353a59a","hand":"d","piece":21,"tre":[3,24],"rot":0,"min":5,"seg":[4,1],"sol":[[5,13],[6,12],[6,9],[6,3],[6,14]],"firsts":3,"nsol":6,"ej":2,"minpick":2,"needrot":0,"tier":"入門"},
+  {"n":5,"cells":"5ca95b5a39376e3db73c3c935","hand":"a","piece":21,"tre":[12,14],"rot":0,"min":5,"seg":[4,1],"sol":[[2,10],[1,12],[2,11],[5,3],[7,12]],"firsts":3,"nsol":4,"ej":0,"minpick":2,"needrot":0,"tier":"入門"},
+  {"n":5,"cells":"cb9966ca67a7abb6cc655e55c","hand":"e","piece":19,"tre":[3,0],"rot":0,"min":5,"seg":[4,1],"sol":[[0,14],[0,7],[7,6],[2,9],[2,5]],"firsts":3,"nsol":3,"ej":2,"minpick":2,"needrot":0,"tier":"入門"},
+  {"n":5,"cells":"a999a6ce5c6ecd536b339cd7b","hand":"d","piece":8,"tre":[4,2],"rot":0,"min":5,"seg":[4,1],"sol":[[3,13],[3,3],[6,6],[5,7],[5,9]],"firsts":2,"nsol":3,"ej":0,"minpick":2,"needrot":0,"tier":"入門"},
+  {"n":5,"cells":"e5c6b39366ecac55ca9aaa35a","hand":"c","piece":8,"tre":[24,2],"rot":0,"min":5,"seg":[4,1],"sol":[[3,12],[7,5],[1,6],[7,3],[0,6]],"firsts":2,"nsol":2,"ej":0,"minpick":2,"needrot":0,"tier":"入門"},
+  {"n":5,"cells":"ad5a5edcca5aac566eea3d55a","hand":"a","piece":9,"tre":[12,14],"rot":0,"min":5,"seg":[4,1],"sol":[[0,10],[7,10],[0,10],[6,12],[0,10]],"firsts":2,"nsol":2,"ej":0,"minpick":2,"needrot":0,"tier":"入門"},
+  {"n":5,"cells":"ce9367965b3a35339933e63cc","hand":"3","piece":9,"tre":[12,20],"rot":0,"min":5,"seg":[3,2],"sol":[[6,3],[4,12],[0,6],[4,11],[4,9]],"firsts":1,"nsol":1,"ej":0,"minpick":2,"needrot":0,"tier":"入門"},
+  {"n":5,"cells":"339ab5ec55dade7c9676d9a73","hand":"3","piece":3,"tre":[8,0],"rot":1,"min":4,"seg":[3,1],"sol":[[3,9],[0,3],[6,5],[4,14]],"firsts":2,"nsol":32,"ej":0,"minpick":2,"needrot":1,"tier":"初級"},
+  {"n":5,"cells":"a7367a5c53e6eaaada7563aaa","hand":"a","piece":1,"tre":[15,2],"rot":1,"min":4,"seg":[3,1],"sol":[[3,5],[7,10],[5,3],[6,14]],"firsts":2,"nsol":12,"ej":12,"minpick":2,"needrot":1,"tier":"初級"},
+  {"n":5,"cells":"5ddaa9d9a76caa9cd6aa365aa","hand":"5","piece":11,"tre":[23,24],"rot":1,"min":4,"seg":[3,1],"sol":[[4,5],[3,12],[7,3],[3,5]],"firsts":2,"nsol":8,"ej":0,"minpick":2,"needrot":1,"tier":"初級"},
+  {"n":5,"cells":"a5bbbbaae5d6ca553c69aaea3","hand":"5","piece":19,"tre":[22,4],"rot":1,"min":4,"seg":[3,1],"sol":[[2,5],[5,3],[2,5],[6,6]],"firsts":2,"nsol":6,"ej":0,"minpick":2,"needrot":1,"tier":"初級"},
+  {"n":5,"cells":"e593ac557bbc3cd5e56ade36a","hand":"a","piece":19,"tre":[16,2],"rot":1,"min":4,"seg":[3,1],"sol":[[4,5],[4,7],[2,7],[2,5]],"firsts":1,"nsol":12,"ej":12,"minpick":2,"needrot":1,"tier":"初級"},
+  {"n":5,"cells":"ad9aadc5aaaa5baacb56e5665","hand":"6","piece":21,"tre":[17,24],"rot":1,"min":4,"seg":[3,1],"sol":[[2,6],[2,3],[6,5],[3,12]],"firsts":1,"nsol":8,"ej":0,"minpick":2,"needrot":1,"tier":"初級"},
+  {"n":5,"cells":"c5a5763b3dd939a7e9b95ae57","hand":"a","piece":7,"tre":[14,20],"rot":1,"min":4,"seg":[3,1],"sol":[[2,5],[0,6],[6,14],[5,5]],"firsts":1,"nsol":4,"ej":0,"minpick":2,"needrot":1,"tier":"初級"},
+  {"n":5,"cells":"99c3d353c3699766c9a6ac693","hand":"9","piece":5,"tre":[12,20],"rot":1,"min":4,"seg":[3,1],"sol":[[5,3],[5,6],[5,5],[5,9]],"firsts":1,"nsol":1,"ej":0,"minpick":2,"needrot":1,"tier":"初級"},
+  {"n":5,"cells":"73c5dad355b7aaba569a9a569","hand":"5","piece":15,"tre":[20,10],"rot":1,"min":5,"seg":[3,2],"sol":[[6,5],[3,12],[3,5],[5,5],[7,3]],"firsts":2,"nsol":48,"ej":0,"minpick":2,"needrot":1,"tier":"初級"},
+  {"n":5,"cells":"5dcc75a6659566b75a397955e","hand":"a","piece":17,"tre":[22,2],"rot":1,"min":5,"seg":[3,2],"sol":[[7,10],[2,3],[7,3],[1,12],[7,5]],"firsts":1,"nsol":32,"ej":0,"minpick":2,"needrot":1,"tier":"初級"},
+  {"n":5,"cells":"be5b3a33963753b756535c59a","hand":"a","piece":11,"tre":[22,20,7],"rot":1,"min":5,"seg":[3,1,1],"sol":[[1,5],[5,10],[2,7],[5,3],[2,6]],"firsts":2,"nsol":40,"ej":40,"minpick":3,"needrot":1,"tier":"中級"},
+  {"n":5,"cells":"a5c5ee36d7ce9cc55ca76356a","hand":"7","piece":19,"tre":[24,20,8],"rot":1,"min":5,"seg":[3,1,1],"sol":[[5,7],[3,5],[6,5],[5,9],[6,3]],"firsts":2,"nsol":32,"ej":0,"minpick":3,"needrot":1,"tier":"中級"},
+  {"n":5,"cells":"dc3959cd65e39a69a6339b559","hand":"c","piece":11,"tre":[0,5,22],"rot":1,"min":5,"seg":[3,1,1],"sol":[[2,12],[5,3],[1,3],[2,3],[2,3]],"firsts":1,"nsol":64,"ej":64,"minpick":3,"needrot":1,"tier":"中級"},
+  {"n":5,"cells":"3a5a6ac6353eaaaae7da3e69a","hand":"c","piece":11,"tre":[17,0,24],"rot":1,"min":5,"seg":[4,0,1],"sol":[[4,3],[4,7],[4,14],[7,7],[2,5]],"firsts":1,"nsol":32,"ej":0,"minpick":2,"needrot":1,"tier":"中級"},
+  {"n":5,"cells":"cbc3c36975cd7636addb6a96c","hand":"a","piece":7,"tre":[0,24,14],"rot":1,"min":5,"seg":[4,1,0],"sol":[[7,5],[2,3],[7,7],[4,7],[1,5]],"firsts":1,"nsol":24,"ej":0,"minpick":2,"needrot":1,"tier":"中級"},
+  {"n":5,"cells":"3eea6a965ac3a393a5ec95c53","hand":"9","piece":21,"tre":[18,20,0],"rot":1,"min":5,"seg":[3,2,0],"sol":[[2,12],[2,6],[5,7],[5,13],[5,3]],"firsts":1,"nsol":16,"ej":16,"minpick":2,"needrot":1,"tier":"中級"},
+  {"n":5,"cells":"9565969a6b9aaac366a5de795","hand":"7","piece":7,"tre":[10,12,20],"rot":1,"min":5,"seg":[2,2,1],"sol":[[4,11],[4,14],[2,6],[4,5],[4,5]],"firsts":1,"nsol":4,"ej":0,"minpick":3,"needrot":1,"tier":"中級"},
+  {"n":5,"cells":"c7b55ac5aac5655aba59a7c99","hand":"6","piece":21,"tre":[17,0,22],"rot":1,"min":5,"seg":[4,0,1],"sol":[[0,3],[4,5],[4,13],[4,14],[4,5]],"firsts":1,"nsol":4,"ej":0,"minpick":2,"needrot":1,"tier":"中級"},
+  {"n":5,"cells":"b96a7c7633359ce7d59793caa","hand":"a","piece":13,"tre":[24,14,20],"rot":1,"min":5,"seg":[3,1,1],"sol":[[2,10],[7,11],[2,10],[2,6],[7,5]],"firsts":1,"nsol":2,"ej":0,"minpick":3,"needrot":1,"tier":"中級"},
+  {"n":5,"cells":"66aa59a9dea566dcc995d6a3a","hand":"6","piece":16,"tre":[20,0,3],"rot":1,"min":5,"seg":[4,1,0],"sol":[[2,6],[4,5],[0,3],[4,13],[4,6]],"firsts":1,"nsol":1,"ej":0,"minpick":2,"needrot":1,"tier":"中級"},
+  {"n":5,"cells":"a35c69ee76c59cb3ac555ada9","hand":"5","piece":11,"tre":[17,10,4],"rot":1,"min":6,"seg":[2,1,3],"sol":[[0,5],[2,3],[5,5],[7,6],[7,9],[7,7]],"firsts":10,"nsol":174,"ej":0,"minpick":2,"needrot":1,"tier":"上級"},
+  {"n":5,"cells":"3aaa7a5ec53c75aceade65aa5","hand":"c","piece":11,"tre":[24,4,13],"rot":1,"min":6,"seg":[5,1,0],"sol":[[0,3],[4,5],[0,5],[3,3],[3,12],[1,9]],"firsts":9,"nsol":64,"ej":0,"minpick":2,"needrot":1,"tier":"上級"},
+  {"n":5,"cells":"ae5cbb9a5be3c565b535d3bce","hand":"5","piece":7,"tre":[4,17,14],"rot":1,"min":6,"seg":[4,1,1],"sol":[[1,5],[1,7],[6,6],[1,12],[2,5],[2,5]],"firsts":6,"nsol":208,"ej":0,"minpick":2,"needrot":1,"tier":"上級"},
+  {"n":5,"cells":"6aa5eb7c33eaecaaa5c5aac6a","hand":"5","piece":17,"tre":[21,14,22],"rot":1,"min":6,"seg":[4,1,1],"sol":[[1,10],[1,7],[5,7],[5,5],[6,3],[5,3]],"firsts":5,"nsol":280,"ej":8,"minpick":2,"needrot":1,"tier":"上級"},
+  {"n":5,"cells":"55ae5aecd5eea5e57955ea55c","hand":"a","piece":3,"tre":[14,22,0],"rot":1,"min":6,"seg":[3,0,3],"sol":[[2,5],[6,5],[6,5],[0,3],[5,5],[3,5]],"firsts":5,"nsol":84,"ej":0,"minpick":2,"needrot":1,"tier":"上級"},
+  {"n":5,"cells":"dc9a5a3a3d955aec36c9ea356","hand":"a","piece":17,"tre":[10,16,4],"rot":1,"min":6,"seg":[5,0,1],"sol":[[3,5],[4,9],[3,5],[0,6],[4,7],[1,3]],"firsts":5,"nsol":72,"ej":72,"minpick":2,"needrot":1,"tier":"上級"},
+  {"n":5,"cells":"ca736b57559595955aab9b6d5","hand":"5","piece":15,"tre":[0,13,22],"rot":1,"min":6,"seg":[5,0,1],"sol":[[1,5],[4,14],[0,7],[3,10],[4,5],[6,5]],"firsts":3,"nsol":64,"ej":0,"minpick":2,"needrot":1,"tier":"上級"},
+  {"n":5,"cells":"ca3b99d935553335baae3575a","hand":"5","piece":15,"tre":[22,2,14],"rot":1,"min":6,"seg":[5,0,1],"sol":[[0,5],[3,10],[7,5],[7,7],[7,9],[1,12]],"firsts":3,"nsol":5,"ej":0,"minpick":2,"needrot":1,"tier":"上級"},
+  {"n":5,"cells":"55da9757a5c5bcba33a9b66c5","hand":"a","piece":18,"tre":[22,20,0],"rot":1,"min":6,"seg":[4,0,2],"sol":[[2,10],[2,6],[1,5],[7,13],[1,5],[7,5]],"firsts":1,"nsol":16,"ej":0,"minpick":2,"needrot":1,"tier":"上級"},
+  {"n":5,"cells":"acca5a5d37963936c55a5d7a5","hand":"a","piece":8,"tre":[4,20,10],"rot":1,"min":6,"seg":[3,2,1],"sol":[[4,5],[1,13],[6,5],[4,5],[4,6],[0,6]],"firsts":1,"nsol":4,"ej":0,"minpick":3,"needrot":1,"tier":"上級"}
 ];
 /* LEVELS-END */
 
@@ -171,18 +174,20 @@ var Oshidashi = (function () {
   var HEX = '0123456789abcdef';
   var GEO = {};
 
-  /* 盤の大きさごとの押し込み口。ops[i] = {side:'L'|'R'|'T'|'B', line:k} */
+  /* 盤の大きさごとの押し込み口。ops[i] = {side:'L'|'R'|'T'|'B', line:k, cells:[入口から出口へのマス]} */
   function geometry(n) {
     if (GEO[n]) return GEO[n];
-    var ops = [], opp = [], k, i;
-    for (k = 1; k < n; k += 2) { ops.push({ side: 'L', line: k }); ops.push({ side: 'R', line: k }); }
-    for (k = 1; k < n; k += 2) { ops.push({ side: 'T', line: k }); ops.push({ side: 'B', line: k }); }
-    var OPP = { L: 'R', R: 'L', T: 'B', B: 'T' };
-    for (i = 0; i < ops.length; i++) {
-      for (k = 0; k < ops.length; k++) {
-        if (ops[k].line === ops[i].line && ops[k].side === OPP[ops[i].side]) { opp.push(k); break; }
-      }
+    var ops = [], k, j;
+    function line(side, k) {
+      var cells = [];
+      for (j = 0; j < n; j++) cells.push((side === 'L' || side === 'R') ? k * n + j : j * n + k);
+      if (side === 'R' || side === 'B') cells.reverse();
+      return { side: side, line: k, cells: cells };
     }
+    for (k = 1; k < n; k += 2) { ops.push(line('L', k)); ops.push(line('R', k)); }
+    for (k = 1; k < n; k += 2) { ops.push(line('T', k)); ops.push(line('B', k)); }
+    var opp = [];
+    for (j = 0; j < ops.length; j++) opp.push(j ^ 1);
     GEO[n] = { n: n, N: n * n, ops: ops, opp: opp };
     return GEO[n];
   }
@@ -202,16 +207,17 @@ var Oshidashi = (function () {
     return out;
   }
 
-  /* 問題 -> 状態 {n, cells:[], hand, piece, goal, rot, ban}
+  /* 問題 -> 状態 {n, cells:[], hand, piece, tre:[], next, rot, ban}
      ban = 次の1手で使えない押し込み口（直前の手を打ち消す口）。最初は -1 */
   function parse(lv) {
     var cells = [];
     for (var i = 0; i < lv.cells.length; i++) cells.push(HEX.indexOf(lv.cells.charAt(i)));
-    return { n: lv.n, cells: cells, hand: HEX.indexOf(lv.hand), piece: lv.piece, goal: lv.goal,
-             rot: !!lv.rot, ban: -1 };
+    return { n: lv.n, cells: cells, hand: HEX.indexOf(lv.hand), piece: lv.piece,
+             tre: lv.tre.slice(), next: 0, rot: !!lv.rot, ban: -1 };
   }
   function clone(s) {
-    return { n: s.n, cells: s.cells.slice(), hand: s.hand, piece: s.piece, goal: s.goal, rot: s.rot, ban: s.ban };
+    return { n: s.n, cells: s.cells.slice(), hand: s.hand, piece: s.piece, tre: s.tre.slice(),
+             next: s.next, rot: s.rot, ban: s.ban };
   }
 
   /* 押せる口の一覧（直前の手を打ち消す口を除く） */
@@ -221,36 +227,30 @@ var Oshidashi = (function () {
     return out;
   }
 
-  /* 押し込み口 op に手持ちを押し込んだ新しい状態。元の s は変えない。
-     hand を渡すとその向きで押す（回せない段では s.hand と同じ向きのみ）。打てない手なら null */
-  function push(s, op, hand) {
-    var g = geometry(s.n), n = s.n;
+  /* 押し込むだけ（宝はまだ拾わない）。列が1マスずれ、押し出された1枚（と乗っている宝）が手持ちになる。
+     駒は列と一緒に動き、押し出されたら入ってきたタイルの上へ。打てない手なら null */
+  function slide(s, op, hand) {
+    var g = geometry(s.n);
     if (!(op >= 0 && op < g.ops.length) || op === s.ban) return null;
     var h = (hand === undefined || hand === null) ? s.hand : (hand & 15);
     if (h !== s.hand && (!s.rot || variants(s.hand).indexOf(h) < 0)) return null;
-    var o = g.ops[op], k = o.line, c = s.cells.slice(), p = s.piece, ej, j, r, col;
-    if (o.side === 'L') {
-      ej = c[k * n + n - 1];
-      for (j = n - 1; j > 0; j--) c[k * n + j] = c[k * n + j - 1];
-      c[k * n] = h;
-      if ((p / n | 0) === k) { col = p % n; p = k * n + (col < n - 1 ? col + 1 : 0); }
-    } else if (o.side === 'R') {
-      ej = c[k * n];
-      for (j = 0; j < n - 1; j++) c[k * n + j] = c[k * n + j + 1];
-      c[k * n + n - 1] = h;
-      if ((p / n | 0) === k) { col = p % n; p = k * n + (col > 0 ? col - 1 : n - 1); }
-    } else if (o.side === 'T') {
-      ej = c[(n - 1) * n + k];
-      for (j = n - 1; j > 0; j--) c[j * n + k] = c[(j - 1) * n + k];
-      c[k] = h;
-      if (p % n === k) { r = p / n | 0; p = (r < n - 1 ? r + 1 : 0) * n + k; }
-    } else {
-      ej = c[k];
-      for (j = 0; j < n - 1; j++) c[j * n + k] = c[(j + 1) * n + k];
-      c[(n - 1) * n + k] = h;
-      if (p % n === k) { r = p / n | 0; p = (r > 0 ? r - 1 : n - 1) * n + k; }
+    var L = g.ops[op].cells, n = s.n, c = s.cells.slice(), j;
+    var ej = c[L[n - 1]];
+    for (j = n - 1; j > 0; j--) c[L[j]] = c[L[j - 1]];
+    c[L[0]] = h;
+    function move(p) {                    /* 列の上の位置を1つ出口側へ。押し出されたら -1 */
+      var k = L.indexOf(p);
+      if (k < 0) return p;
+      return k < n - 1 ? L[k + 1] : -1;
     }
-    return { n: n, cells: c, hand: ej, piece: p, goal: s.goal, rot: s.rot, ban: g.opp[op] };
+    var piece = move(s.piece);
+    if (piece < 0) piece = L[0];
+    var tre = [];
+    for (j = 0; j < s.tre.length; j++) {
+      var p = s.tre[j];
+      tre.push(p === -2 ? -2 : (p === -1 ? L[0] : move(p)));
+    }
+    return { n: n, cells: c, hand: ej, piece: piece, tre: tre, next: s.next, rot: s.rot, ban: g.opp[op] };
   }
 
   /* 駒のマスから、両側に腕がある辺だけを渡って届くマス（真偽の配列） */
@@ -267,80 +267,188 @@ var Oshidashi = (function () {
     }
     return seen;
   }
-  function isSolved(s) { return reachable(s)[s.goal] === true; }
 
-  /* 駒からゴールまでの通り道（マス番号の列）。つながっていなければ [] */
-  function pathToGoal(s) {
-    var n = s.n, c = s.cells, prev = {}, queue = [s.piece], head = 0, i, r, q, j, d;
-    prev[s.piece] = -1;
+  /* a から b までの通り道（マス番号の列・最短）。つながっていなければ [] */
+  function pathBetween(s, a, b) {
+    var n = s.n, c = s.cells, prev = {}, queue = [a], head = 0, i, r, q, d, j;
     var step = [[1, 4, -n], [4, 1, n], [8, 2, -1], [2, 8, 1]];
+    prev[a] = -1;
     while (head < queue.length) {
       i = queue[head++];
-      if (i === s.goal) {
-        var out = [];
-        for (j = i; j !== -1; j = prev[j]) out.unshift(j);
-        return out;
-      }
+      if (i === b) { var out = []; for (j = i; j !== -1; j = prev[j]) out.unshift(j); return out; }
       r = i / n | 0; q = i % n;
       for (d = 0; d < 4; d++) {
-        var a = step[d], t = i + a[2];
-        if (!(c[i] & a[0])) continue;
-        if (d === 0 && r === 0) continue;
-        if (d === 1 && r === n - 1) continue;
-        if (d === 2 && q === 0) continue;
-        if (d === 3 && q === n - 1) continue;
-        if (!(c[t] & a[1]) || prev[t] !== undefined) continue;
+        var t = i + step[d][2];
+        if (!(c[i] & step[d][0])) continue;
+        if ((d === 0 && r === 0) || (d === 1 && r === n - 1) || (d === 2 && q === 0) || (d === 3 && q === n - 1)) continue;
+        if (!(c[t] & step[d][1]) || prev[t] !== undefined) continue;
         prev[t] = i; queue.push(t);
       }
     }
     return [];
   }
 
-  /* 最短手数を幅優先で求める。1手＝押し込み1回（回せる段は「向きを決めて押す」を1手）。
-     局面＝盤の全タイル＋手持ち（回せる段は形だけ）＋駒＋次に使えない口。
-     戻り値 {min, path:[[op, 押し込んだ向き], ...]}。maxDepth 以内に無ければ null */
-  function solve(lvOrState, maxDepth) {
+  /* 押し込みの後：駒から次の宝まで道がつながっていれば、駒はそこまで進んで拾う（続けて次も）。
+     戻り値 {state, picks:[{id, path}]} */
+  function collect(s) {
+    var t = clone(s), picks = [];
+    while (t.next < t.tre.length && t.tre[t.next] >= 0) {
+      var path = pathBetween(t, t.piece, t.tre[t.next]);
+      if (!path.length) break;
+      picks.push({ id: t.next, path: path });
+      t.piece = t.tre[t.next];
+      t.tre[t.next] = -2;
+      t.next++;
+    }
+    return { state: t, picks: picks };
+  }
+
+  /* 1手＝押し込み1回（拾うところまで）。打てない手なら null */
+  function push(s, op, hand) {
+    var t = slide(s, op, hand);
+    return t ? collect(t).state : null;
+  }
+  function isSolved(s) { return s.next >= s.tre.length; }
+
+  /* ---------------------------------------------------------------
+     最短手数（5×5まで。盤を腕ごとの32bit整数4つで持つ）
+     局面＝盤・手持ち（回せる段は形だけ）・残りの宝の位置・駒・次に使えない口
+     幅優先を S 手まで（同じ局面はまとめる）→ その先は深さ優先で1手ずつ深める。
+     最後の1〜2手は「その列を押して駒と次の宝がつながりうるか」の必要条件で枝を刈る
+     --------------------------------------------------------------- */
+  function solve(lvOrState, maxDepth, S) {
     var s0 = (typeof lvOrState.cells === 'string') ? parse(lvOrState) : clone(lvOrState);
-    var n = s0.n, N = n * n, g = geometry(n), nops = g.ops.length;
-    if (isSolved(s0)) return { min: 0, path: [] };
-    maxDepth = maxDepth || 8;
-    var canonOf = [], varsOf = [], m;
-    for (m = 0; m < 16; m++) {
-      var vs = variants(m);
-      canonOf.push(s0.rot ? Math.min.apply(null, vs) : m);
-      varsOf.push(s0.rot ? vs : [m]);
+    var n = s0.n, N = n * n, g = geometry(n), nops = g.ops.length, rot = s0.rot, i, j, a;
+    if (N > 30) throw new Error('solve は5×5まで');
+    maxDepth = maxDepth || 8; S = S || 3;
+    var FULL = (1 << N) - 1, NOTLAST = FULL, NOTFIRST = FULL;
+    for (i = 0; i < n; i++) { NOTLAST &= ~(1 << (i * n + n - 1)); NOTFIRST &= ~(1 << (i * n)); }
+    var canon = [], vars = [];
+    for (i = 0; i < 16; i++) { var vs = variants(i); vars.push(rot ? vs : [i]); canon.push(rot ? Math.min.apply(null, vs) : i); }
+    var pm = [], ent = [], lm = [];
+    for (j = 0; j < nops; j++) {
+      var L = g.ops[j].cells, m = [];
+      for (i = 0; i < N; i++) m.push(i);
+      for (i = 0; i < n; i++) m[L[i]] = i < n - 1 ? L[i + 1] : -1;
+      pm.push(m); ent.push(L[0]);
+      var mk = 0; for (i = 0; i < n; i++) mk |= 1 << L[i]; lm.push(mk);
     }
-    function key(st) {
-      return String.fromCharCode.apply(null, st.cells) + String.fromCharCode(canonOf[st.hand], st.piece, st.ban + 1);
+    function flood(b, start, allowed) {
+      var ee = b[1] & (b[3] >>> 1) & NOTLAST & allowed & (allowed >>> 1);
+      var se = b[2] & (b[0] >>> n) & allowed & (allowed >>> n);
+      var r = start, nr;
+      for (;;) {
+        nr = (r | ((r & ee) << 1) | ((r >>> 1) & ee) | ((r & se) << n) | ((r >>> n) & se)) & FULL;
+        if (nr === r) return r;
+        r = nr;
+      }
     }
-    var seen = new Map();          /* key -> [親のkey, op, 向き] */
-    var k0 = key(s0);
-    seen.set(k0, null);
-    var frontier = [s0], fkeys = [k0];
-    for (var d = 1; d <= maxDepth; d++) {
+    function touches(comp, b, ml) {
+      return ((((comp & b[1] & NOTLAST) << 1) | ((comp & b[3] & NOTFIRST) >>> 1) |
+               ((comp & b[2]) << n) | ((comp & b[0]) >>> n)) & ml) !== 0;
+    }
+    /* 局面: {b:[4], h, t:[残りの宝], p, ban} */
+    function child(st, op, h) {
+      var b = st.b, L = g.ops[op].cells, nb = [0, 0, 0, 0], ej = 0, k;
+      for (a = 0; a < 4; a++) {
+        var B = b[a], out = B & ~lm[op];
+        for (k = n - 1; k > 0; k--) if ((B >>> L[k - 1]) & 1) out |= 1 << L[k];
+        if ((h >>> a) & 1) out |= 1 << L[0];
+        if ((B >>> L[n - 1]) & 1) ej |= 1 << a;
+        nb[a] = out;
+      }
+      var p = pm[op][st.p]; if (p < 0) p = ent[op];
+      var t = [];
+      for (k = 0; k < st.t.length; k++) t.push(st.t[k] < 0 ? ent[op] : pm[op][st.t[k]]);
+      if (t.length && t[0] >= 0) {
+        var R = flood(nb, 1 << p, FULL);
+        while (t.length && t[0] >= 0 && ((R >>> t[0]) & 1)) { p = t[0]; t = t.slice(1); }
+      }
+      return { b: nb, h: canon[ej], t: t, p: p, ban: op ^ 1 };
+    }
+    function key(st) { return st.b.join(',') + '|' + st.h + '|' + st.t.join(',') + '|' + st.p + '|' + st.ban; }
+    function canLink(st, ml) {
+      var t = st.t[0], allowed = FULL & ~ml;
+      if (!((ml >>> st.p) & 1)) {
+        var cp = flood(st.b, 1 << st.p, allowed);
+        if (t >= 0 && ((cp >>> t) & 1)) return true;
+        if (!touches(cp, st.b, ml)) return false;
+      }
+      if (t >= 0 && !((ml >>> t) & 1)) {
+        if (!touches(flood(st.b, 1 << t, allowed), st.b, ml)) return false;
+      }
+      return true;
+    }
+    function opsFor(st, rem) {
+      var out = [], op, cache = {};
+      for (op = 0; op < nops; op++) {
+        if (op === st.ban) continue;
+        if (rem === 1) {
+          if (cache[lm[op]] === undefined) cache[lm[op]] = canLink(st, lm[op]);
+          if (cache[lm[op]]) out.push(op);
+        } else if (rem === 2) {
+          var ok = false;
+          for (var q = 0; q < nops && !ok; q += 2) {
+            var u = lm[op] | lm[q];
+            if (cache[u] === undefined) cache[u] = canLink(st, u);
+            ok = cache[u];
+          }
+          if (ok) out.push(op);
+        } else out.push(op);
+      }
+      return out;
+    }
+    var bb = [0, 0, 0, 0];
+    for (i = 0; i < N; i++) for (a = 0; a < 4; a++) if ((s0.cells[i] >> a) & 1) bb[a] |= 1 << i;
+    var t0 = [];
+    for (i = s0.next; i < s0.tre.length; i++) t0.push(s0.tre[i]);
+    if (!t0.length) return { min: 0, path: [] };
+    var start = { b: bb, h: canon[s0.hand], t: t0, p: s0.piece, ban: s0.ban };
+    var parent = new Map(), k0 = key(start);
+    parent.set(k0, null);
+    var frontier = [start], fkeys = [k0], d, f, op, v, ch;
+    function pathTo(kk) {
+      var out = [], e;
+      while ((e = parent.get(kk)) !== null) { out.unshift([e[1], e[2]]); kk = e[0]; }
+      return out;
+    }
+    /* 回せる段では手持ちの向きを選んで押す。回せない段は今の向きだけ（局面の h は実際の向き） */
+    function handsOf(st) { return vars[st.h]; }
+    var top = Math.min(S, maxDepth);
+    for (d = 1; d <= top; d++) {
       var nxt = [], nkeys = [];
-      for (var f = 0; f < frontier.length; f++) {
-        var st = frontier[f];
-        if (st.rot) st = { n: n, cells: st.cells, hand: canonOf[st.hand], piece: st.piece, goal: st.goal, rot: true, ban: st.ban };
-        for (var op = 0; op < nops; op++) {
-          if (op === st.ban) continue;
-          var hs = varsOf[st.hand];
-          for (var v = 0; v < hs.length; v++) {
-            var ch = push(st, op, hs[v]);
-            if (isSolved(ch)) {
-              var path = [[op, hs[v]]], kk = fkeys[f], e;
-              while ((e = seen.get(kk)) !== null) { path.unshift([e[1], e[2]]); kk = e[0]; }
-              return { min: d, path: path };
-            }
+      for (f = 0; f < frontier.length; f++) {
+        var st = frontier[f], ops = opsFor(st, d === maxDepth ? 1 : 99), hs = handsOf(st);
+        for (var oi = 0; oi < ops.length; oi++) {
+          op = ops[oi];
+          for (v = 0; v < hs.length; v++) {
+            ch = child(st, op, hs[v]);
+            if (!ch.t.length) return { min: d, path: pathTo(fkeys[f]).concat([[op, hs[v]]]) };
             if (d < maxDepth) {
               var ck = key(ch);
-              if (!seen.has(ck)) { seen.set(ck, [fkeys[f], op, hs[v]]); nxt.push(ch); nkeys.push(ck); }
+              if (!parent.has(ck)) { parent.set(ck, [fkeys[f], op, hs[v]]); nxt.push(ch); nkeys.push(ck); }
             }
           }
         }
       }
       frontier = nxt; fkeys = nkeys;
-      if (!frontier.length) break;
+    }
+    function dfs(st, rem) {
+      var ops = opsFor(st, rem), hs = handsOf(st);
+      for (var oi = 0; oi < ops.length; oi++) {
+        for (var w = 0; w < hs.length; w++) {
+          var c2 = child(st, ops[oi], hs[w]);
+          if (!c2.t.length) return [[ops[oi], hs[w]]];
+          if (rem > 1) { var r = dfs(c2, rem - 1); if (r) return [[ops[oi], hs[w]]].concat(r); }
+        }
+      }
+      return null;
+    }
+    for (var D = top + 1; D <= maxDepth; D++) {
+      for (f = 0; f < frontier.length; f++) {
+        var r = dfs(frontier[f], D - top);
+        if (r) return { min: D, path: pathTo(fkeys[f]).concat(r) };
+      }
     }
     return null;
   }
@@ -358,8 +466,8 @@ var Oshidashi = (function () {
   return {
     LEVELS: LEVELS, HEX: HEX,
     geometry: geometry, isFixed: isFixed, rotate: rotate, variants: variants,
-    parse: parse, clone: clone, legalOps: legalOps, push: push,
-    reachable: reachable, isSolved: isSolved, pathToGoal: pathToGoal,
+    parse: parse, clone: clone, legalOps: legalOps, slide: slide, collect: collect, push: push,
+    reachable: reachable, pathBetween: pathBetween, isSolved: isSolved,
     solve: solve, replay: replay
   };
 })();
@@ -376,8 +484,10 @@ if (typeof document !== 'undefined') (function () {
   var KEY = 'oshidashi';
   var SVGNS = 'http://www.w3.org/2000/svg';
   var CELL = 100;          /* 1マスの user unit */
-  var GUT = 40;            /* 矢印を置く余白（7×7 で幅360pxでも1マス44px以上を保つ） */
-  var SLIDE_MS = 170;
+  var GUT = 40;            /* 矢印を置く余白 */
+  var SLIDE_MS = 170;      /* 列が1マス滑る時間 */
+  var WALK_MS = 140;       /* 駒が1マス進む時間（目で追える速さ。.walk の transition と合わせる） */
+  var SHARE = CELL * 0.2;  /* 駒と宝が同じマスのとき、宝を左・駒を右へずらす幅（にげこみの「印が左」と同じ流儀） */
 
   var elTitle = document.getElementById('title');
   var elMoves = document.getElementById('moves');
@@ -393,6 +503,7 @@ if (typeof document !== 'undefined') (function () {
   var elLevels = document.getElementById('levels');
 
   var LEVELS = Oshidashi.LEVELS;
+  var MARK = ['①', '②', '③', '④'];
 
   /* 段階名と何本目か（例「初級 3」） */
   var LABELS = (function () {
@@ -445,10 +556,21 @@ if (typeof document !== 'undefined') (function () {
     return g;
   }
 
+  /* 宝（番号つきの丸）。次に拾う宝だけ濃く、あとの宝は薄く */
+  function drawTreasure(parent, id, x, y, isNext) {
+    var g = el('g', { opacity: isNext ? 1 : 0.55 }, parent);
+    el('circle', { cx: x, cy: y, r: CELL * 0.26, fill: 'var(--glow)', stroke: isNext ? 'var(--ink)' : 'var(--panel)', 'stroke-width': 5 }, g);
+    /* 番号は墨。白だと橙の上で薄く、薄く描くあとの宝では番号が読めない */
+    var t = el('text', { x: x, y: y + CELL * 0.11, 'text-anchor': 'middle', 'font-size': CELL * 0.32,
+                         'font-weight': 700, fill: 'var(--ink)' }, g);
+    t.textContent = String(id + 1);
+    return g;
+  }
+
   function cx(i) { return GUT + (i % n) * CELL + CELL / 2; }
   function cy(i) { return GUT + (i / n | 0) * CELL + CELL / 2; }
 
-  var layerTiles = null, layerTop = null, arrows = [];
+  var layerTiles = null, layerTop = null, arrows = [], pieceEl = null, treEls = {}, pieceOff = 0;
 
   function buildFrame() {
     while (elSvg.firstChild) elSvg.removeChild(elSvg.firstChild);
@@ -471,7 +593,8 @@ if (typeof document !== 'undefined') (function () {
     }
     layerTiles = el('g', { 'clip-path': 'url(#boardClip)' }, elSvg);
     el('rect', { x: GUT, y: GUT, width: n * CELL, height: n * CELL, fill: 'none', stroke: 'var(--thick)', 'stroke-width': 5, rx: 6 }, elSvg);
-    layerTop = el('g', {}, elSvg);
+    /* 宝と駒も盤の外へははみ出さない（押し出されて手持ちへ行く宝が、外へ滑って消える） */
+    layerTop = el('g', { 'clip-path': 'url(#boardClip)' }, elSvg);
 
     /* 押し込み口の矢印（盤の外側から内向き） */
     arrows = [];
@@ -497,30 +620,35 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
-  /* 盤を描き直す。moved = その押し込みで動いたマス（滑らせる）、dx,dy = 1マス分の向き */
-  function render(anim) {
+  /* 盤を描き直す。anim があれば、押した列（anim.cells）と、その上の駒・宝を1マス手前から滑らせる */
+  function render(s, anim) {
     while (layerTiles.firstChild) layerTiles.removeChild(layerTiles.firstChild);
     while (layerTop.firstChild) layerTop.removeChild(layerTop.firstChild);
-    var lit = Oshidashi.reachable(st);
-    var path = finished ? Oshidashi.pathToGoal(st) : [];
-    var onPath = {};
-    for (var p = 0; p < path.length; p++) onPath[path[p]] = 1;
+    var lit = Oshidashi.reachable(s);
     var W = Math.round(CELL * 0.2), i, g, slid = [];
     for (i = 0; i < n * n; i++) {
-      var col = onPath[i] ? 'var(--glow)' : (lit[i] ? 'var(--on)' : 'var(--off)');
-      g = drawTile(layerTiles, st.cells[i], cx(i), cy(i), col, W);
+      g = drawTile(layerTiles, s.cells[i], cx(i), cy(i), lit[i] ? 'var(--on)' : 'var(--off)', W);
       if (anim && anim.cells[i]) slid.push(g);
     }
-    /* ゴール（動かないマス）と駒 */
-    el('circle', { cx: cx(st.goal), cy: cy(st.goal), r: CELL * 0.27, fill: 'var(--panel)', stroke: 'var(--ink)', 'stroke-width': 7 }, layerTop);
-    el('circle', { cx: cx(st.goal), cy: cy(st.goal), r: CELL * 0.09, fill: 'var(--ink)' }, layerTop);
-    var pg = el('circle', { cx: cx(st.piece), cy: cy(st.piece), r: CELL * 0.25, fill: 'var(--red)', stroke: 'var(--panel)', 'stroke-width': 5 }, layerTop);
-    if (anim && anim.piece) slid.push(pg);
+    treEls = {};
+    /* 駒と同じマスに乗る宝は、駒の下に隠れないよう宝を左・駒を右へずらして並べる */
+    pieceOff = (s.tre.indexOf(s.piece) >= 0) ? SHARE : 0;
+    for (i = 0; i < s.tre.length; i++) {
+      var p = s.tre[i];
+      if (p < 0) continue;
+      var tg = drawTreasure(layerTop, i, cx(p) - (p === s.piece ? SHARE : 0), cy(p), i === s.next);
+      treEls[i] = tg;
+      if (anim && anim.cells[p]) slid.push(tg);
+    }
+    pieceEl = el('g', {}, layerTop);
+    el('circle', { cx: cx(s.piece) + pieceOff, cy: cy(s.piece), r: CELL * 0.22, fill: 'var(--red)', stroke: 'var(--panel)', 'stroke-width': 5 }, pieceEl);
+    if (anim && anim.cells[s.piece]) slid.push(pieceEl);
 
-    /* 押し出された1枚は外へ滑って消える */
+    /* 押し出された1枚（と乗っていた宝）は外へ滑って消える */
     if (anim && anim.out) {
-      var go = drawTile(layerTiles, anim.out.m, anim.out.x, anim.out.y, 'var(--off)', W);
-      go.setAttribute('class', 'slide');
+      var go = el('g', { 'class': 'slide' }, layerTiles);
+      drawTile(go, anim.out.m, anim.out.x, anim.out.y, 'var(--off)', W);
+      if (anim.out.tre >= 0) drawTreasure(go, anim.out.tre, anim.out.x, anim.out.y, anim.out.tre === s.next);
       requestAnimationFrame(function () { requestAnimationFrame(function () {
         go.style.transform = 'translate(' + anim.dx + 'px,' + anim.dy + 'px)';
       }); });
@@ -534,21 +662,23 @@ if (typeof document !== 'undefined') (function () {
     }
 
     for (i = 0; i < arrows.length; i++) {
-      var ban = finished || i === st.ban;
+      var ban = finished || i === s.ban;
       arrows[i].setAttribute('class', 'arrow' + (ban ? ' ban' : ''));
-      arrows[i].style.opacity = (i === st.ban) ? '.15' : '1';
+      arrows[i].style.opacity = (i === s.ban) ? '.15' : '1';
     }
     elMoves.textContent = String(moves);
-    elUndo.disabled = finished || !history.length;
+    elUndo.disabled = finished || busy || !history.length;
   }
 
+  /* 手持ち。タイルは回るが、乗っている宝の番号は回さない */
   function renderHand() {
     while (elHand.firstChild) elHand.removeChild(elHand.firstChild);
     var g = el('g', { id: 'handTile' }, elHand);
-    /* 手持ちは viewBox 0..100 に1マスを描く（CELL=100 なので中心は 50,50） */
-    drawTile(g, handBase, 50, 50, 'var(--thick)', Math.round(CELL * 0.2));
+    drawTile(g, handBase, 50, 50, 'var(--thick)', Math.round(CELL * 0.2));   /* viewBox 0..100 */
     g.style.transformOrigin = '50px 50px';
     g.style.transform = 'rotate(' + (handTurn * 90) + 'deg)';
+    var onHand = st.tre.indexOf(-1);
+    if (onHand >= 0) drawTreasure(elHand, onHand, 50, 50, onHand === st.next);
     elHand.setAttribute('class', st.rot ? 'can' : '');
     elHandLabel.textContent = st.rot ? '手持ち（タップで回す）' : '手持ち';
   }
@@ -565,7 +695,7 @@ if (typeof document !== 'undefined') (function () {
     elTitle.textContent = LABELS[i].text;
     elBest.textContent = String(LEVELS[i].min);
     buildFrame();
-    render(null);
+    render(st, null);
     renderHand();
     renderLevelList();
     save.last = i;
@@ -585,27 +715,49 @@ if (typeof document !== 'undefined') (function () {
     if (finished || busy) return;
     var op = parseInt(this.dataset.op, 10);
     if (op === st.ban) return;
-    var o = geo.ops[op], k = o.line, before = st;
-    var ns = Oshidashi.push(st, op, st.hand);
-    if (!ns) return;
+    var o = geo.ops[op], before = st;
+    var mid = Oshidashi.slide(st, op, st.hand);
+    if (!mid) return;
+    var res = Oshidashi.collect(mid);
     history.push({ st: Oshidashi.clone(st), handBase: handBase, handTurn: handTurn });
-    st = ns;
     moves++;
-    /* 滑らせるマス・向き・押し出された1枚の行き先 */
-    var cells = {}, j, dx = 0, dy = 0, outIdx;
-    for (j = 0; j < n; j++) cells[(o.side === 'L' || o.side === 'R') ? k * n + j : j * n + k] = 1;
-    if (o.side === 'L') { dx = CELL; outIdx = k * n + n - 1; }
-    if (o.side === 'R') { dx = -CELL; outIdx = k * n; }
-    if (o.side === 'T') { dy = CELL; outIdx = (n - 1) * n + k; }
-    if (o.side === 'B') { dy = -CELL; outIdx = k; }
-    var pieceMoved = cells[before.piece] === 1;
+    var cells = {}, j, L = o.cells, outIdx = L[n - 1];
+    for (j = 0; j < n; j++) cells[L[j]] = 1;
+    var dx = (cx(L[1]) - cx(L[0])), dy = (cy(L[1]) - cy(L[0]));
+    st = mid;                                      /* まず押しただけの盤を見せる */
     handBase = st.hand; handTurn = 0;
-    finished = Oshidashi.isSolved(st);
     busy = true;
-    render({ cells: cells, piece: pieceMoved, dx: dx, dy: dy,
-             out: { m: before.cells[outIdx], x: cx(outIdx), y: cy(outIdx) } });
+    render(st, { cells: cells, dx: dx, dy: dy,
+                 out: { m: before.cells[outIdx], x: cx(outIdx), y: cy(outIdx), tre: before.tre.indexOf(outIdx) } });
     renderHand();
-    setTimeout(function () { busy = false; if (finished) setTimeout(showClear, 450); }, SLIDE_MS + 20);
+    setTimeout(function () { walk(res, 0); }, SLIDE_MS + 30);
+  }
+
+  /* 駒が宝まで1マスずつ進んで拾う（続けて次の宝も） */
+  function walk(res, k) {
+    if (k >= res.picks.length) {
+      st = res.state;
+      finished = Oshidashi.isSolved(st);
+      busy = false;
+      render(st, null);
+      renderHand();
+      if (finished) setTimeout(showClear, 350);
+      return;
+    }
+    var pk = res.picks[k], path = pk.path, s = 1;
+    var x0 = cx(path[0]), y0 = cy(path[0]);
+    pieceEl.setAttribute('class', 'walk');
+    (function next() {
+      if (s >= path.length) {
+        if (treEls[pk.id]) treEls[pk.id].remove();
+        setTimeout(function () { walk(res, k + 1); }, 60);
+        return;
+      }
+      /* 横にずらしていた駒は、1歩目でマスの中央へ戻す（pieceOff を打ち消す） */
+      pieceEl.style.transform = 'translate(' + (cx(path[s]) - x0 - pieceOff) + 'px,' + (cy(path[s]) - y0) + 'px)';
+      s++;
+      setTimeout(next, WALK_MS);
+    })();
   }
 
   function showClear() {
@@ -623,10 +775,10 @@ if (typeof document !== 'undefined') (function () {
     var h = history.pop();
     st = h.st; handBase = h.handBase; handTurn = h.handTurn;
     moves = Math.max(0, moves - 1);
-    render(null);
+    render(st, null);
     renderHand();
   });
-  elReset.addEventListener('click', function () { loadLevel(index); });
+  elReset.addEventListener('click', function () { if (!busy) loadLevel(index); });
   elNext.addEventListener('click', function () {
     if (index < LEVELS.length - 1) { loadLevel(index + 1); window.scrollTo(0, 0); }
   });
@@ -654,6 +806,7 @@ if (typeof document !== 'undefined') (function () {
           b.className = 'lv';
           b.dataset.idx = String(idxs[k]);
           b.addEventListener('click', function () {
+            if (busy) return;
             loadLevel(parseInt(this.dataset.idx, 10));
             window.scrollTo(0, 0);
           });
