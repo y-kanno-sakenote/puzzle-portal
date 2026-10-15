@@ -10,7 +10,7 @@
     --ink:#2b2b2b; --sub:#77736c; --thick:#5d5952;
     --off:#c6cdd2; --fixed:#ebe9e3;
     --blue:#2f7fd4; --red:#d94f43;
-    --blueT:#d6e6f7; --redT:#f7d9d5;
+    --blueT:#d6e6f7; --redT:#f7d9d5; --gold:#c8961e; --goldT:#f6e7c2;
     --side:150px;
     --b:min(calc(100vw - 8px), calc(100vh - var(--side) * 2), 560px);   /* 盤（矢印の余白込み）の一辺 */
   }
@@ -144,11 +144,13 @@
    腕のビット N=1 E=2 S=4 W=8。時計回り90°は1ビット左巡回。マス番号 i = r*5 + c
    押し込み口: 0=行1左 1=行1右 2=行3左 3=行3右 4=列1上 5=列1下 6=列3上 7=列3下（反対の口は op^1）
    人: 0=手前（青・画面の下）／1=向こう（赤・画面の上）
-   宝 tre[人][k]: 盤のマス番号／-1=手持ちのタイルに乗っている／-2=拾った。next[人]=次に拾う宝の番号
+   宝は1人2つ：1つ目は自分の色の宝 tre[人][0]（盤のマス番号／-1=手持ちのタイルに乗っている／-2=拾った）、
+   2つ目は二人共通の宝 COMMON（盤の真ん中＝動かないマスなので押し出されない）。next[人]=0 自分の宝を狙う／1 共通の宝を狙う／2 拾った
+   共通の宝を先に拾った方の勝ち（2026-10-15 オーナー決定「冗長になりすぎる」への対策。旧：自分の宝①②③を先に3つ）
    手番は「押し込む（phase 'push'）→ 自分の駒を動かす（phase 'move'）」の2段
    ===================================================================== */
 var Oshiai = (function () {
-  var N = 5, NN = 25, GOAL = 3, MAX_TURNS = 60;
+  var N = 5, NN = 25, GOAL = 2, MAX_TURNS = 40, COMMON = 12, OWN = 1;
   var START = [20, 4];                         /* 駒の出発点：各自から見て手前の左の角 */
   var CORNER = { 0: 6, 4: 12, 20: 3, 24: 9 };  /* 四隅は動かないので、内向きのかどに決めておく（閉じ込め防止） */
   var GEO = null;
@@ -203,24 +205,24 @@ var Oshiai = (function () {
       var cells = [], i, m;
       for (i = 0; i < NN; i++) cells.push(0);
       for (i in CORNER) cells[i] = CORNER[i];
-      cells[12] = rng() < 0.5 ? 5 : 10;        /* 中心は自分自身と対になるので、180度回して同じ形＝直線だけ */
+      cells[12] = rng() < 0.5 ? 5 : 10;        /* 中心（共通の宝）は自分自身と対になるので、180度回して同じ形＝直線だけ（十字のタイルは無い） */
       for (i = 0; i < 12; i++) {
         if (CORNER[i] !== undefined) continue;
         m = randomTile(rng);
         cells[i] = m; cells[mirror(i)] = rotate(m, 2);
       }
-      /* 宝：四隅（駒の出発点）と中心を除く10対から3対を選び、対の片方を手前、もう片方を向こうの宝にする */
+      /* 自分の宝：四隅（駒の出発点）と中心（共通の宝）を除く10対から1対を選び、対の片方を手前、もう片方を向こうの宝にする */
       var pool = [];
       for (i = 0; i < 12; i++) if (CORNER[i] === undefined) pool.push(i);
       for (i = pool.length - 1; i > 0; i--) { var j = Math.floor(rng() * (i + 1)), t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
       var t0 = [], t1 = [];
-      for (i = 0; i < GOAL; i++) {
+      for (i = 0; i < OWN; i++) {
         var a = rng() < 0.5 ? pool[i] : mirror(pool[i]);
         t0.push(a); t1.push(mirror(a));
       }
       var s = { cells: cells, hand: randomTile(rng), piece: START.slice(), tre: [t0, t1], next: [0, 0],
                 turn: first, phase: 'push', ban: -1, turns: 0, first: first, over: false, winner: -1 };
-      /* はじめから①につながっている盤は配り直す（押さずに拾えてしまう）。対称なので片方だけ見ればよい */
+      /* はじめから自分の宝につながっている盤は配り直す（押さずに拾えてしまう）。対称なので片方だけ見ればよい */
       if (!reachable(s, 0)[t0[0]] || tries > 200) return s;
     }
   }
@@ -231,6 +233,12 @@ var Oshiai = (function () {
     if (s.piece[1] !== mirror(s.piece[0])) return false;
     for (var k = 0; k < s.tre[0].length; k++) if (s.tre[1][k] !== mirror(s.tre[0][k])) return false;
     return true;
+  }
+
+  /* 人 who が次に狙うマス（自分の宝が手持ちに乗っていれば -1、拾い終えていれば -2） */
+  function target(s, who) {
+    if (s.next[who] >= GOAL) return -2;
+    return s.next[who] < OWN ? s.tre[who][s.next[who]] : COMMON;
   }
 
   /* 押せる口（相手がたった今押した列を、その口の反対側から押し戻す口を除く） */
@@ -308,7 +316,7 @@ var Oshiai = (function () {
   }
 
   /* 押した後、手番の人が自分の駒を cell へ動かす（今のマスなら「とどまる」）。
-     次に拾う自分の宝のマスで止まったら拾う。3つ目で勝ち。手番の上限に着いたら拾った数で決める。
+     次に狙うマス（自分の宝→共通の宝）で止まったら拾う。共通の宝を拾えば勝ち。手番の上限に着いたら拾った数で決める。
      そうでなければ手番を渡す。動けないマスなら null */
   function moveTo(s, cell) {
     if (s.over || s.phase !== 'move') return null;
@@ -316,7 +324,7 @@ var Oshiai = (function () {
     if (!(cell >= 0 && cell < NN) || !reachable(s, me)[cell]) return null;
     var t = clone(s);
     t.piece[me] = cell;
-    if (t.next[me] < GOAL && t.tre[me][t.next[me]] === cell) { t.tre[me][t.next[me]] = -2; t.next[me]++; }
+    if (target(t, me) === cell) { if (t.next[me] < OWN) t.tre[me][t.next[me]] = -2; t.next[me]++; }
     t.turns++;
     if (t.next[me] >= GOAL) { t.over = true; t.winner = me; return t; }
     if (t.turns >= MAX_TURNS) {
@@ -329,7 +337,7 @@ var Oshiai = (function () {
   }
 
   return {
-    N: N, GOAL: GOAL, MAX_TURNS: MAX_TURNS, START: START,
+    N: N, GOAL: GOAL, MAX_TURNS: MAX_TURNS, START: START, COMMON: COMMON, OWN: OWN, target: target,
     geometry: geometry, isFixed: isFixed, rotate: rotate, variants: variants, mirror: mirror,
     newGame: newGame, clone: clone, isSymmetric: isSymmetric,
     legalOps: legalOps, push: push, reachable: reachable, pathBetween: pathBetween, moveTo: moveTo
@@ -350,14 +358,15 @@ if (typeof document !== 'undefined') (function () {
   var CELL = 100, GUT = 40, n = 5;
   var IN_MS = 130, SLIDE_MS = 170, OUT_MS = 160, WALK_MS = 140;
   var SHARE = CELL * 0.22;
-  var COL = ['var(--blue)', 'var(--red)'], TINT = ['var(--blueT)', 'var(--redT)'];
+  /* 添字 2 は共通の宝（どちらの色でもない金） */
+  var COL = ['var(--blue)', 'var(--red)', 'var(--gold)'], TINT = ['var(--blueT)', 'var(--redT)', 'var(--goldT)'];
   var HELP = [
     '手持ちを矢印から押し込み、列を1マスずらす',
     '駒も宝も列と一緒に動き、端から出たら反対へ',
     'それから自分の●を、道のつながる所へ動かす',
-    '自分の宝①②③に順に止まって拾う',
-    '相手がいま押した列は、押し戻せない',
-    '先に3つ拾った方の勝ち'
+    'まず自分の色の宝に、止まって拾う',
+    '次に真ん中の金の宝を、先に拾った方の勝ち',
+    '相手がいま押した列は、押し戻せない'
   ];
 
   var elSvg = document.getElementById('svg');
@@ -405,14 +414,11 @@ if (typeof document !== 'undefined') (function () {
     el('circle', { cx: x, cy: y, r: w / 2, stroke: 'none' }, g);
     return g;
   }
-  /* 宝（持ち主の色の番号つきの丸）。flip=番号を180度回す（向こうの人が正しく読めるように） */
+  /* 宝（淡い地に色の縁の丸・番号なし）。owner 0=青の宝 1=赤の宝 2=共通の宝（金）。
+     自分の宝は1人1つなので番号は描かない（2026-10-15 規則の変更）。id・flip は呼び出しの形を変えないために残す */
   function drawTreasure(parent, owner, id, x, y, isNext, flip) {
     var g = el('g', { opacity: isNext ? 1 : 0.5 }, parent);
-    el('circle', { cx: x, cy: y, r: CELL * 0.25, fill: TINT[owner], stroke: COL[owner], 'stroke-width': isNext ? 7 : 4 }, g);
-    var t = el('text', { x: x, y: y + CELL * 0.11, 'text-anchor': 'middle', 'font-size': CELL * 0.32,
-                         'font-weight': 700, fill: COL[owner] }, g);
-    if (flip) t.setAttribute('transform', 'rotate(180 ' + x + ' ' + y + ')');
-    t.textContent = String(id + 1);
+    el('circle', { cx: x, cy: y, r: CELL * 0.25, fill: TINT[owner], stroke: COL[owner], 'stroke-width': isNext ? 8 : 5 }, g);
     return g;
   }
   function drawPiece(parent, who, x, y) {
@@ -509,6 +515,9 @@ if (typeof document !== 'undefined') (function () {
     var at = {};
     function add(cell, item) { (at[cell] = at[cell] || []).push(item); }
     for (w = 0; w < 2; w++) for (k = 0; k < s.tre[w].length; k++) if (s.tre[w][k] >= 0) add(s.tre[w][k], { t: 'tre', owner: w, id: k });
+    /* 共通の宝（真ん中・動かない）。拾われたら消す。どちらかが狙い始めたら濃く */
+    var comNext = s.next[0] === Oshiai.OWN || s.next[1] === Oshiai.OWN;
+    if (s.next[0] < Oshiai.GOAL && s.next[1] < Oshiai.GOAL) add(Oshiai.COMMON, { t: 'tre', owner: 2, id: 0, common: 1 });
     for (w = 0; w < 2; w++) add(s.piece[w], { t: 'piece', who: w });
     for (var c in at) {
       var list = at[c], off = offsets(list.length);
@@ -517,7 +526,7 @@ if (typeof document !== 'undefined') (function () {
       if (three) off = [-SHARE, SHARE, SHARE];
       for (k = 0; k < list.length; k++) {
         var it = list[k], x = cx(+c) + off[k], y = cy(+c) + offY[k];
-        if (it.t === 'tre') g = drawTreasure(layerTop, it.owner, it.id, x, y, it.id === s.next[it.owner], it.owner === 1);
+        if (it.t === 'tre') g = drawTreasure(layerTop, it.owner, it.id, x, y, it.common ? comNext : it.id === s.next[it.owner], it.owner === 1);
         else { g = drawPiece(layerTop, it.who, x, y); pieceEls[it.who] = g; pieceOff[it.who] = off[k]; pieceOffY[it.who] = offY[k]; }
         if (it.t === 'piece' && anim && anim.hide && anim.hide.indexOf(it.who) >= 0) g.style.opacity = '0';
         else if (anim && anim.cells[+c]) slid.push(g);
@@ -573,12 +582,12 @@ if (typeof document !== 'undefined') (function () {
         sub.forEach(function (t) { var sp = document.createElement('span'); sp.textContent = t; sm.appendChild(sp); });
         elStatus[w].appendChild(sm);
       }
-      /* 次に拾う宝（陣の中では各自が正しく読める向き＝回転なし） */
+      /* 次に拾う宝（自分の色の宝 → 共通の金の宝） */
       var nx = elNext[w];
       while (nx.firstChild) nx.removeChild(nx.firstChild);
       if (s.next[w] < Oshiai.GOAL) {
         var sv = el('g', { transform: 'translate(50 50) scale(1.6) translate(-50 -50)' }, nx);
-        drawTreasure(sv, w, s.next[w], 50, 50, true, false);
+        drawTreasure(sv, s.next[w] < Oshiai.OWN ? w : 2, s.next[w], 50, 50, true, false);
       }
       elGot[w].textContent = '拾った ' + s.next[w] + '/' + Oshiai.GOAL;
     }
@@ -705,7 +714,7 @@ if (typeof document !== 'undefined') (function () {
   /* ---- 決着 ---- */
   function showOver() {
     /* 各自の側に「かち／まけ／ひきわけ」（はやつかみ・かぶせっこと同じ。「青の勝ち」は自分の色を思い出させる）。
-       打ち切りのときだけ下に「60手で 自分対相手」。3つ拾った決着は見れば分かるので添えない */
+       打ち切りのときだけ下に「40手で 自分対相手」。共通の宝を拾った決着は見れば分かるので添えない */
     var w = st.winner, cap = st.next[0] < Oshiai.GOAL && st.next[1] < Oshiai.GOAL;
     for (var i = 0; i < 2; i++) {
       elRes[i].textContent = w < 0 ? 'ひきわけ' : (w === i ? 'かち' : 'まけ');
