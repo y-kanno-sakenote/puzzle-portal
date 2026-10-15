@@ -96,6 +96,8 @@
   .helpText{font-size:13px;line-height:1.8;text-align:left;color:var(--ink)}
   .helpText div{white-space:nowrap}
   .helpText.top{transform:rotate(180deg)}
+  /* ui係：横持ち（高さ約360px）では8行×上下2枚が縦に入らず下の板が切れるので、陣と同じく左右に並べる */
+  @media (orientation:landscape){ #helpPanel{flex-direction:row;justify-content:space-around;align-items:center} }
 </style>
 </head>
 <body>
@@ -150,9 +152,14 @@
    手番は「押し込む（phase 'push'）→ 自分の駒を動かす（phase 'move'）」の2段。
    ただし**先手の最初の手番は押すだけ**（駒は動かせない＝その場にとどまる。押した時点で手番が終わる）。
    先手の有利を縮めるため（2026-10-15 オーナー了承。決着した局の先手勝率 58〜68% → 46〜50%・tools/selfplay.js）
+   **延長戦**（2026-10-15 オーナー決定「打ち切りになったら条件を狭めて再戦」）：本戦が40手の打ち切りで拾った数が同じなら、
+   その状態は over・winner=-1 のまま extend=true になり、extend(状態) で延長戦の盤を配る。延長戦は自分の宝なし（拾い済み扱い）で
+   最初から真ん中の共通の宝だけ・真ん中は十字・合わせて20手・1手目は押すだけ・先手は直前の段の先手と交代（1回目＝本戦の後手）。
+   延長戦も打ち切りなら同じ延長戦をもう1回（ext=2）。それでも決まらなければ引き分け。ext 0=本戦 1・2=延長戦の何回目か
    ===================================================================== */
 var Oshiai = (function () {
   var N = 5, NN = 25, GOAL = 2, MAX_TURNS = 40, COMMON = 12, OWN = 1;
+  var EXT_TURNS = 20, EXT_MAX = 2, CROSS = 15;   /* 延長戦：合わせて20手・2回まで・真ん中は十字（180度回して同じ形は直線と十字だけ） */
   var START = [20, 4];                         /* 駒の出発点：各自から見て手前の左の角 */
   var CORNER = { 0: 6, 4: 12, 20: 3, 24: 9 };  /* 四隅は動かないので、内向きのかどに決めておく（閉じ込め防止） */
   var GEO = null;
@@ -195,7 +202,7 @@ var Oshiai = (function () {
     return { cells: s.cells.slice(), hand: s.hand, piece: s.piece.slice(),
              tre: [s.tre[0].slice(), s.tre[1].slice()], next: s.next.slice(),
              turn: s.turn, phase: s.phase, ban: s.ban, turns: s.turns, first: s.first,
-             over: s.over, winner: s.winner };
+             over: s.over, winner: s.winner, ext: s.ext | 0, extend: !!s.extend };
   }
 
   /* 毎回ランダムな盤。タイル・駒・宝は盤の中心について180度回転で対称（先手・後手の条件を同じに）。
@@ -223,17 +230,37 @@ var Oshiai = (function () {
         t0.push(a); t1.push(mirror(a));
       }
       var s = { cells: cells, hand: randomTile(rng), piece: START.slice(), tre: [t0, t1], next: [0, 0],
-                turn: first, phase: 'push', ban: -1, turns: 0, first: first, over: false, winner: -1 };
+                turn: first, phase: 'push', ban: -1, turns: 0, first: first, over: false, winner: -1, ext: 0, extend: false };
       /* はじめから自分の宝につながっている盤は配り直す（押さずに拾えてしまう）。対称なので片方だけ見ればよい */
       if (!reachable(s, 0)[t0[0]] || tries > 200) return s;
     }
   }
 
-  /* 盤が180度対称か（自動対局・qa係の確かめ用） */
+  /* 延長戦の盤を配る（s は本戦か延長戦の、extend=true で終わった状態）。配り直し（180度対称）、自分の宝は拾い済み扱いで
+     最初から真ん中の共通の宝だけを狙う。真ん中は十字。先手は直前の段の先手と交代。はじめから真ん中につながる盤は配り直す。
+     opt.rng: 0..1 を返す関数（自動対局用） */
+  function extend(s, opt) {
+    if (!s || !s.over || !s.extend) return null;
+    opt = opt || {};
+    var first = 1 - s.first, t;
+    for (var tries = 0; ; tries++) {
+      t = newGame({ rng: opt.rng, first: first });
+      t.cells[COMMON] = CROSS;
+      t.tre = [[-2], [-2]]; t.next = [OWN, OWN]; t.ext = s.ext + 1;
+      if (!reachable(t, 0)[COMMON] || tries > 200) return t;
+    }
+  }
+  /* この段の打ち切りの手数（本戦 40・延長戦 20） */
+  function limit(s) { return s.ext ? EXT_TURNS : MAX_TURNS; }
+
+  /* 盤が180度対称か（自動対局・qa係の確かめ用）。拾った宝（-2）・手持ちの宝（-1）は両者が同じなら対称とみなす */
   function isSymmetric(s) {
     for (var i = 0; i < NN; i++) if (s.cells[mirror(i)] !== rotate(s.cells[i], 2)) return false;
     if (s.piece[1] !== mirror(s.piece[0])) return false;
-    for (var k = 0; k < s.tre[0].length; k++) if (s.tre[1][k] !== mirror(s.tre[0][k])) return false;
+    for (var k = 0; k < s.tre[0].length; k++) {
+      var a = s.tre[0][k], b = s.tre[1][k];
+      if (a < 0 ? b !== a : b !== mirror(a)) return false;
+    }
     return true;
   }
 
@@ -322,7 +349,8 @@ var Oshiai = (function () {
   }
 
   /* 押した後、手番の人が自分の駒を cell へ動かす（今のマスなら「とどまる」）。
-     次に狙うマス（自分の宝→共通の宝）で止まったら拾う。共通の宝を拾えば勝ち。手番の上限に着いたら拾った数で決める。
+     次に狙うマス（自分の宝→共通の宝）で止まったら拾う。共通の宝を拾えば勝ち。手番の上限に着いたら拾った数で決める
+     （同じなら引き分けのまま extend=true＝延長戦へ。延長戦の打ち切りは、2回目までは extend=true、2回目なら引き分け）。
      そうでなければ手番を渡す。動けないマスなら null */
   function moveTo(s, cell) {
     if (s.over || s.phase !== 'move') return null;
@@ -333,9 +361,10 @@ var Oshiai = (function () {
     if (target(t, me) === cell) { if (t.next[me] < OWN) t.tre[me][t.next[me]] = -2; t.next[me]++; }
     t.turns++;
     if (t.next[me] >= GOAL) { t.over = true; t.winner = me; return t; }
-    if (t.turns >= MAX_TURNS) {
+    if (t.turns >= limit(t)) {
       t.over = true;
       t.winner = t.next[0] > t.next[1] ? 0 : (t.next[1] > t.next[0] ? 1 : -1);   /* -1 は引き分け */
+      t.extend = t.winner < 0 && t.ext < EXT_MAX;
       return t;
     }
     t.turn = 1 - me; t.phase = 'push';
@@ -344,6 +373,7 @@ var Oshiai = (function () {
 
   return {
     N: N, GOAL: GOAL, MAX_TURNS: MAX_TURNS, START: START, COMMON: COMMON, OWN: OWN, target: target, pushOnly: pushOnly,
+    EXT_TURNS: EXT_TURNS, EXT_MAX: EXT_MAX, extend: extend, limit: limit,
     geometry: geometry, isFixed: isFixed, rotate: rotate, variants: variants, mirror: mirror,
     newGame: newGame, clone: clone, isSymmetric: isSymmetric,
     legalOps: legalOps, push: push, reachable: reachable, pathBetween: pathBetween, moveTo: moveTo
@@ -373,7 +403,8 @@ if (typeof document !== 'undefined') (function () {
     'まず自分の色の宝に、止まって拾う',
     '次に真ん中の金の宝を、先に拾った方の勝ち',
     '相手がいま押した列は、押し戻せない',
-    '先手の1手目は押すだけ（駒は動かせない）'
+    '先手の1手目は押すだけ（駒は動かせない）',
+    '40手で同点なら、真ん中の宝だけの延長戦'
   ];
 
   var elSvg = document.getElementById('svg');
@@ -570,7 +601,7 @@ if (typeof document !== 'undefined') (function () {
 
   /* 両方の陣：手番・次に拾う宝・拾った数・手持ち */
   function renderSides(s) {
-    var left = Oshiai.MAX_TURNS - s.turns;
+    var left = Oshiai.limit(s) - s.turns;
     for (var w = 0; w < 2; w++) {
       var mine = !s.over && s.turn === w;
       elSide[w].classList.toggle('dim', !s.over && !mine);
@@ -597,7 +628,9 @@ if (typeof document !== 'undefined') (function () {
         var sv = el('g', { transform: 'translate(50 50) scale(1.6) translate(-50 -50)' }, nx);
         drawTreasure(sv, s.next[w] < Oshiai.OWN ? w : 2, s.next[w], 50, 50, true, false);
       }
-      elGot[w].textContent = '拾った ' + s.next[w] + '/' + Oshiai.GOAL;
+      /* 延長戦は自分の宝が無いので、拾った数の代わりに何回目の延長戦かを出す */
+      /* ui係：1回目は「延長戦」だけ、2回目は「延長戦2回目」（決着の「延長戦で／延長戦2回目で」と同じ書き方） */
+      elGot[w].textContent = s.ext ? '延長戦' + (s.ext > 1 ? s.ext + '回目' : '') : '拾った ' + s.next[w] + '/' + Oshiai.GOAL;
     }
     renderHands(s);
   }
@@ -723,26 +756,47 @@ if (typeof document !== 'undefined') (function () {
   function showOver() {
     /* 各自の側に「かち／まけ／ひきわけ」（はやつかみ・かぶせっこと同じ。「青の勝ち」は自分の色を思い出させる）。
        打ち切りのときだけ下に「40手で 自分対相手」。共通の宝を拾った決着は見れば分かるので添えない */
+    /* 延長戦に入るときは「延長戦」と、なぜ入ったか・何が変わるかを出し、真ん中のボタンで延長戦の盤を配る。
+       延長戦で決まったら「延長戦で」を添える（延長戦の打ち切りの引き分けも同じ） */
     var w = st.winner, cap = st.next[0] < Oshiai.GOAL && st.next[1] < Oshiai.GOAL;
     for (var i = 0; i < 2; i++) {
-      elRes[i].textContent = w < 0 ? 'ひきわけ' : (w === i ? 'かち' : 'まけ');
-      if (!cap) continue;
-      var sp = document.createElement('span'); sp.textContent = Oshiai.MAX_TURNS + '手で ' + st.next[i] + '対' + st.next[1 - i]; elRes[i].appendChild(sp);
+      var lines = [];
+      if (st.extend) {
+        elRes[i].textContent = st.ext ? 'もう一度 延長戦' : '延長戦';
+        /* ui係：「・同点」は 1対1 と見出しで分かるので削る。十字は盤で見えるので書かず、盤で見えない「20手」を書く。
+           2回目は同じ規則の繰り返しなので理由の1行だけ */
+        lines = st.ext ? [Oshiai.EXT_TURNS + '手で決まらず']
+                       : [Oshiai.MAX_TURNS + '手で ' + st.next[i] + '対' + st.next[1 - i], '真ん中の宝だけ・' + Oshiai.EXT_TURNS + '手'];
+      } else {
+        elRes[i].textContent = w < 0 ? 'ひきわけ' : (w === i ? 'かち' : 'まけ');
+        if (st.ext) lines = [w < 0 ? '延長戦' + st.ext + '回でも決まらず' : '延長戦' + (st.ext > 1 ? st.ext + '回目' : '') + 'で'];
+        else if (cap) lines = [Oshiai.MAX_TURNS + '手で ' + st.next[i] + '対' + st.next[1 - i]];
+      }
+      lines.forEach(function (t) { var sp = document.createElement('span'); sp.textContent = t; elRes[i].appendChild(sp); });
     }
+    elAgainOver.textContent = st.extend ? '延長戦へ' : 'もう一局';
     elOver.hidden = false;
   }
 
-  /* ---- 一局を始める。先手は毎回交代（1局目は手前） ---- */
-  function start() {
-    if (busy) return;
-    st = Oshiai.newGame({ first: games % 2 });
-    games++;
+  /* ---- 一局を始める。先手は毎回交代（1局目は手前。延長戦の先手は数えず、本戦の先手を基準にする） ---- */
+  function begin(s) {
+    st = s;
     holder = st.turn;
     handBase = st.hand; handTurn = 0;
     elOver.hidden = true;
     render(st, null);
   }
-  document.getElementById('againOver').addEventListener('click', start);
+  function start() {
+    if (busy) return;
+    begin(Oshiai.newGame({ first: games % 2 }));
+    games++;
+  }
+  var elAgainOver = document.getElementById('againOver');
+  elAgainOver.addEventListener('click', function () {
+    if (busy) return;
+    if (st && st.over && st.extend) begin(Oshiai.extend(st));   /* 延長戦の盤を配る（本戦・延長戦1回目の同点の打ち切り） */
+    else start();
+  });
   Array.prototype.forEach.call(document.querySelectorAll('.again'), function (b) { b.addEventListener('click', start); });
 
   buildFrame();
