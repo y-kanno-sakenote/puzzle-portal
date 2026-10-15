@@ -1,6 +1,6 @@
-# クエストの「みんなの記録」（合言葉つきの仲間内ボード）。手順は README.md。まだデプロイしていない。
-# 鍵はここに書かない：npx wrangler secret put BOARD_KEY（合言葉）／ADMIN_KEY（オーナーの削除用）
-# 手元の wrangler dev は worker/.dev.vars に BOARD_KEY=... と ADMIN_KEY=... の2行（gitignore 済み）
+# クエストの「みんなの記録」（誰でも見られて載せられるボード）。手順は README.md
+# 鍵はここに書かない：npx wrangler secret put ADMIN_KEY（オーナーの削除用。見る・載せるに鍵は要らない）
+# 手元の wrangler dev は worker/.dev.vars に ADMIN_KEY=... の1行（gitignore 済み）
 name = "puzzle-quest-board"
 main = "src/index.js"
 workers_dev = true
@@ -12,7 +12,7 @@ compatibility_date = "2026-09-01"
 ALLOWED_ORIGINS = "https://y-kanno-sakenote.github.io,http://localhost:8733,http://100.71.44.114:8733"
 # 連投の制限：1つの IP（IPv6 は /64）から1分に載せられる件数（叩き台）
 RATE_PER_MIN = "3"
-# 合言葉の総当たり止め：1つの IP から1分に鍵違いがこの回数を超えたら 429（正しい鍵の利用は数えない・叩き台）
+# 管理鍵の総当たり止め：1つの IP から1分に削除の鍵違いがこの回数を超えたら、その IP の削除を1分 429（正しい鍵の利用は数えない・叩き台）
 BAD_KEY_PER_MIN = "10"
 
 # ボード（Durable Object 1個・SQLite バックエンド＝無料プランで使える形）。上位100件と連投の記録を持つ。作成は deploy が自動で行う

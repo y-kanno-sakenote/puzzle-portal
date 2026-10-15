@@ -1,5 +1,5 @@
 // npm test（= node --test test/board.test.js。worker/ で。wrangler dev も鍵も要らない）
-// 鍵はファイルに書かない：TEST_BOARD_KEY・TEST_ADMIN_KEY があればそれを、無ければ実行のたびに乱数で作る
+// 管理鍵はファイルに書かない：TEST_ADMIN_KEY があればそれを、無ければ実行のたびに乱数で作る（ボードを見る・載せるのに鍵は要らない）
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -10,7 +10,6 @@ import * as R from "../src/rules.js";
 import { createHandler, validateEntry, cleanName } from "../src/handler.js";
 import { Board } from "../src/board.js";
 
-const BOARD_KEY = process.env.TEST_BOARD_KEY || crypto.randomUUID();
 const ADMIN_KEY = process.env.TEST_ADMIN_KEY || crypto.randomUUID();
 const ORIGIN = "https://y-kanno-sakenote.github.io";
 
@@ -158,32 +157,34 @@ function boardNS() {
   const stub = { add: async (...a) => b.add(...a), list: async (...a) => b.list(...a), remove: async (...a) => b.remove(...a), failKey: async (...a) => b.failKey(...a), keyGate: async (...a) => b.keyGate(...a) };
   return { idFromName: () => "board", get: () => stub };
 }
-const env = (extra = {}) => ({ BOARD: boardNS(), BOARD_KEY, ADMIN_KEY, ALLOWED_ORIGINS: `${ORIGIN},http://localhost:8733`, RATE_PER_MIN: "3", ...extra });
-const req = (method, path, { body, key = BOARD_KEY, admin, origin = ORIGIN, ip = "203.0.113.1" } = {}) => {
+const env = (extra = {}) => ({ BOARD: boardNS(), ADMIN_KEY, ALLOWED_ORIGINS: `${ORIGIN},http://localhost:8733`, RATE_PER_MIN: "3", ...extra });
+const req = (method, path, { body, key, admin, origin = ORIGIN, ip = "203.0.113.1" } = {}) => {
   const h = { "CF-Connecting-IP": ip, "content-type": "application/json" };
   if (origin) h.Origin = origin;
-  if (key) h["X-Board-Key"] = encodeURIComponent(key);   // 画面と同じ送り方
+  if (key) h["X-Board-Key"] = encodeURIComponent(key);   // 合言葉のころの画面が送っていたヘッダ（今は見ない）
   if (admin) h["X-Admin-Key"] = encodeURIComponent(admin);
   return new Request("https://w.example" + path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
 };
 
-test("合言葉・オリジン", async () => {
+test("合言葉なしで見る・載せる（古い画面の合言葉は無視）・オリジン", async () => {
   let t = 1e12;
-  const handle = createHandler({ now: () => t++ });
+  const handle = createHandler({ now: () => (t += 61e3) });
   const e = env();
-  assert.equal((await handle(req("GET", "/board", { key: "ちがう" }), e)).status, 403);
-  assert.equal((await handle(req("GET", "/board", { key: null }), e)).status, 403);
-  assert.equal((await handle(req("POST", "/entries", { body: clearRun(), key: "ちがう" }), e)).status, 403);
-  assert.equal((await handle(req("GET", "/board", { origin: "https://evil.example" }), e)).status, 403);
-  assert.equal((await handle(req("GET", "/board"), env({ BOARD_KEY: "" }))).status, 403, "鍵が未設定なら誰も入れない");
-  const jp = env({ BOARD_KEY: "かもしてぽん" + BOARD_KEY.slice(0, 4) });
-  assert.equal((await handle(req("GET", "/board", { key: jp.BOARD_KEY }), jp)).status, 200, "日本語の合言葉も通る");
   const ok = await handle(req("GET", "/board"), e);
-  assert.equal(ok.status, 200);
+  assert.equal(ok.status, 200, "合言葉なしで見られる");
   assert.equal(ok.headers.get("access-control-allow-origin"), ORIGIN);
-  const pre = await handle(req("OPTIONS", "/entries", { key: null }), e);
+  assert.equal((await handle(req("POST", "/entries", { body: clearRun() }), e)).status, 200, "合言葉なしで載せられる");
+  assert.equal((await handle(req("GET", "/board", { key: "むかしの合言葉" }), e)).status, 200, "古い画面の X-Board-Key は無視");
+  assert.equal((await handle(req("POST", "/entries", { body: outRun(), key: "x" }), e)).status, 200);
+  assert.equal((await handle(req("GET", "/board"), env({ BOARD_KEY: "のこっている secret" }))).status, 200, "BOARD_KEY が残っていても見ない");
+  assert.equal((await handle(req("GET", "/board", { origin: null }), e)).status, 200, "curl（Origin なし）からも見られる");
+  assert.equal((await handle(req("GET", "/board", { origin: "https://evil.example" }), e)).status, 403);
+  assert.equal((await handle(req("POST", "/entries", { body: outRun(), origin: "https://evil.example" }), e)).status, 403);
+  const pre = await handle(req("OPTIONS", "/entries"), e);
   assert.equal(pre.status, 204);
-  assert.match(pre.headers.get("access-control-allow-headers"), /x-board-key/);
+  assert.match(pre.headers.get("access-control-allow-headers"), /content-type/);
+  assert.match(pre.headers.get("access-control-allow-headers"), /x-board-key/, "開いたままの古い画面も弾かない");
+  assert.equal((await (await handle(req("GET", "/board"), e)).json()).entries.length, 2);
 });
 
 test("載せる・順位・並び順・弾いた理由", async () => {
@@ -246,49 +247,42 @@ test("オーナーが1件消す（ADMIN_KEY のときだけ）", async () => {
   const handle = createHandler({ now: () => (t += 61e3) });
   const e = env();
   const { id } = await (await handle(req("POST", "/entries", { body: outRun() }), e)).json();
-  assert.equal((await handle(req("DELETE", "/entries/" + id), e)).status, 403, "合言葉では消せない");
+  assert.equal((await handle(req("DELETE", "/entries/" + id), e)).status, 403, "管理鍵が無ければ消せない");
+  assert.equal((await handle(req("DELETE", "/entries/" + id, { key: "むかしの合言葉" }), e)).status, 403, "合言葉では消せない");
+  assert.equal((await handle(req("DELETE", "/entries/" + id), env({ ADMIN_KEY: "" }))).status, 403, "管理鍵が未設定なら誰も消せない");
   assert.equal((await handle(req("DELETE", "/entries/" + id, { admin: "ちがう" }), e)).status, 403);
-  assert.equal((await handle(req("DELETE", "/entries/" + id, { admin: ADMIN_KEY, key: null, origin: null }), e)).status, 200, "curl（Origin なし）から消せる");
-  assert.equal((await handle(req("DELETE", "/entries/" + id, { admin: ADMIN_KEY, key: null, origin: null }), e)).status, 404);
+  assert.equal((await handle(req("DELETE", "/entries/" + id, { admin: ADMIN_KEY, origin: null }), e)).status, 200, "curl（Origin なし）から消せる");
+  assert.equal((await handle(req("DELETE", "/entries/" + id, { admin: ADMIN_KEY, origin: null }), e)).status, 404);
   assert.equal((await (await handle(req("GET", "/board"), e)).json()).entries.length, 0);
 });
 
-test("鍵違いの総当たり：1分に10回を超えたらその IP は1分間、正しい鍵も含めて 429（当たり外れが見分けられない）", async () => {
+test("管理鍵違いの総当たり：1分に10回を超えたらその IP は1分間、正しい管理鍵でも 429（当たり外れが見分けられない）。見る・載せるは止めない", async () => {
   let t = 1e12;
   const handle = createHandler({ now: () => (t += 100) });
   const e = env();
   const body = async (r) => [r.status, await r.text(), r.headers.get("retry-after")];
-  // 制限の前：外れは 403、正しい鍵は 200
-  for (let i = 0; i < 10; i++) assert.equal((await handle(req("GET", "/board", { key: "x" + i }), e)).status, 403, `${i + 1}回目`);
-  assert.equal((await handle(req("GET", "/board"), e)).status, 200, "10回以内なら正しい鍵は通る");
-  const first = await body(await handle(req("GET", "/board", { key: "x10" }), e));
+  const del = (admin, ip) => req("DELETE", "/entries/abc", { admin, origin: null, ip });
+  for (let i = 0; i < 10; i++) assert.equal((await handle(del("a" + i), e)).status, 403, `${i + 1}回目`);
+  assert.equal((await handle(del(ADMIN_KEY), e)).status, 404, "制限の前は正しい管理鍵が通る（その id は無い）");
+  const first = await body(await handle(del("a10"), e));
   assert.equal(first[0], 429, "11回目の外れで制限");
-  // 制限中：合言葉の当たり外れ・管理鍵の当たり外れ・GET/POST/DELETE のどれも同じ 429・同じ本文
-  const tries = [
-    req("GET", "/board"), req("GET", "/board", { key: "y" }),
-    req("POST", "/entries", { body: outRun() }), req("POST", "/entries", { body: outRun(), key: "y" }),
-    req("DELETE", "/entries/abc", { admin: ADMIN_KEY, key: null, origin: null }), req("DELETE", "/entries/abc", { admin: "y", key: null, origin: null }),
-  ];
-  for (const r of tries) assert.deepEqual(await body(await handle(r, e)), first);
-  // 別の IP は影響なし
-  assert.equal((await handle(req("GET", "/board", { ip: "203.0.113.9" }), e)).status, 200);
-  assert.equal((await handle(req("GET", "/board", { key: "y", ip: "203.0.113.9" }), e)).status, 403);
-  // 1分たてば戻る（正しい鍵は 200・外れは 403 から数え直し）
-  t += 61e3;
+  assert.deepEqual(await body(await handle(del(ADMIN_KEY), e)), first, "制限中は正しい管理鍵でも同じ 429");
+  assert.deepEqual(await body(await handle(del("y"), e)), first);
+  assert.deepEqual(await body(await handle(del(null), e)), first);
+  // 同じ IP でも見る・載せるは止まらない
   assert.equal((await handle(req("GET", "/board"), e)).status, 200);
   assert.equal((await handle(req("POST", "/entries", { body: outRun() }), e)).status, 200);
-  assert.equal((await handle(req("GET", "/board", { key: "z" }), e)).status, 403);
+  assert.equal((await handle(del(ADMIN_KEY, "203.0.113.9"), e)).status, 404, "別の IP は影響なし");
+  // 1分たてば戻る
+  t += 61e3;
+  assert.equal((await handle(del(ADMIN_KEY), e)).status, 404);
+  assert.equal((await handle(del("z"), e)).status, 403, "外れは 403 から数え直し");
 });
 
-test("管理鍵の総当たりも同じ（制限中は正しい管理鍵でも 429）", async () => {
+test("見る・載せるは鍵違いに数えない（何度呼んでも削除の制限に入らない）", async () => {
   let t = 1e12;
   const handle = createHandler({ now: () => (t += 100) });
   const e = env();
-  const del = (admin) => req("DELETE", "/entries/abc", { admin, key: null, origin: null });
-  for (let i = 0; i < 10; i++) assert.equal((await handle(del("a" + i), e)).status, 403);
-  assert.equal((await handle(del(ADMIN_KEY), e)).status, 404, "制限の前は正しい管理鍵が通る（その id は無い）");
-  assert.equal((await handle(del("a10"), e)).status, 429);
-  assert.equal((await handle(del(ADMIN_KEY), e)).status, 429, "制限中は正しい管理鍵でも 429");
-  t += 61e3;
-  assert.equal((await handle(del(ADMIN_KEY), e)).status, 404);
+  for (let i = 0; i < 30; i++) assert.equal((await handle(req("GET", "/board", { key: "x" + i }), e)).status, 200);
+  assert.equal((await handle(req("DELETE", "/entries/abc", { admin: ADMIN_KEY, origin: null }), e)).status, 404);
 });

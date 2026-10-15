@@ -1,5 +1,5 @@
-// みんなの記録（合言葉つきの仲間内ボード）の中身。Node から単体テストできる形（DO の外枠は index.js）。
-// 流れ: オリジン → 合言葉（X-Board-Key／削除は X-Admin-Key） → GET /board | POST /entries（検証 → 帳場で連投制限と記録） | DELETE /entries/:id
+// みんなの記録（誰でも見られて載せられるボード）の中身。Node から単体テストできる形（DO の外枠は index.js）。
+// 流れ: オリジン → GET /board | POST /entries（検証 → 帳場で連投制限と記録） | DELETE /entries/:id（X-Admin-Key・鍵違いの制限つき）
 // 軽いずる対策（quest/docs/spec.md §12）：置き場所の側で、問題の範囲・本当の最小手数・二重のゲーム・累計を計算し直して照らす
 import { SYSTEMS, QUEST, STAGES, MINS, SCORE_MAX, BOSS_MOVES_MIN, BOSS_MOVES_MAX, left, recompute, systemOf } from "./rules.js";
 
@@ -84,8 +84,8 @@ export async function ipKey(ip) {
   return [...new Uint8Array(h)].slice(0, 8).map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
-/** 合言葉の照合（ハッシュどうしを全桁比べる＝一致した桁数で時間が変わらない）。鍵が設定されていなければ常に不一致 */
-// ヘッダは ASCII しか運べないので、画面は合言葉を encodeURIComponent して送る（日本語の合言葉も使える）。ここで戻してから比べる
+/** 管理鍵の照合（ハッシュどうしを全桁比べる＝一致した桁数で時間が変わらない）。鍵が設定されていなければ常に不一致 */
+// ヘッダは ASCII しか運べないので、鍵は encodeURIComponent した形でも受ける（ここで戻してから比べる）
 async function sameKey(header, secret) {
   if (!secret || typeof header !== "string" || !header) return false;
   let given = header;
@@ -107,7 +107,7 @@ export function createHandler(deps = {}) {
   return async function handle(req, env) {
     const origin = req.headers.get("Origin");
     const allowed = (env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
-    // ブラウザからは許したページだけ。Origin の無い呼び出し（オーナーの curl）は鍵だけで判断する
+    // ブラウザからは許したページだけ。Origin の無い呼び出し（curl など）も通す（削除は管理鍵で判断する）
     const okOrigin = origin === null || allowed.includes(origin);
     const cors = origin && okOrigin ? { "access-control-allow-origin": origin, vary: "Origin" } : { vary: "Origin" };
     const json = (status, body, extra = {}) =>
@@ -115,34 +115,29 @@ export function createHandler(deps = {}) {
 
     if (!okOrigin) return json(403, { error: "origin_not_allowed", message: "このページからは使えません" });
     if (req.method === "OPTIONS") {
+      // x-board-key は合言葉のころの画面（開いたままのタブ）が送ってくるので許すだけ。中身は見ない
       return new Response(null, { status: 204, headers: { ...cors, "access-control-allow-methods": "GET, POST, OPTIONS", "access-control-allow-headers": "content-type, x-board-key", "access-control-max-age": "86400" } });
     }
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/, "");
     if (!env.BOARD) return json(500, { error: "no_board", message: "いまは使えません" });
     const board = env.BOARD.get(env.BOARD.idFromName("board"));
-
-    // 合言葉の総当たり止め：鍵違いを IP ごとに数え、1分に BAD_KEY_PER_MIN 回を超えたら、その IP は1分間
-    // 鍵を使うすべての要求（正しい鍵も含む）を 429 にする。制限中は鍵を見ずに同じ応答を返す＝当たり外れが応答から見分けられない
     const ip = await ipKey(req.headers.get("CF-Connecting-IP") || "");
-    const blockedRes = () => json(429, { error: "rate_key", message: "鍵の間違いが続いています。少し待ってください" }, { "retry-after": "60" });
-    try { if ((await board.keyGate(ip, { now: now() })).blocked) return blockedRes(); } catch { /* 帳場が読めなければ鍵の照合へ進む */ }
-    const denied = async (message) => {
-      let r = { ok: true };
-      try { r = await board.failKey(ip, { now: now(), limit: num(env.BAD_KEY_PER_MIN, 10) }); } catch { /* 数えられなくても 403 は返す */ }
-      return r.ok ? json(403, { error: "forbidden", message }) : blockedRes();
-    };
 
-    // オーナーの削除（X-Admin-Key）。合言葉では消せない
-
+    // オーナーの削除（X-Admin-Key）。管理鍵の総当たり止め：鍵違いを IP ごとに数え、1分に BAD_KEY_PER_MIN 回を超えたら、
+    // その IP は1分間、削除の要求（正しい鍵も含む）をすべて 429 にする。制限中は鍵を見ずに同じ応答＝当たり外れが応答から見分けられない
     const del = /^\/entries\/([A-Za-z0-9-]{1,64})$/.exec(path);
     if (del && req.method === "DELETE") {
-      if (!(await sameKey(req.headers.get("X-Admin-Key"), env.ADMIN_KEY))) return denied("消せません");
+      const blockedRes = () => json(429, { error: "rate_key", message: "鍵の間違いが続いています。少し待ってください" }, { "retry-after": "60" });
+      try { if ((await board.keyGate(ip, { now: now() })).blocked) return blockedRes(); } catch { /* 帳場が読めなければ鍵の照合へ進む */ }
+      if (!(await sameKey(req.headers.get("X-Admin-Key"), env.ADMIN_KEY))) {
+        let r = { ok: true };
+        try { r = await board.failKey(ip, { now: now(), limit: num(env.BAD_KEY_PER_MIN, 10) }); } catch { /* 数えられなくても 403 は返す */ }
+        return r.ok ? json(403, { error: "forbidden", message: "消せません" }) : blockedRes();
+      }
       const removed = await board.remove(del[1]);
       return removed ? json(200, { ok: true }) : json(404, { error: "not_found", message: "その記録はありません" });
     }
-
-    if (!(await sameKey(req.headers.get("X-Board-Key"), env.BOARD_KEY))) return denied("合言葉が違います");
 
     if (path === "/board" && req.method === "GET") {
       const list = await board.list(BOARD_MAX);

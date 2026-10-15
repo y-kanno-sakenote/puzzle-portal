@@ -49,7 +49,7 @@
   #recordList li span{min-width:0;overflow-wrap:anywhere}
   #recordList li span.named{font-size:17px}
   #recordList li span.named small{margin-left:6px}
-  /* みんなの記録（合言葉のある人だけ）：自分の記録と同じ1件1行に名前を足す */
+  /* みんなの記録：自分の記録と同じ1件1行に名前を足す */
   .recHead{font-size:13px;color:var(--sub);margin:0 0 4px;text-align:left}
   .recHead[hidden],#boardList[hidden],#boardSend[hidden],#boardForm[hidden]{display:none}
   #boardList{list-style:none;margin:0 0 24px;padding:0;text-align:left}
@@ -64,7 +64,7 @@
   #boardName{flex:1;min-width:0;font:inherit;font-size:16px;padding:12px;border:1px solid var(--frame);border-radius:10px;background:var(--panel);color:inherit}
   #boardGo{font:inherit;font-size:15px;font-weight:700;padding:0 14px;border:1px solid var(--frame);border-radius:10px;background:var(--panel);color:inherit;cursor:pointer}
   #boardGo:disabled{color:var(--sub);cursor:default}
-  /* 空の一行は隙間を作らない（画面が flex なので余白が畳まれない）。合言葉の無い人の「きろく」を前と同じ詰め方に（ui係） */
+  /* 空の一行は隙間を作らない（画面が flex なので余白が畳まれない・ui係） */
   #boardMsg:empty,#boardState:empty{display:none}
 </style>
 </head>
@@ -72,8 +72,8 @@
 <section class="screen" id="title">
   <h1>クエスト</h1>
   <button type="button" class="big" id="start">はじめる</button>
-  <!-- 記録が1件もないうちは出さない（空の画面へ案内しない） -->
-  <button type="button" class="back" id="toRecords" hidden>きろく</button>
+  <!-- みんなの記録があるので、自分の記録が0件でも出す -->
+  <button type="button" class="back" id="toRecords">きろく</button>
   <a class="back" href="../">‹ パズル箱</a>
 </section>
 
@@ -129,7 +129,7 @@
   <button type="button" class="back" id="outTitle">‹ タイトルへ</button>
 </section>
 
-<!-- 名前の欄（記録が残ったプレイ）。「みんなに載せる」は合言葉のある人だけ。終わりの画面（完走・アウト）の「もう一度」の下（タイトルへの上）に差し込む -->
+<!-- 名前の欄と「みんなに載せる」（1ステージ以上クリアしたプレイ）。終わりの画面（完走・アウト）の「もう一度」の下（タイトルへの上）に差し込む -->
 <div id="boardSend" hidden>
   <div id="boardForm">
     <input id="boardName" type="text" autocomplete="nickname" enterkeyhint="send" placeholder="なまえ" aria-label="なまえ">
@@ -385,41 +385,31 @@ function records() {
     li.appendChild(sc);
     box.appendChild(li);
   });
-  /* 合言葉のある人だけ、自分の記録の下にみんなの記録。見出しは2つ並ぶときだけ */
-  var key = boardKey();
+  /* 自分の記録の下にみんなの記録（「きろく」を開いたときだけ読みに行く）。見出しは2つ並ぶときだけ */
   /* 自分の記録が0件なら「みんな」の見出しも出さない（名前が並ぶので一つだけなら見分けがつく・ui係） */
-  $('boardHead').hidden = $('recordHead').hidden = !key || !box.children.length;
+  $('boardHead').hidden = $('recordHead').hidden = !box.children.length;
   $('boardList').hidden = true;
   $('boardState').textContent = '';
-  if (key) loadBoard();
+  loadBoard();
   show('records');
 }
 function title() {
-  $('toRecords').hidden = !loadRecords().length && !boardKey();
   show('title');
 }
 
-/* ---- みんなの記録（spec §12 2026-10-14）----
-   合言葉（#board=… で開くと覚える）を知る仲間だけが載せる・見る。合言葉が無ければ何も出さず、どこにも送らない。
+/* ---- みんなの記録（spec §12 2026-10-14・2026-10-15 合言葉を外した）----
+   誰でも載せる・見る。置き場所へは「みんなに載せる」を押したときと「きろく」を開いたときだけ通信する（タイトルでは送らない）。
    点は置き場所（Worker）が手数・最短・早撃ち・ボスから計算し直して照らす。外から来た文字は textContent でだけ入れる */
-var BOARD_URL = 'https://puzzle-quest-board.sakenote.workers.dev';   /* デプロイ後に Worker の URL（https://puzzle-quest-board.<…>.workers.dev）へ差し替える */
-var BOARD_KEY_STORE = 'quest-board-key', BOARD_NAME_STORE = 'quest-board-name';
-var boardKeyMem = '';   /* localStorage が使えない端末でも、開いている間は合言葉を持つ */
+var BOARD_URL = 'https://puzzle-quest-board.sakenote.workers.dev';
+var BOARD_NAME_STORE = 'quest-board-name';
 var boardPending = null;
-function boardKey() {
-  try { return localStorage.getItem(BOARD_KEY_STORE) || boardKeyMem; } catch (e) { return boardKeyMem; }
-}
-function readBoardHash() {
-  var m = /^#board=(.+)$/.exec(location.hash);
-  if (!m) return;
-  try { boardKeyMem = decodeURIComponent(m[1]); } catch (e) { boardKeyMem = m[1]; }
-  try { localStorage.setItem(BOARD_KEY_STORE, boardKeyMem); } catch (e) {}
-  /* 合言葉をアドレス欄に残さない（画面の共有で漏れない） */
+/* 合言葉のころの共有リンク（#board=…）は無害に無視し、アドレス欄からだけ消す。localStorage に残った合言葉は読まない */
+function dropBoardHash() {
+  if (!/^#board=/.test(location.hash)) return;
   try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
-  if (!$('title').hidden) title();   /* 開いたままのタイトルにも「きろく」を出す */
 }
-readBoardHash();
-window.addEventListener('hashchange', readBoardHash);
+dropBoardHash();
+window.addEventListener('hashchange', dropBoardHash);
 
 /* 置き場所への1往復。{status, body}。つながらなければ status=0。10秒で諦める */
 function boardFetch(method, path, body) {
@@ -427,7 +417,7 @@ function boardFetch(method, path, body) {
   var timer = ctl ? setTimeout(function () { ctl.abort(); }, 10000) : 0;
   return fetch(BOARD_URL + path, {
     method: method, signal: ctl ? ctl.signal : undefined,
-    headers: { 'X-Board-Key': encodeURIComponent(boardKey()), 'content-type': 'application/json' },
+    headers: body ? { 'content-type': 'application/json' } : {},   /* 見るだけなら飾りのヘッダを付けない＝事前の問い合わせ（OPTIONS）が要らない */
     body: body ? JSON.stringify(body) : undefined
   }).then(function (r) {
     return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, body: j }; });
@@ -443,19 +433,16 @@ function boardEntry(end, name, rare) {
     total: run.total, time: Math.round(run.time), char: name || '', rare: !!rare
   };
 }
-/* 終わりの画面に名前の欄を出す（1ステージ以上クリアしたとき）。合言葉の無い人は、記録に残った回だけ欄を出し「載せる」は出さない
-   （残らなかった回に欄を出すと、書いても何にもならない）。beforeId のボタンの上に差し込む */
+/* 終わりの画面に名前の欄と「みんなに載せる」を出す（1ステージ以上クリアしたとき）。beforeId のボタンの上に差し込む */
 function offerBoard(entry, beforeId) {
-  var box = $('boardSend'), key = boardKey();
-  boardPending = key && entry ? entry : null;
-  box.hidden = !(boardPending || (entry && lastRank));
+  var box = $('boardSend');
+  boardPending = entry || null;
+  box.hidden = !boardPending;
   if (box.hidden) return;
   var before = $(beforeId);
   before.parentNode.insertBefore(box, before);
   $('boardForm').hidden = false;
-  $('boardGo').hidden = !boardPending;
   $('boardGo').disabled = false;
-  $('boardName').setAttribute('enterkeyhint', boardPending ? 'send' : 'done');
   $('boardMsg').textContent = '';
   try { $('boardName').value = localStorage.getItem(BOARD_NAME_STORE) || ''; } catch (e) {}
 }
@@ -655,10 +642,9 @@ $('toRecords').addEventListener('click', records);
 $('recordsBack').addEventListener('click', title);
 $('boardGo').addEventListener('click', sendBoard);
 /* 漢字変換を確かめる Enter では送らない。Safari は変換確定の Enter で isComposing が false になるので keyCode 229 も見る（ui係） */
-/* 合言葉の無い人の Enter はキーボードを閉じるだけ（名前は打つたびに記録へ入っている） */
+/* 載せ終わった後の Enter はキーボードを閉じるだけ（名前は打つたびに記録へ入っている） */
 $('boardName').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { if (boardPending) sendBoard(); else $('boardName').blur(); } });
 $('boardName').addEventListener('input', function () { setPlayer($('boardName').value); });
-$('toRecords').hidden = !loadRecords().length && !boardKey();
 </script>
 </body>
 </html>
