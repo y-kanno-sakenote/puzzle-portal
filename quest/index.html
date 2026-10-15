@@ -45,6 +45,10 @@
   #recordList li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--frame);font-size:20px}
   #recordList b{font-variant-numeric:tabular-nums;white-space:nowrap}
   #recordList small{font-size:13px;font-weight:400;color:var(--sub);margin-left:2px}
+  /* 名前のある記録は「みんな」と同じ形（名前＋小さな絵文字）。長い名前は絵文字が下の行へ回る（ui係） */
+  #recordList li span{min-width:0;overflow-wrap:anywhere}
+  #recordList li span.named{font-size:17px}
+  #recordList li span.named small{margin-left:6px}
   /* みんなの記録（合言葉のある人だけ）：自分の記録と同じ1件1行に名前を足す */
   .recHead{font-size:13px;color:var(--sub);margin:0 0 4px;text-align:left}
   .recHead[hidden],#boardList[hidden],#boardSend[hidden],#boardForm[hidden]{display:none}
@@ -125,7 +129,7 @@
   <button type="button" class="back" id="outTitle">‹ タイトルへ</button>
 </section>
 
-<!-- みんなの記録に載せる（合言葉のある人だけ）。終わりの画面（完走・アウト）の「もう一度」の下（タイトルへの上）に差し込む -->
+<!-- 名前の欄（記録が残ったプレイ）。「みんなに載せる」は合言葉のある人だけ。終わりの画面（完走・アウト）の「もう一度」の下（タイトルへの上）に差し込む -->
 <div id="boardSend" hidden>
   <div id="boardForm">
     <input id="boardName" type="text" autocomplete="nickname" enterkeyhint="send" placeholder="なまえ" aria-label="なまえ">
@@ -295,11 +299,25 @@ function validRecord(r) {
     && Number.isInteger(r.time) && r.time >= 0 && Number.isFinite(r.at)
     && (r.end === 'clear' || r.end === 'out' || r.end === 'giveup')
     && typeof r.emoji === 'string' && typeof r.name === 'string' && typeof r.rare === 'boolean';
+  /* player（遊んだ人の名前）は任意。無い・不正なら loadRecords で名前なしにする（記録は捨てない） */
+}
+/* 遊んだ人の名前の決まりは Worker の cleanName に揃える：前後の空白を削り1〜12文字・制御文字/ゼロ幅は不可・見える文字が要る。不可なら '' */
+function cleanPlayer(v) {
+  if (typeof v !== 'string') return '';
+  var t = v.normalize('NFC').trim();
+  if (/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(t)) return '';
+  var n = Array.from(t).length;
+  if (n < 1 || n > 12) return '';
+  return t.replace(/[\p{White_Space}\p{Default_Ignorable_Code_Point}\p{M}⠀]/gu, '').length ? t : '';
 }
 function loadRecords() {
   try {
     var a = JSON.parse(localStorage.getItem(RECORD_KEY) || '[]');
-    return Array.isArray(a) ? a.filter(validRecord) : [];
+    return Array.isArray(a) ? a.filter(validRecord).map(function (r) {
+      var p = cleanPlayer(r.player);
+      if (p) r.player = p; else delete r.player;
+      return r;
+    }) : [];
   } catch (e) { return []; }
 }
 /* 記録を足し、何位に入ったかを返す（圏外なら0） */
@@ -312,13 +330,28 @@ function addRecord(r) {
   return a.indexOf(r) + 1;
 }
 /* 1プレイの終わりに記録を作る。キャラ名は完走したときだけ */
+var lastAt = 0;   /* 直前のプレイの記録の日時＝名前を後から書き換えるときの目印 */
 function recordRun(end, name, rare) {
   lastRank = 0;
   if (run.stage < 1 && end !== 'clear') return;   /* 1つもクリアしていないプレイは残さない */
-  lastRank = addRecord({
-    score: run.total, stages: end === 'clear' ? 3 : run.stage, end: end, time: Math.round(run.time), at: Date.now(),
+  lastAt = Date.now();
+  var r = {
+    score: run.total, stages: end === 'clear' ? 3 : run.stage, end: end, time: Math.round(run.time), at: lastAt,
     emoji: run.systems.map(function (i) { return SYSTEMS[i].emoji; }).join(''), name: name || '', rare: !!rare
-  });
+  };
+  /* 遊んだ人の名前は前回の名前で残し、終わりの画面の欄で直せば setPlayer が書き換える */
+  var p = '';
+  try { p = cleanPlayer(localStorage.getItem(BOARD_NAME_STORE) || ''); } catch (e) {}
+  if (p) r.player = p;
+  lastRank = addRecord(r);
+}
+/* 終わりの画面の名前の欄が変わったら、覚える名前とその回の記録の名前を書き換える（圏外で残らなかった回は名前だけ覚える） */
+function setPlayer(v) {
+  try { localStorage.setItem(BOARD_NAME_STORE, v.trim()); } catch (e) {}
+  if (!lastRank) return;
+  var a = loadRecords(), p = cleanPlayer(v);
+  a.forEach(function (r) { if (r.at === lastAt) { if (p) r.player = p; else delete r.player; } });
+  try { localStorage.setItem(RECORD_KEY, JSON.stringify(a)); } catch (e) {}
 }
 
 /* 終わりの画面では1位に入ったときだけ「自己ベスト」と添える（2位以下の順位は出さない）。
@@ -336,6 +369,13 @@ function records() {
     var li = document.createElement('li');
     var face = document.createElement('span');
     face.textContent = r.emoji + (r.rare ? '✨' : '');
+    if (r.player) {   /* 名前があれば「みんな」と同じ形：名前＋小さな絵文字。昔の記録（名前なし）は今まで通り */
+      face.className = 'named';
+      face.textContent = r.player;
+      var em = document.createElement('small');
+      em.textContent = r.emoji + (r.rare ? '✨' : '');
+      face.appendChild(em);
+    }
     var sc = document.createElement('b');
     sc.textContent = fmt(r.score);
     var unit = document.createElement('small');
@@ -403,16 +443,19 @@ function boardEntry(end, name, rare) {
     total: run.total, time: Math.round(run.time), char: name || '', rare: !!rare
   };
 }
-/* 終わりの画面に「載せる」を出す（合言葉があって、1ステージ以上クリアしたときだけ）。beforeId のボタンの上に差し込む */
+/* 終わりの画面に名前の欄を出す（1ステージ以上クリアしたとき）。合言葉の無い人は、記録に残った回だけ欄を出し「載せる」は出さない
+   （残らなかった回に欄を出すと、書いても何にもならない）。beforeId のボタンの上に差し込む */
 function offerBoard(entry, beforeId) {
-  var box = $('boardSend');
-  boardPending = boardKey() && entry ? entry : null;
-  box.hidden = !boardPending;
-  if (!boardPending) return;
+  var box = $('boardSend'), key = boardKey();
+  boardPending = key && entry ? entry : null;
+  box.hidden = !(boardPending || (entry && lastRank));
+  if (box.hidden) return;
   var before = $(beforeId);
   before.parentNode.insertBefore(box, before);
   $('boardForm').hidden = false;
+  $('boardGo').hidden = !boardPending;
   $('boardGo').disabled = false;
+  $('boardName').setAttribute('enterkeyhint', boardPending ? 'send' : 'done');
   $('boardMsg').textContent = '';
   try { $('boardName').value = localStorage.getItem(BOARD_NAME_STORE) || ''; } catch (e) {}
 }
@@ -420,7 +463,7 @@ function sendBoard() {
   if (!boardPending || $('boardGo').disabled) return;   /* 送っている間の Enter 連打で二重に載せない（ui係） */
   var name = $('boardName').value.trim();
   if (!name) { $('boardName').focus(); return; }   /* 空なら欄に戻すだけ（「なまえ」は欄に書いてある・ui係） */
-  try { localStorage.setItem(BOARD_NAME_STORE, name); } catch (e) {}
+  setPlayer(name);   /* 送った名前を自分の記録にも（ui係） */
   var entry = boardPending;
   entry.name = name;
   $('boardGo').disabled = true;
@@ -612,7 +655,9 @@ $('toRecords').addEventListener('click', records);
 $('recordsBack').addEventListener('click', title);
 $('boardGo').addEventListener('click', sendBoard);
 /* 漢字変換を確かめる Enter では送らない。Safari は変換確定の Enter で isComposing が false になるので keyCode 229 も見る（ui係） */
-$('boardName').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) sendBoard(); });
+/* 合言葉の無い人の Enter はキーボードを閉じるだけ（名前は打つたびに記録へ入っている） */
+$('boardName').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { if (boardPending) sendBoard(); else $('boardName').blur(); } });
+$('boardName').addEventListener('input', function () { setPlayer($('boardName').value); });
 $('toRecords').hidden = !loadRecords().length && !boardKey();
 </script>
 </body>
